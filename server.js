@@ -14,7 +14,7 @@ const googlePlayJobs = require('./src/jobs/googlePlaySyncJob');
 // Chargement des variables d'environnement
 dotenv.config();
 
-const PORT = process.env.PORT || 4000;
+const PORT = process.env.PORT || 4500;
 
 // Instances des services
 let cronService = null;
