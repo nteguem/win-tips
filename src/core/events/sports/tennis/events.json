@@ -1,0 +1,509 @@
+{
+  "staticEvents": [
+    {
+      "id": "home_wins",
+      "position": 1,
+      "priority": "high",
+      "label": {
+        "fr": "Victoire joueur 1",
+        "en": "Player 1 wins"
+      },
+      "expression": "score.home > score.away",
+      "category": "result",
+      "description": {
+        "fr": "Le joueur 1 (premier joueur listé) gagne le match",
+        "en": "Player 1 (first listed player) wins the match"
+      }
+    },
+    {
+      "id": "away_wins",
+      "position": 2,
+      "priority": "high",
+      "label": {
+        "fr": "Victoire joueur 2",
+        "en": "Player 2 wins"
+      },
+      "expression": "score.away > score.home",
+      "category": "result",
+      "description": {
+        "fr": "Le joueur 2 (second joueur listé) gagne le match",
+        "en": "Player 2 (second listed player) wins the match"
+      }
+    },
+    {
+      "id": "straight_sets",
+      "position": 3,
+      "priority": "medium",
+      "label": {
+        "fr": "Match en sets consécutifs",
+        "en": "Straight sets match"
+      },
+      "expression": "straightSets",
+      "category": "sets",
+      "description": {
+        "fr": "Le match se termine sans que le perdant remporte un set",
+        "en": "The match ends without the loser winning a set"
+      }
+    },
+    {
+      "id": "home_wins_first_set",
+      "position": 4,
+      "priority": "medium",
+      "label": {
+        "fr": "Joueur 1 gagne le 1er set",
+        "en": "Player 1 wins first set"
+      },
+      "expression": "score.details.home?.set1 > score.details.away?.set1",
+      "category": "sets",
+      "description": {
+        "fr": "Le joueur 1 remporte le premier set",
+        "en": "Player 1 wins the first set"
+      }
+    },
+    {
+      "id": "away_wins_first_set",
+      "position": 5,
+      "priority": "medium",
+      "label": {
+        "fr": "Joueur 2 gagne le 1er set",
+        "en": "Player 2 wins first set"
+      },
+      "expression": "score.details.away?.set1 > score.details.home?.set1",
+      "category": "sets",
+      "description": {
+        "fr": "Le joueur 2 remporte le premier set",
+        "en": "Player 2 wins the first set"
+      }
+    },
+    {
+      "id": "match_goes_to_three_sets",
+      "position": 6,
+      "priority": "medium",
+      "label": {
+        "fr": "Match en 3 sets",
+        "en": "Match goes to 3 sets"
+      },
+      "expression": "totalSets >= 3",
+      "category": "sets",
+      "description": {
+        "fr": "Le match dure au moins 3 sets",
+        "en": "The match lasts at least 3 sets"
+      }
+    },
+    {
+      "id": "match_goes_to_deciding_set",
+      "position": 7,
+      "priority": "medium",
+      "label": {
+        "fr": "Match au set décisif",
+        "en": "Match goes to deciding set"
+      },
+      "expression": "(totalSets === 3 && (setsWonHome === 1 && setsWonAway === 1)) || (totalSets === 5 && (setsWonHome === 2 && setsWonAway === 2))",
+      "category": "sets",
+      "description": {
+        "fr": "Le match va au set décisif (3ème set en best of 3, 5ème set en best of 5)",
+        "en": "The match goes to the deciding set (3rd set in best of 3, 5th set in best of 5)"
+      }
+    },
+    {
+      "id": "tiebreak_in_match",
+      "position": 8,
+      "priority": "low",
+      "label": {
+        "fr": "Tie-break dans le match",
+        "en": "Tiebreak in match"
+      },
+      "expression": "score.details.tiebreaks > 0",
+      "category": "special",
+      "description": {
+        "fr": "Au moins un tie-break est joué pendant le match",
+        "en": "At least one tiebreak is played during the match"
+      }
+    }
+  ],
+  "parametricEvents": [
+    {
+      "id": "total_sets",
+      "position": 1,
+      "priority": "high",
+      "labelTemplate": {
+        "fr": "{{direction}} de {{value}} sets",
+        "en": "{{direction}} {{value}} sets"
+      },
+      "expressionTemplate": "totalSets {{operator}} {{value}}",
+      "category": "sets",
+      "description": {
+        "fr": "Prédiction sur le nombre total de sets dans le match",
+        "en": "Prediction on the total number of sets in the match"
+      },
+      "paramFields": [
+        {
+          "name": "value",
+          "type": "number",
+          "label": {
+            "fr": "Nombre de sets",
+            "en": "Number of sets"
+          },
+          "min": 2,
+          "max": 5,
+          "step": 0.5,
+          "default": 2.5
+        },
+        {
+          "name": "direction",
+          "type": "enum",
+          "label": {
+            "fr": "Plus ou moins",
+            "en": "Over or under"
+          },
+          "options": [
+            {
+              "value": "over",
+              "label": {
+                "fr": "Plus",
+                "en": "Over"
+              }
+            },
+            {
+              "value": "under",
+              "label": {
+                "fr": "Moins",
+                "en": "Under"
+              }
+            }
+          ],
+          "default": "over"
+        }
+      ]
+    },
+    {
+      "id": "player_sets",
+      "position": 2,
+      "priority": "medium",
+      "labelTemplate": {
+        "fr": "{{team}} gagne {{direction}} de {{value}} sets",
+        "en": "{{team}} wins {{direction}} {{value}} sets"
+      },
+      "expressionTemplate": "{{team}} === 'home' ? setsWonHome {{operator}} {{value}} : setsWonAway {{operator}} {{value}}",
+      "category": "team_sets",
+      "description": {
+        "fr": "Prédiction sur le nombre de sets gagnés par un joueur spécifique",
+        "en": "Prediction on the number of sets won by a specific player"
+      },
+      "paramFields": [
+        {
+          "name": "team",
+          "type": "enum",
+          "label": {
+            "fr": "Joueur",
+            "en": "Player"
+          },
+          "options": [
+            {
+              "value": "home",
+              "label": {
+                "fr": "Joueur 1",
+                "en": "Player 1"
+              }
+            },
+            {
+              "value": "away",
+              "label": {
+                "fr": "Joueur 2",
+                "en": "Player 2"
+              }
+            }
+          ],
+          "default": "home"
+        },
+        {
+          "name": "value",
+          "type": "number",
+          "label": {
+            "fr": "Nombre de sets",
+            "en": "Number of sets"
+          },
+          "min": 0,
+          "max": 3,
+          "step": 0.5,
+          "default": 1.5
+        },
+        {
+          "name": "direction",
+          "type": "enum",
+          "label": {
+            "fr": "Plus ou moins",
+            "en": "Over or under"
+          },
+          "options": [
+            {
+              "value": "over",
+              "label": {
+                "fr": "Plus",
+                "en": "Over"
+              }
+            },
+            {
+              "value": "under",
+              "label": {
+                "fr": "Moins",
+                "en": "Under"
+              }
+            }
+          ],
+          "default": "over"
+        }
+      ]
+    },
+    {
+      "id": "total_games",
+      "position": 3,
+      "priority": "medium",
+      "labelTemplate": {
+        "fr": "{{direction}} de {{value}} jeux",
+        "en": "{{direction}} {{value}} games"
+      },
+      "expressionTemplate": "(score.details.home?.totalGames || 0) + (score.details.away?.totalGames || 0) {{operator}} {{value}}",
+      "category": "games",
+      "description": {
+        "fr": "Prédiction sur le nombre total de jeux dans le match",
+        "en": "Prediction on the total number of games in the match"
+      },
+      "paramFields": [
+        {
+          "name": "value",
+          "type": "number",
+          "label": {
+            "fr": "Nombre de jeux",
+            "en": "Number of games"
+          },
+          "min": 12,
+          "max": 50,
+          "step": 0.5,
+          "default": 22.5
+        },
+        {
+          "name": "direction",
+          "type": "enum",
+          "label": {
+            "fr": "Plus ou moins",
+            "en": "Over or under"
+          },
+          "options": [
+            {
+              "value": "over",
+              "label": {
+                "fr": "Plus",
+                "en": "Over"
+              }
+            },
+            {
+              "value": "under",
+              "label": {
+                "fr": "Moins",
+                "en": "Under"
+              }
+            }
+          ],
+          "default": "over"
+        }
+      ]
+    },
+    {
+      "id": "player_games",
+      "position": 4,
+      "priority": "medium",
+      "labelTemplate": {
+        "fr": "{{team}} gagne {{direction}} de {{value}} jeux",
+        "en": "{{team}} wins {{direction}} {{value}} games"
+      },
+      "expressionTemplate": "{{team}} === 'home' ? (score.details.home?.totalGames || 0) {{operator}} {{value}} : (score.details.away?.totalGames || 0) {{operator}} {{value}}",
+      "category": "team_games",
+      "description": {
+        "fr": "Prédiction sur le nombre de jeux gagnés par un joueur spécifique",
+        "en": "Prediction on the number of games won by a specific player"
+      },
+      "paramFields": [
+        {
+          "name": "team",
+          "type": "enum",
+          "label": {
+            "fr": "Joueur",
+            "en": "Player"
+          },
+          "options": [
+            {
+              "value": "home",
+              "label": {
+                "fr": "Joueur 1",
+                "en": "Player 1"
+              }
+            },
+            {
+              "value": "away",
+              "label": {
+                "fr": "Joueur 2",
+                "en": "Player 2"
+              }
+            }
+          ],
+          "default": "home"
+        },
+        {
+          "name": "value",
+          "type": "number",
+          "label": {
+            "fr": "Nombre de jeux",
+            "en": "Number of games"
+          },
+          "min": 0,
+          "max": 25,
+          "step": 0.5,
+          "default": 11.5
+        },
+        {
+          "name": "direction",
+          "type": "enum",
+          "label": {
+            "fr": "Plus ou moins",
+            "en": "Over or under"
+          },
+          "options": [
+            {
+              "value": "over",
+              "label": {
+                "fr": "Plus",
+                "en": "Over"
+              }
+            },
+            {
+              "value": "under",
+              "label": {
+                "fr": "Moins",
+                "en": "Under"
+              }
+            }
+          ],
+          "default": "over"
+        }
+      ]
+    },
+    {
+      "id": "set_score",
+      "position": 5,
+      "priority": "low",
+      "labelTemplate": {
+        "fr": "Set {{setNumber}} : {{team}} gagne {{value}}-{{opponentValue}}",
+        "en": "Set {{setNumber}}: {{team}} wins {{value}}-{{opponentValue}}"
+      },
+      "expressionTemplate": "score.details.{{team}}?.set{{setNumber}} === {{value}} && score.details.{{opponent}}?.set{{setNumber}} === {{opponentValue}}",
+      "category": "exact",
+      "description": {
+        "fr": "Prédiction sur le score exact d'un set spécifique",
+        "en": "Prediction on the exact score of a specific set"
+      },
+      "paramFields": [
+        {
+          "name": "setNumber",
+          "type": "enum",
+          "label": {
+            "fr": "Numéro du set",
+            "en": "Set number"
+          },
+          "options": [
+            { "value": "1", "label": { "fr": "1er set", "en": "1st set" } },
+            { "value": "2", "label": { "fr": "2ème set", "en": "2nd set" } },
+            { "value": "3", "label": { "fr": "3ème set", "en": "3rd set" } }
+          ],
+          "default": "1"
+        },
+        {
+          "name": "team",
+          "type": "enum",
+          "label": {
+            "fr": "Joueur gagnant",
+            "en": "Winning player"
+          },
+          "options": [
+            {
+              "value": "home",
+              "label": {
+                "fr": "Joueur 1",
+                "en": "Player 1"
+              }
+            },
+            {
+              "value": "away",
+              "label": {
+                "fr": "Joueur 2",
+                "en": "Player 2"
+              }
+            }
+          ],
+          "default": "home"
+        },
+        {
+          "name": "value",
+          "type": "enum",
+          "label": {
+            "fr": "Jeux gagnés",
+            "en": "Games won"
+          },
+          "options": [
+            { "value": "6", "label": { "fr": "6", "en": "6" } },
+            { "value": "7", "label": { "fr": "7", "en": "7" } }
+          ],
+          "default": "6"
+        },
+        {
+          "name": "opponentValue",
+          "type": "enum",
+          "label": {
+            "fr": "Jeux adversaire",
+            "en": "Opponent games"
+          },
+          "options": [
+            { "value": "0", "label": { "fr": "0", "en": "0" } },
+            { "value": "1", "label": { "fr": "1", "en": "1" } },
+            { "value": "2", "label": { "fr": "2", "en": "2" } },
+            { "value": "3", "label": { "fr": "3", "en": "3" } },
+            { "value": "4", "label": { "fr": "4", "en": "4" } },
+            { "value": "5", "label": { "fr": "5", "en": "5" } },
+            { "value": "6", "label": { "fr": "6", "en": "6" } }
+          ],
+          "default": "4"
+        }
+      ]
+    }
+  ],
+  "categories": {
+    "result": {
+      "fr": "Résultat du match",
+      "en": "Match result"
+    },
+    "sets": {
+      "fr": "Nombre de sets",
+      "en": "Number of sets"
+    },
+    "team_sets": {
+      "fr": "Sets par joueur",
+      "en": "Sets by player"
+    },
+    "games": {
+      "fr": "Nombre de jeux",
+      "en": "Number of games"
+    },
+    "team_games": {
+      "fr": "Jeux par joueur",
+      "en": "Games by player"
+    },
+    "exact": {
+      "fr": "Scores exacts",
+      "en": "Exact scores"
+    },
+    "special": {
+      "fr": "Événements spéciaux",
+      "en": "Special events"
+    }
+  }
+}

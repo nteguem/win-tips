@@ -1,0 +1,246 @@
+{
+  "staticEvents": [
+    {
+      "id": "home_wins",
+      "position": 1,
+      "priority": "high",
+      "label": {
+        "fr": "Victoire équipe domicile",
+        "en": "Home team wins"
+      },
+      "expression": "score.home > score.away",
+      "category": "result",
+      "description": {
+        "fr": "L'équipe qui joue à domicile gagne le match",
+        "en": "The home team wins the match"
+      }
+    },
+    {
+      "id": "away_wins",
+      "position": 2,
+      "priority": "high",
+      "label": {
+        "fr": "Victoire équipe extérieur",
+        "en": "Away team wins"
+      },
+      "expression": "score.away > score.home",
+      "category": "result",
+      "description": {
+        "fr": "L'équipe qui joue à l'extérieur gagne le match",
+        "en": "The away team wins the match"
+      }
+    },
+    {
+      "id": "home_wins_first_set",
+      "position": 3,
+      "priority": "medium",
+      "label": {
+        "fr": "Domicile gagne le 1er set",
+        "en": "Home wins first set"
+      },
+      "expression": "score.details.home?.set1 > score.details.away?.set1",
+      "category": "sets",
+      "description": {
+        "fr": "L'équipe domicile remporte le premier set",
+        "en": "Home team wins the first set"
+      }
+    },
+    {
+      "id": "away_wins_first_set",
+      "position": 4,
+      "priority": "medium",
+      "label": {
+        "fr": "Extérieur gagne le 1er set",
+        "en": "Away wins first set"
+      },
+      "expression": "score.details.away?.set1 > score.details.home?.set1",
+      "category": "sets",
+      "description": {
+        "fr": "L'équipe extérieur remporte le premier set",
+        "en": "Away team wins the first set"
+      }
+    }
+  ],
+  "parametricEvents": [
+    {
+      "id": "total_sets",
+      "position": 1,
+      "priority": "high",
+      "labelTemplate": {
+        "fr": "{{direction}} de {{value}} sets",
+        "en": "{{direction}} {{value}} sets"
+      },
+      "expressionTemplate": "totalSets {{operator}} {{value}}",
+      "category": "sets",
+      "description": {
+        "fr": "Prédiction sur le nombre total de sets dans le match",
+        "en": "Prediction on the total number of sets in the match"
+      },
+      "paramFields": [
+        {
+          "name": "value",
+          "type": "number",
+          "label": {
+            "fr": "Nombre de sets",
+            "en": "Number of sets"
+          },
+          "min": 3,
+          "max": 5,
+          "step": 0.5,
+          "default": 3.5
+        },
+        {
+          "name": "direction",
+          "type": "enum",
+          "label": {
+            "fr": "Plus ou moins",
+            "en": "Over or under"
+          },
+          "options": [
+            {
+              "value": "over",
+              "label": {
+                "fr": "Plus",
+                "en": "Over"
+              }
+            },
+            {
+              "value": "under",
+              "label": {
+                "fr": "Moins",
+                "en": "Under"
+              }
+            }
+          ],
+          "default": "over"
+        }
+      ]
+    },
+    {
+      "id": "home_sets",
+      "position": 2,
+      "priority": "medium",
+      "labelTemplate": {
+        "fr": "Équipe domicile gagne {{direction}} de {{value}} sets",
+        "en": "Home team wins {{direction}} {{value}} sets"
+      },
+      "expressionTemplate": "setsWonHome {{operator}} {{value}}",
+      "category": "team_sets",
+      "description": {
+        "fr": "Prédiction sur le nombre de sets gagnés par l'équipe domicile",
+        "en": "Prediction on the number of sets won by home team"
+      },
+      "paramFields": [
+        {
+          "name": "value",
+          "type": "number",
+          "label": {
+            "fr": "Nombre de sets",
+            "en": "Number of sets"
+          },
+          "min": 0,
+          "max": 3,
+          "step": 0.5,
+          "default": 1.5
+        },
+        {
+          "name": "direction",
+          "type": "enum",
+          "label": {
+            "fr": "Plus ou moins",
+            "en": "Over or under"
+          },
+          "options": [
+            {
+              "value": "over",
+              "label": {
+                "fr": "Plus",
+                "en": "Over"
+              }
+            },
+            {
+              "value": "under",
+              "label": {
+                "fr": "Moins",
+                "en": "Under"
+              }
+            }
+          ],
+          "default": "over"
+        }
+      ]
+    },
+    {
+      "id": "away_sets",
+      "position": 3,
+      "priority": "medium",
+      "labelTemplate": {
+        "fr": "Équipe extérieur gagne {{direction}} de {{value}} sets",
+        "en": "Away team wins {{direction}} {{value}} sets"
+      },
+      "expressionTemplate": "setsWonAway {{operator}} {{value}}",
+      "category": "team_sets",
+      "description": {
+        "fr": "Prédiction sur le nombre de sets gagnés par l'équipe extérieur",
+        "en": "Prediction on the number of sets won by away team"
+      },
+      "paramFields": [
+        {
+          "name": "value",
+          "type": "number",
+          "label": {
+            "fr": "Nombre de sets",
+            "en": "Number of sets"
+          },
+          "min": 0,
+          "max": 3,
+          "step": 0.5,
+          "default": 1.5
+        },
+        {
+          "name": "direction",
+          "type": "enum",
+          "label": {
+            "fr": "Plus ou moins",
+            "en": "Over or under"
+          },
+          "options": [
+            {
+              "value": "over",
+              "label": {
+                "fr": "Plus",
+                "en": "Over"
+              }
+            },
+            {
+              "value": "under",
+              "label": {
+                "fr": "Moins",
+                "en": "Under"
+              }
+            }
+          ],
+          "default": "over"
+        }
+      ]
+    }
+  ],
+  "categories": {
+    "result": {
+      "fr": "Résultat du match",
+      "en": "Match result"
+    },
+    "sets": {
+      "fr": "Nombre de sets",
+      "en": "Number of sets"
+    },
+    "team_sets": {
+      "fr": "Sets par équipe",
+      "en": "Sets by team"
+    },
+    "exact": {
+      "fr": "Score exact",
+      "en": "Exact score"
+    }
+  }
+}
