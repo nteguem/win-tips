@@ -8,6 +8,7 @@ const router = express.Router();
  * Routes publiques (sans authentification)
  */
 router.post('/login', authController.login);
+router.post('/register', authController.register);
 router.post('/refresh', adminAuth.verifyRefreshToken, authController.refresh);
 
 /**

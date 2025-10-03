@@ -33,6 +33,17 @@ const PredictionSchema = new mongoose.Schema({
     id: String,
     name: String,
     icon: String
+  },
+    star: {
+    type: Number,
+    min: 0,
+    max: 5,
+    default: 0
+  },
+  
+  reason: {
+    type: String,
+    default: ''
   }
 }, {
   timestamps: true

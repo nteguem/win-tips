@@ -2,10 +2,10 @@
   "name": "wintips-api",
   "version": "1.0.0",
   "description": "API pour la plateforme de pronostics sportifs",
-  "main": "server.js",
+  "main": "wintips.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "nodemon server.js",
+    "start": "node wintips.js",
+    "dev": "nodemon wintips.js",
     "test": "jest --detectOpenHandles",
     "seed:roles": "node src/scripts/seeders/rolePermissionSeeder.js"
   },

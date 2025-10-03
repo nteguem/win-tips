@@ -39,6 +39,45 @@ exports.login = catchAsync(async (req, res, next) => {
 });
 
 /**
+ * Inscription admin
+ */
+exports.register = catchAsync(async (req, res, next) => {
+  const { email, password, firstName, lastName, phone } = req.body;
+  
+  // Validation des champs obligatoires
+  if (!email || !password) {
+    return next(new AppError('Email et mot de passe requis', 400, ErrorCodes.VALIDATION_ERROR));
+  }
+  
+  // Vérifier si l'admin existe déjà
+  const existingAdmin = await Admin.findOne({ email: email.toLowerCase() });
+  if (existingAdmin) {
+    return next(new AppError('Un administrateur avec cet email existe déjà', 400, ErrorCodes.VALIDATION_ERROR));
+  }
+  
+  // Créer le nouvel admin
+  const admin = await Admin.create({
+    email: email.toLowerCase(),
+    password,
+    firstName,
+    lastName,
+    phone,
+    isActive: true, // ou false si vous voulez une validation manuelle
+    role: 'admin' // Définir le rôle par défaut
+  });
+  
+  // Générer les tokens
+  const tokens = authService.generateTokens(admin._id, 'admin');
+  
+  // Sauvegarder le refresh token
+  admin.refreshTokens.push(tokens.refreshToken);
+  admin.lastLogin = new Date();
+  await admin.save();
+  
+  // Réponse
+  res.status(201).json(authService.formatAuthResponse(admin, tokens, 'Inscription admin réussie'));
+});
+/**
  * Déconnexion admin
  */
 exports.logout = catchAsync(async (req, res, next) => {

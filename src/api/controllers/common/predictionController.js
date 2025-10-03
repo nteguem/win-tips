@@ -53,7 +53,7 @@ class PredictionController {
 
 async createPrediction(req, res) {
   try {
-    const { ticket, matchData, event, odds, sport } = req.body;
+    const { ticket, matchData, event, odds, sport, star, reason } = req.body; 
 
     if (!ticket || !matchData || !event || !odds || !sport) {
       return formatError(res, {
@@ -82,7 +82,9 @@ async createPrediction(req, res) {
       matchData,
       event,
       odds: parseFloat(odds),
-      sport
+      sport,
+      ...(star !== undefined && { star: parseInt(star) }), 
+      ...(reason && { reason }) 
     };
 
     const prediction = await predictionService.createPrediction(predictionData);
@@ -108,30 +110,40 @@ async createPrediction(req, res) {
   // { status: "lost" } - Marquer comme perdue
   // { status: "void" } - Annuler la prédiction
   // { matchData: {...} } - Mettre à jour les données du match
-  async updatePrediction(req, res) {
-    try {
-      const { id } = req.params;
-      const updates = req.body;
+ async updatePrediction(req, res) {
+  try {
+    const { id } = req.params;
+    const updates = req.body;
 
-      // Convertir odds en nombre si présent
-      if (updates.odds) {
-        updates.odds = parseFloat(updates.odds);
-      }
-
-      const prediction = await predictionService.updatePrediction(id, updates);
-
-      if (!prediction) {
-        return formatError(res, 'Prediction not found', 404);
-      }
-
-      formatSuccess(res, {
-        data: prediction,
-        message: 'Prediction updated successfully'
-      });
-    } catch (error) {
-      formatError(res, error.message, 500);
+    // Convertir odds en nombre si présent
+    if (updates.odds) {
+      updates.odds = parseFloat(updates.odds);
     }
+
+    // 👇 AJOUT: Convertir star en nombre si présent
+    if (updates.star !== undefined) {
+      updates.star = parseInt(updates.star);
+      
+      // Validation de star (0-5)
+      if (updates.star < 0 || updates.star > 5) {
+        return formatError(res, 'Star rating must be between 0 and 5', 400);
+      }
+    }
+
+    const prediction = await predictionService.updatePrediction(id, updates);
+
+    if (!prediction) {
+      return formatError(res, 'Prediction not found', 404);
+    }
+
+    formatSuccess(res, {
+      data: prediction,
+      message: 'Prediction updated successfully'
+    });
+  } catch (error) {
+    formatError(res, error.message, 500);
   }
+}
 
   // DELETE /predictions/:id - Supprimer une prédiction
   async deletePrediction(req, res) {
