@@ -87,6 +87,8 @@ predictions: ticket.predictions.map(pred => {
     odds: pred.odds,
     status: pred.status,
     sport: pred?.sport,
+    reason: pred?.reason || null,
+    star: pred?.star || false,
     event: {
       id: pred.event.id,
       label: pred.event.label[lang] || pred.event.label.fr || pred.event.label.current,
