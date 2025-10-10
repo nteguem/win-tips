@@ -82,7 +82,7 @@ exports.register = catchAsync(async (req, res, next) => {
 // Fonction pour générer automatiquement un email utilisateur avec vérification d'unicité
 async function generateUniqueUserEmail(phoneNumber, pseudo, countryCode) {
   const cleanPhone = phoneNumber.replace(/[^\d]/g, '');
-  const domain = "bigwinpronos.com";
+  const domain = "wintips.com";
   let baseEmail = `user${cleanPhone}@${domain}`;
   let finalEmail = baseEmail;
   let counter = 1;

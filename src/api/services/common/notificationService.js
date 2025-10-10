@@ -35,7 +35,7 @@ class NotificationService {
       const payload = {
         app_id: this.appId,
         include_player_ids: Array.isArray(playerIds) ? playerIds : [playerIds],
-        headings: notification.headings || { en: "BigWin", fr: "BigWin" },
+        headings: notification.headings || { en: "WinTips", fr: "WinTips" },
         contents: notification.contents,
         data: notification.data || {},
         ...notification.options
@@ -75,7 +75,7 @@ class NotificationService {
       const payload = {
         app_id: this.appId,
         included_segments: ['All'],
-        headings: notification.headings || { en: "BigWin", fr: "BigWin" },
+        headings: notification.headings || { en: "WinTips", fr: "WinTips" },
         contents: notification.contents,
         data: notification.data || {},
         ...notification.options
@@ -117,7 +117,7 @@ class NotificationService {
       const payload = {
         app_id: this.appId,
         filters: filters,
-        headings: notification.headings || { en: "BigWin", fr: "BigWin" },
+        headings: notification.headings || { en: "WinTips", fr: "WinTips" },
         contents: notification.contents,
         data: notification.data || {},
         ...notification.options
