@@ -1,5 +1,6 @@
 const User = require('../../models/user/User');
 const authService = require('../../services/common/authService');
+const googleAuthService = require('../../services/common/googleAuthService');
 const subscriptionService = require('../../services/user/subscriptionService');
 const deviceService = require('../../services/common/deviceService');
 const { AppError, ErrorCodes } = require('../../../utils/AppError');
@@ -44,6 +45,8 @@ exports.register = catchAsync(async (req, res, next) => {
     dialCode,
     countryCode,
     city,
+    authProvider: 'local', // Nouveau champ
+    emailVerified: false,   // Nouveau champ
     referredBy: affiliate?._id
   });
   
@@ -79,7 +82,7 @@ exports.register = catchAsync(async (req, res, next) => {
 // Fonction pour générer automatiquement un email utilisateur avec vérification d'unicité
 async function generateUniqueUserEmail(phoneNumber, pseudo, countryCode) {
   const cleanPhone = phoneNumber.replace(/[^\d]/g, '');
-  const domain = "wintips.com";
+  const domain = "bigwinpronos.com";
   let baseEmail = `user${cleanPhone}@${domain}`;
   let finalEmail = baseEmail;
   let counter = 1;
@@ -94,7 +97,8 @@ async function generateUniqueUserEmail(phoneNumber, pseudo, countryCode) {
 }
 
 /**
- * Connexion utilisateur
+ * Connexion utilisateur classique (téléphone + mot de passe)
+ * Pour Google Auth, utiliser /google
  */
 exports.login = catchAsync(async (req, res, next) => {
   const { phoneNumber, password, deviceId } = req.body;
@@ -145,6 +149,110 @@ exports.login = catchAsync(async (req, res, next) => {
   console.log("response", response);
 
   res.status(200).json(response);
+});
+
+/**
+ * Authentification avec Google (login + register combiné)
+ */
+exports.googleAuth = catchAsync(async (req, res, next) => {
+  const { idToken, affiliateCode, city, countryCode, deviceId } = req.body;
+  
+  // Validation
+  if (!idToken) {
+    return next(new AppError('Token Google requis', 400, ErrorCodes.VALIDATION_ERROR));
+  }
+  
+  try {
+    // 1. Vérifier et décoder le token Google
+    console.log('🔐 Vérification du token Google...');
+    const googleData = await googleAuthService.verifyGoogleToken(idToken);
+    console.log(`✅ Token valide pour: ${googleData.email}`);
+    
+    // 2. Créer ou récupérer l'utilisateur
+    const { user, isNewUser } = await googleAuthService.findOrCreateGoogleUser(googleData, {
+      affiliateCode,
+      city,
+      countryCode
+    });
+    
+    // 3. Vérifier si le compte est actif
+    if (!user.isActive) {
+      return next(new AppError('Compte utilisateur désactivé', 401, ErrorCodes.AUTH_ACCOUNT_DISABLED));
+    }
+    
+    // 4. Générer les tokens JWT de votre app
+    const tokens = authService.generateTokens(user._id, 'user');
+    
+    // 5. Sauvegarder le refresh token
+    if (!user.refreshTokens) {
+      user.refreshTokens = [];
+    }
+    user.refreshTokens.push(tokens.refreshToken);
+    await user.save();
+    
+    // 6. Lier le device si fourni
+    let device = null;
+    if (deviceId) {
+      try {
+        device = await deviceService.linkDeviceToUser(deviceId, user._id);
+      } catch (error) {
+        console.error('Erreur linkage device:', error);
+        // On continue sans device
+      }
+    }
+    
+    // 7. Vérifier l'abonnement
+    const subscriptionInfo = await subscriptionService.getUserSubscriptionInfo(user._id);
+    
+    // 8. Préparer la réponse
+    const message = isNewUser 
+      ? `Bienvenue ${user.firstName || user.pseudo} ! Votre compte a été créé avec succès.`
+      : `Bon retour ${user.firstName || user.pseudo} !`;
+    
+    // 9. Formater et envoyer la réponse
+    const response = {
+      success: true,
+      message,
+      data: {
+        user: {
+          id: user._id,
+          email: user.email,
+          pseudo: user.pseudo,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          profilePicture: user.profilePicture,
+          authProvider: user.authProvider,
+          emailVerified: user.emailVerified,
+          city: user.city,
+          countryCode: user.countryCode,
+          isNewUser
+        },
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        hasActiveSubscription: subscriptionInfo.hasActiveSubscription,
+        activePackages: subscriptionInfo.activePackages,
+        device
+      }
+    };
+    
+    res.status(isNewUser ? 201 : 200).json(response);
+    
+  } catch (error) {
+    console.error('❌ Erreur Google Auth:', error);
+    
+    // Gestion d'erreurs spécifiques
+    if (error.message && error.message.includes('Token used too late')) {
+      return next(new AppError('Token Google expiré, veuillez vous reconnecter', 401, ErrorCodes.AUTH_INVALID_TOKEN));
+    }
+    
+    // Renvoyer l'erreur telle quelle si c'est déjà une AppError
+    if (error instanceof AppError) {
+      return next(error);
+    }
+    
+    // Erreur générique
+    return next(new AppError('Erreur lors de l\'authentification Google', 500, ErrorCodes.INTERNAL_ERROR));
+  }
 });
 
 /**

@@ -1,7 +1,7 @@
 // src/api/services/common/notificationService.js
 const axios = require('axios');
 const logger = require('../../../utils/logger');
-const AppError = require('../../../utils/AppError');
+const { AppError } = require('../../../utils/AppError');
 
 class NotificationService {
   constructor() {
@@ -29,13 +29,13 @@ class NotificationService {
    * Envoyer une notification à des utilisateurs spécifiques via playerIds
    */
   async sendToUsers(playerIds, notification) {
-    this._init(); // Initialisation paresseuse
+    this._init();
     
     try {
       const payload = {
         app_id: this.appId,
         include_player_ids: Array.isArray(playerIds) ? playerIds : [playerIds],
-        headings: notification.headings || { en: "WinTips", fr: "WinTips" },
+        headings: notification.headings || { en: "BigWin", fr: "BigWin" },
         contents: notification.contents,
         data: notification.data || {},
         ...notification.options
@@ -50,8 +50,18 @@ class NotificationService {
 
       return response;
     } catch (error) {
-      logger.error('Erreur envoi notification utilisateurs:', error);
-      throw new AppError('Échec envoi notification', 500);
+      logger.error('Erreur envoi notification utilisateurs:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status
+      });
+      
+      // Retourner l'erreur détaillée
+      const errorMessage = error.response?.data?.errors 
+        ? JSON.stringify(error.response.data.errors)
+        : error.message;
+      
+      throw new AppError(`Échec envoi notification: ${errorMessage}`, 500);
     }
   }
 
@@ -59,17 +69,19 @@ class NotificationService {
    * Envoyer une notification à tous les utilisateurs
    */
   async sendToAll(notification) {
-    this._init(); // Initialisation paresseuse
+    this._init();
     
     try {
       const payload = {
         app_id: this.appId,
         included_segments: ['All'],
-        headings: notification.headings || { en: "WinTips", fr: "WinTips" },
+        headings: notification.headings || { en: "BigWin", fr: "BigWin" },
         contents: notification.contents,
         data: notification.data || {},
         ...notification.options
       };
+
+      logger.info('Tentative d\'envoi broadcast avec payload:', payload);
 
       const response = await this._makeRequest('notifications', 'POST', payload);
       
@@ -80,8 +92,18 @@ class NotificationService {
 
       return response;
     } catch (error) {
-      logger.error('Erreur envoi notification broadcast:', error);
-      throw new AppError('Échec envoi notification broadcast', 500);
+      logger.error('Erreur envoi notification broadcast:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status
+      });
+      
+      // Retourner l'erreur détaillée de OneSignal
+      const errorMessage = error.response?.data?.errors 
+        ? JSON.stringify(error.response.data.errors)
+        : error.message;
+      
+      throw new AppError(`Échec envoi notification broadcast: ${errorMessage}`, 500);
     }
   }
 
@@ -89,13 +111,13 @@ class NotificationService {
    * Envoyer une notification avec des filtres personnalisés
    */
   async sendWithFilters(filters, notification) {
-    this._init(); // Initialisation paresseuse
+    this._init();
     
     try {
       const payload = {
         app_id: this.appId,
         filters: filters,
-        headings: notification.headings || { en: "WinTips", fr: "WinTips" },
+        headings: notification.headings || { en: "BigWin", fr: "BigWin" },
         contents: notification.contents,
         data: notification.data || {},
         ...notification.options
@@ -111,8 +133,17 @@ class NotificationService {
 
       return response;
     } catch (error) {
-      logger.error('Erreur envoi notification avec filtres:', error);
-      throw new AppError('Échec envoi notification avec filtres', 500);
+      logger.error('Erreur envoi notification avec filtres:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status
+      });
+      
+      const errorMessage = error.response?.data?.errors 
+        ? JSON.stringify(error.response.data.errors)
+        : error.message;
+      
+      throw new AppError(`Échec envoi notification avec filtres: ${errorMessage}`, 500);
     }
   }
 
@@ -120,7 +151,7 @@ class NotificationService {
    * Récupérer les statistiques de l'app OneSignal
    */
   async getAppStats() {
-    this._init(); // Initialisation paresseuse
+    this._init();
     
     try {
       const response = await this._makeRequest(`apps/${this.appId}`, 'GET');
@@ -141,7 +172,7 @@ class NotificationService {
    * Récupérer l'historique des notifications
    */
   async getNotificationHistory(limit = 50, offset = 0) {
-    this._init(); // Initialisation paresseuse
+    this._init();
     
     try {
       const response = await this._makeRequest(
@@ -190,7 +221,8 @@ class NotificationService {
         endpoint,
         method,
         status: error.response?.status,
-        message: error.response?.data?.errors || error.message
+        data: error.response?.data,
+        message: error.message
       });
       throw error;
     }

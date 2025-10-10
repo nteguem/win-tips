@@ -9,8 +9,9 @@ const router = express.Router();
  */
 router.post('/register', authController.register);
 router.post('/login', authController.login);
+router.post('/google', authController.googleAuth); 
 router.post('/refresh', userAuth.verifyRefreshToken, authController.refresh);
-router.post('/reset-password', authController.resetPassword); 
+router.post('/reset-password', authController.resetPassword);
 
 /**
  * Routes protégées (authentification requise)
