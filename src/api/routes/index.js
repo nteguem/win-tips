@@ -63,10 +63,12 @@ router.use('/webhooks', googlePlayWebhook);
 const deviceRoutes = require('./common/deviceRoutes');
 const topicRoutes = require('./common/topicRoutes');
 const notificationRoutes = require('./common/notificationRoutes');
+const configRoutes = require('./common/configRoutes'); // ← NOUVEAU
 
 router.use('/devices', deviceRoutes);
 router.use('/topics', topicRoutes);
 router.use('/notifications', notificationRoutes);
+router.use('/config', configRoutes); // ← NOUVEAU
 
 // ===== POINT D'ENTRÉE API =====
 // Routes de paiement Smobilpay
