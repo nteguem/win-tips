@@ -46,7 +46,7 @@ class ConfigService {
         const countryInfo = {
           countryCode: response.countryCode.toUpperCase(),
           countryName: response.country,
-          currency: response.currency || 'USD', // Fallback USD si pas disponible
+          currency: 'USD', // Fallback USD si pas disponible
           phonePrefix: response.callingCode ? `+${response.callingCode}` : '+1' // Fallback +1
         };
 
@@ -97,7 +97,7 @@ class ConfigService {
         config = await AppConfig.create({
           countryCode: upperCountryCode,
           countryName: countryInfo.countryName,
-          currency: countryInfo.currency,
+          currency: "USD",
           language: 'en', // Anglais par défaut
           phonePrefix: countryInfo.phonePrefix,
           paymentProvider: 'googlepay', // Google Pay par défaut
