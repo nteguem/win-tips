@@ -1,6 +1,6 @@
 /**
  * @fileoverview Service de gestion de la configuration par pays
- * Gère la détection du pays, le cache et les opérations CRUD
+ * Gère la détection du pays et les opérations CRUD
  */
 const HttpClient = require('../../../utils/httpClient');
 const AppConfig = require('../../models/common/AppConfig');
@@ -10,11 +10,6 @@ class ConfigService {
   constructor() {
     // Client HTTP natif
     this.httpClient = new HttpClient();
-    
-    // Cache en mémoire pour éviter trop d'appels API
-    this.ipCache = new Map();
-    this.configCache = new Map();
-    this.CACHE_TTL = 3600000; // 1 heure en millisecondes
   }
 
   /**
@@ -24,12 +19,6 @@ class ConfigService {
    */
   async detectCountryFromIp(ipAddress) {
     try {
-      // Vérifier le cache
-      if (this.ipCache.has(ipAddress)) {
-        logger.info(`[ConfigService] IP en cache: ${ipAddress}`);
-        return this.ipCache.get(ipAddress);
-      }
-
       logger.info(`[ConfigService] Détection du pays pour IP: ${ipAddress}`);
 
       // Appeler l'API de géolocalisation avec tous les champs nécessaires
@@ -49,15 +38,6 @@ class ConfigService {
           currency: 'USD', // Fallback USD si pas disponible
           phonePrefix: response.callingCode ? `+${response.callingCode}` : '+1' // Fallback +1
         };
-
-        // Mettre en cache
-        this.ipCache.set(ipAddress, countryInfo);
-
-        // Nettoyer le cache après TTL
-        setTimeout(() => {
-          this.ipCache.delete(ipAddress);
-          logger.info(`[ConfigService] Cache IP expiré: ${ipAddress}`);
-        }, this.CACHE_TTL);
 
         logger.info(`[ConfigService] Pays détecté: ${JSON.stringify(countryInfo)}`);
         return countryInfo;
@@ -79,13 +59,6 @@ class ConfigService {
   async getOrCreateConfigByCountryCode(countryCode, countryInfo) {
     try {
       const upperCountryCode = countryCode.toUpperCase();
-      const cacheKey = `config_${upperCountryCode}`;
-
-      // Vérifier le cache
-      if (this.configCache.has(cacheKey)) {
-        logger.info(`[ConfigService] Config en cache: ${upperCountryCode}`);
-        return this.configCache.get(cacheKey);
-      }
 
       // Chercher en base de données
       let config = await AppConfig.findOne({ countryCode: upperCountryCode });
@@ -113,15 +86,6 @@ class ConfigService {
 
       // Formater pour le client
       const clientConfig = config.toClientJSON ? config.toClientJSON() : config.toObject();
-
-      // Mettre en cache
-      this.configCache.set(cacheKey, clientConfig);
-
-      // Nettoyer le cache après TTL
-      setTimeout(() => {
-        this.configCache.delete(cacheKey);
-        logger.info(`[ConfigService] Cache config expiré: ${upperCountryCode}`);
-      }, this.CACHE_TTL);
 
       logger.info(`[ConfigService] Config récupérée/créée: ${upperCountryCode}`);
       return clientConfig;
@@ -160,13 +124,6 @@ class ConfigService {
   async getConfigByCountryCode(countryCode) {
     try {
       const upperCountryCode = countryCode.toUpperCase();
-      const cacheKey = `config_${upperCountryCode}`;
-
-      // Vérifier le cache
-      if (this.configCache.has(cacheKey)) {
-        logger.info(`[ConfigService] Config en cache: ${upperCountryCode}`);
-        return this.configCache.get(cacheKey);
-      }
 
       // Récupérer depuis la DB
       const config = await AppConfig.findOne({ countryCode: upperCountryCode });
@@ -177,15 +134,6 @@ class ConfigService {
 
       // Formater pour le client
       const clientConfig = config.toClientJSON ? config.toClientJSON() : config.toObject();
-
-      // Mettre en cache
-      this.configCache.set(cacheKey, clientConfig);
-
-      // Nettoyer le cache après TTL
-      setTimeout(() => {
-        this.configCache.delete(cacheKey);
-        logger.info(`[ConfigService] Cache config expiré: ${upperCountryCode}`);
-      }, this.CACHE_TTL);
 
       logger.info(`[ConfigService] Config récupérée: ${upperCountryCode}`);
       return clientConfig;
@@ -223,9 +171,6 @@ class ConfigService {
         { new: true, upsert: true, runValidators: true }
       );
 
-      // Invalider le cache
-      this.configCache.delete(`config_${countryCode.toUpperCase()}`);
-
       logger.info(`[ConfigService] Config upsert: ${countryCode}`);
       return config;
     } catch (error) {
@@ -248,9 +193,6 @@ class ConfigService {
       if (!result) {
         throw new Error('Configuration non trouvée');
       }
-
-      // Invalider le cache
-      this.configCache.delete(`config_${countryCode.toUpperCase()}`);
 
       logger.info(`[ConfigService] Config supprimée: ${countryCode}`);
       return result;
@@ -278,24 +220,12 @@ class ConfigService {
         throw new Error('Configuration non trouvée');
       }
 
-      // Invalider le cache
-      this.configCache.delete(`config_${countryCode.toUpperCase()}`);
-
       logger.info(`[ConfigService] Config toggle: ${countryCode} -> ${isActive}`);
       return config;
     } catch (error) {
       logger.error(`[ConfigService] Erreur toggleCountry: ${error.message}`);
       throw error;
     }
-  }
-
-  /**
-   * Vider les caches (Admin/Debug)
-   */
-  clearCache() {
-    this.ipCache.clear();
-    this.configCache.clear();
-    logger.info('[ConfigService] Caches vidés');
   }
 }
 
