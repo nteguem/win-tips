@@ -95,6 +95,8 @@ class FormationService {
       title: formation.title[lang] || formation.title.fr,
       description: formation.description[lang] || formation.description.fr,
       htmlContent: formation.htmlContent[lang] || formation.htmlContent.fr,
+      imageUrl: formation.imageUrl || null, // ✅ AJOUTÉ
+      readingTime: formation.readingTime || null, // ✅ AJOUTÉ
       isAccessible: formation.isAccessible,
       requiredPackages: formation.requiredPackages ? formation.requiredPackages.map(pkg => ({
         _id: pkg._id,

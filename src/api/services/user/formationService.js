@@ -71,12 +71,14 @@ class UserFormationService {
       _id: formation._id,
       title: formation.title[lang] || formation.title.fr,
       description: formation.description[lang] || formation.description.fr,
+      imageUrl: formation.imageUrl || null, // ✅ AJOUTÉ - retourné dans tous les cas
+      readingTime: formation.readingTime || null, // ✅ AJOUTÉ - retourné dans tous les cas
       isAccessible: formation.isAccessible,
       createdAt: formation.createdAt,
       updatedAt: formation.updatedAt
     };
 
-    // Formation gratuite : renvoyer le PDF directement
+    // Formation gratuite : renvoyer le htmlContent directement
     if (formation.isAccessible) {
       return {
         ...baseFormat,
@@ -91,7 +93,7 @@ class UserFormationService {
     );
 
     if (hasAccess) {
-      // Utilisateur a accès : renvoyer le PDF
+      // Utilisateur a accès : renvoyer le htmlContent
       return {
         ...baseFormat,
         htmlContent: formation.htmlContent[lang] || formation.htmlContent.fr,

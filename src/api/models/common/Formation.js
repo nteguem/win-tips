@@ -42,6 +42,22 @@ const formationSchema = new mongoose.Schema({
     default: 0,
     index: true
   },
+  imageUrl: {
+  type: String,
+  trim: true,
+  validate: {
+    validator: function(v) {
+      // Valider que c'est une URL valide
+      return !v || /^https?:\/\/.+/.test(v);
+    },
+    message: 'L\'URL de l\'image doit être valide'
+  }
+},
+readingTime: {
+  type: Number,  // en minutes
+  min: 1,
+  default: 5
+},
   isActive: {
     type: Boolean,
     default: true

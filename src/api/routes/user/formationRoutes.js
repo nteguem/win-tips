@@ -10,7 +10,7 @@ const router = express.Router();
  */
 const optionalAuth = (req, res, next) => {
   const authHeader = req.headers.authorization;
-  
+
   if (authHeader && authHeader.startsWith('Bearer ')) {
     // Token présent : appliquer l'authentification
     userAuth.protect(req, res, next);
