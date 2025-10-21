@@ -64,6 +64,80 @@ class UserFormationService {
   }
 
   /**
+   * ✅ CORRIGÉ : Récupérer le contenu d'une formation avec vérification d'accès
+   * Utilisé pour l'endpoint GET /formations/:id/content
+   */
+  async getFormationContentWithAccess(id, user = null, lang = 'fr') {
+    const formation = await Formation.findOne({ _id: id, isActive: true })
+      .populate('requiredPackages', 'name description pricing duration badge economy');
+    
+    if (!formation) {
+      return null;
+    }
+
+    // Données de base (toujours renvoyées)
+    const baseFormat = {
+      _id: formation._id,
+      title: formation.title[lang] || formation.title.fr,
+      description: formation.description[lang] || formation.description.fr,
+      imageUrl: formation.imageUrl || null,
+      readingTime: formation.readingTime || null,
+      createdAt: formation.createdAt,
+      updatedAt: formation.updatedAt
+    };
+
+    // ✅ LOGIQUE CORRIGÉE : Formation gratuite si requiredPackages est vide
+    const isFree = !formation.requiredPackages || formation.requiredPackages.length === 0;
+
+    if (isFree) {
+      // Formation gratuite : renvoyer le htmlContent directement
+      return {
+        ...baseFormat,
+        htmlContent: formation.htmlContent[lang] || formation.htmlContent.fr,
+        hasAccess: true,
+        isFree: true
+      };
+    }
+
+    // Formation payante : vérifier si l'utilisateur a accès
+    let userPackages = [];
+    if (user) {
+      const subscriptions = await subscriptionService.getActiveSubscriptions(user._id);
+      userPackages = subscriptions.map(sub => sub.package._id.toString());
+    }
+
+    const hasAccess = formation.requiredPackages.some(pkg => 
+      userPackages.includes(pkg._id.toString())
+    );
+
+    if (hasAccess) {
+      // Utilisateur a accès : renvoyer le htmlContent
+      return {
+        ...baseFormat,
+        htmlContent: formation.htmlContent[lang] || formation.htmlContent.fr,
+        hasAccess: true,
+        isFree: false
+      };
+    } else {
+      // Utilisateur n'a pas accès : renvoyer les packages requis (sans htmlContent)
+      return {
+        ...baseFormat,
+        hasAccess: false,
+        isFree: false,
+        requiredPackages: formation.requiredPackages.map(pkg => ({
+          _id: pkg._id,
+          name: pkg.name[lang] || pkg.name.fr,
+          description: pkg.description ? (pkg.description[lang] || pkg.description.fr) : null,
+          pricing: Object.fromEntries(pkg.pricing),
+          duration: pkg.duration,
+          badge: pkg.badge ? (pkg.badge[lang] || pkg.badge.fr) : null,
+          economy: pkg.economy ? Object.fromEntries(pkg.economy) : null
+        }))
+      };
+    }
+  }
+
+  /**
    * Formater une formation selon l'accès de l'utilisateur
    */
   formatFormationWithAccess(formation, userPackages = [], lang = 'fr') {
@@ -71,19 +145,22 @@ class UserFormationService {
       _id: formation._id,
       title: formation.title[lang] || formation.title.fr,
       description: formation.description[lang] || formation.description.fr,
-      imageUrl: formation.imageUrl || null, // ✅ AJOUTÉ - retourné dans tous les cas
-      readingTime: formation.readingTime || null, // ✅ AJOUTÉ - retourné dans tous les cas
-      isAccessible: formation.isAccessible,
+      imageUrl: formation.imageUrl || null,
+      readingTime: formation.readingTime || null,
       createdAt: formation.createdAt,
       updatedAt: formation.updatedAt
     };
 
-    // Formation gratuite : renvoyer le htmlContent directement
-    if (formation.isAccessible) {
+    // ✅ LOGIQUE CORRIGÉE : Formation gratuite si requiredPackages est vide
+    const isFree = !formation.requiredPackages || formation.requiredPackages.length === 0;
+
+    if (isFree) {
+      // Formation gratuite : renvoyer le htmlContent directement
       return {
         ...baseFormat,
         htmlContent: formation.htmlContent[lang] || formation.htmlContent.fr,
-        hasAccess: true
+        hasAccess: true,
+        isFree: true
       };
     }
 
@@ -97,13 +174,15 @@ class UserFormationService {
       return {
         ...baseFormat,
         htmlContent: formation.htmlContent[lang] || formation.htmlContent.fr,
-        hasAccess: true
+        hasAccess: true,
+        isFree: false
       };
     } else {
       // Utilisateur n'a pas accès : renvoyer les packages requis
       return {
         ...baseFormat,
         hasAccess: false,
+        isFree: false,
         requiredPackages: formation.requiredPackages.map(pkg => ({
           _id: pkg._id,
           name: pkg.name[lang] || pkg.name.fr,

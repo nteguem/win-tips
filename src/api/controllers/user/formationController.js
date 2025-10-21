@@ -50,6 +50,45 @@ class UserFormationController {
       formatError(res, error.message, 500);
     }
   }
+
+  // ✅ GET /formations/:id/content - Récupérer le contenu d'une formation avec vérification d'accès
+  async getFormationContent(req, res) {
+    try {
+      const { id } = req.params;
+      const { lang = 'fr' } = req.query;
+      
+      // req.user peut être undefined si l'utilisateur n'est pas connecté
+      const user = req.user || null;
+      
+      const formation = await userFormationService.getFormationContentWithAccess(id, user, lang);
+
+      if (!formation) {
+        return formatError(res, 'Formation not found', 404);
+      }
+
+      // Si l'utilisateur n'a pas accès (hasAccess = false), renvoyer une erreur 403
+      if (!formation.hasAccess) {
+        return res.status(403).json({
+          success: false,
+          error: {
+            code: 'SUBSCRIPTION_REQUIRED',
+            message: 'Abonnement VIP requis pour accéder à ce contenu',
+            details: {
+              requiredPackages: formation.requiredPackages
+            }
+          }
+        });
+      }
+
+      // L'utilisateur a accès : renvoyer le contenu avec htmlContent
+      formatSuccess(res, {
+        data: formation,
+        message: 'Formation content retrieved successfully'
+      });
+    } catch (error) {
+      formatError(res, error.message, 500);
+    }
+  }
 }
 
 module.exports = new UserFormationController();

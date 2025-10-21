@@ -1,4 +1,5 @@
 const Category = require('../../models/common/Category');
+const Formation = require('../../models/common/Formation');
 const subscriptionService = require('../../services/user/subscriptionService');
 const { AppError, ErrorCodes } = require('../../../utils/AppError');
 const catchAsync = require('../../../utils/catchAsync');
@@ -86,7 +87,7 @@ exports.checkTicketAccess = catchAsync(async (req, res, next) => {
 });
 
 /**
- * NOUVEAU : Middleware pour vérifier l'accès VIP pour les coupons
+ * Middleware pour vérifier l'accès VIP pour les coupons
  * Adapté pour le paramètre isVip=true dans la query
  */
 exports.checkCouponsVipAccess = catchAsync(async (req, res, next) => {
@@ -110,6 +111,38 @@ exports.checkCouponsVipAccess = catchAsync(async (req, res, next) => {
   }
 
   // L'utilisateur a accès aux coupons VIP
+  next();
+});
+
+/**
+ * ✅ NOUVEAU : Middleware pour vérifier l'accès VIP pour les formations
+ * Vérifie si la formation nécessite un package VIP (requiredPackages non vide)
+ */
+exports.checkFormationsVipAccess = catchAsync(async (req, res, next) => {
+  const { id } = req.params;
+  
+  // Récupérer la formation pour vérifier si elle est VIP ou FREE
+  const formation = await Formation.findOne({ _id: id, isActive: true });
+  
+  if (!formation) {
+    return next(new AppError('Formation non trouvée', 404, ErrorCodes.NOT_FOUND));
+  }
+  
+  // Si la formation est FREE (requiredPackages vide ou n'existe pas), pas de vérification
+  const isFree = !formation.requiredPackages || formation.requiredPackages.length === 0;
+  
+  if (isFree) {
+    // Formation gratuite : accès public
+    return next();
+  }
+  
+  // Pour les formations VIP, l'utilisateur doit être authentifié
+  if (!req.user) {
+    return next(new AppError('Authentification requise pour accéder à ce contenu VIP', 401, ErrorCodes.AUTH_TOKEN_MISSING));
+  }
+  
+  // Le controller vérifiera si l'utilisateur a les packages spécifiques requis
+  // On laisse passer ici car la vérification détaillée se fait dans le service
   next();
 });
 
@@ -147,7 +180,7 @@ exports.checkVipAccessOptional = catchAsync(async (req, res, next) => {
 });
 
 /**
- * NOUVEAU : Middleware pour empêcher les doubles souscriptions
+ * Middleware pour empêcher les doubles souscriptions
  * À utiliser avant de créer une nouvelle souscription (Mobile Money ou Google Play)
  */
 exports.checkNoActiveSubscription = catchAsync(async (req, res, next) => {
