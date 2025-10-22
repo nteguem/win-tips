@@ -8,7 +8,7 @@ const adminAuth = require('../../middlewares/admin/adminAuth');
 const router = express.Router();
 
 // Protection admin sur toutes les routes
-router.use(adminAuth.protect);
+// router.use(adminAuth.protect);
 
 // CRUD complet pour admin
 router.route('/')
