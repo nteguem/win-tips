@@ -131,20 +131,6 @@ exports.webhook = catchAsync(async (req, res, next) => {
       return next(new AppError('Transaction non trouvée', 404, ErrorCodes.NOT_FOUND));
     }
 
-    // Vérifier HMAC avec le bon SECRET_KEY selon la devise de la transaction
-    // if (receivedToken) {
-    //   const isValidToken = cinetpayService.verifyHmacToken(
-    //     receivedToken, 
-    //     req.body, 
-    //     transaction.currency // Passez la devise de la transaction
-    //   );
-    //   if (!isValidToken) {
-    //     console.warn(`CinetPay - Invalid HMAC token for ${transaction.currency} transaction ${transactionId}`);
-    //   } else {
-    //     console.log(`CinetPay - Valid HMAC token for ${transaction.currency} transaction ${transactionId}`);
-    //   }
-    // }
-
     // Mettre à jour la transaction avec les données webhook
     transaction.cpmTransDate = req.body.cpm_trans_date;
     transaction.cpmErrorMessage = cpm_error_message;
@@ -205,8 +191,9 @@ exports.paymentSuccess = catchAsync(async (req, res, next) => {
       <h1 class="error">Erreur</h1>
       <p>Paramètres de transaction manquants.</p>
       <p>Veuillez réessayer ou contacter le support.</p>
+      ${getReturnButton()}
     `;
-    return res.status(400).send(getHtmlTemplate('CinetPay - Erreur', errorContent, false));
+    return res.status(400).send(getHtmlTemplate('CinetPay - Erreur', errorContent));
   }
 
   let transactionStatus;
@@ -224,7 +211,6 @@ exports.paymentSuccess = catchAsync(async (req, res, next) => {
 
   // Générer le contenu HTML selon le statut
   let content;
-  let shouldAutoClose = false;
 
   if (errorOccurred) {
     content = `
@@ -233,8 +219,8 @@ exports.paymentSuccess = catchAsync(async (req, res, next) => {
       <p>Nous vérifions le statut de votre paiement...</p>
       <p>Vous recevrez une notification dès que le traitement sera terminé.</p>
       <div class="transaction-id">${transaction_id}</div>
+      ${getReturnButton()}
     `;
-    shouldAutoClose = true;
   } else if (transactionStatus.status === 'ACCEPTED') {
     content = `
       <div class="icon">🎉</div>
@@ -251,8 +237,8 @@ exports.paymentSuccess = catchAsync(async (req, res, next) => {
       
       <p>✅ Notification de confirmation envoyée</p>
       <p>✅ Accès premium maintenant actif</p>
+      ${getReturnButton()}
     `;
-    shouldAutoClose = true;
   } else if (transactionStatus.status === 'REFUSED' || transactionStatus.status === 'CANCELED') {
     let failureReason = 'Paiement refusé';
     if (transactionStatus.errorCode === '600') {
@@ -268,8 +254,8 @@ exports.paymentSuccess = catchAsync(async (req, res, next) => {
       <p><strong>${failureReason}</strong></p>
       <div class="transaction-id">${transaction_id}</div>
       <p>Veuillez réessayer ou contacter le support.</p>
+      ${getReturnButton()}
     `;
-    shouldAutoClose = true;
   } else if (transactionStatus.status === 'WAITING_FOR_CUSTOMER') {
     content = `
       <div class="icon">📱</div>
@@ -284,8 +270,8 @@ exports.paymentSuccess = catchAsync(async (req, res, next) => {
       </div>
       
       <p>Vous recevrez une notification de confirmation.</p>
+      ${getReturnButton('Revenir plus tard')}
     `;
-    shouldAutoClose = false;
   } else {
     content = `
       <div class="icon">⏳</div>
@@ -294,14 +280,39 @@ exports.paymentSuccess = catchAsync(async (req, res, next) => {
       <p>Votre paiement est en cours de traitement.</p>
       <div class="transaction-id">${transaction_id}</div>
       <p>Veuillez patienter quelques instants.</p>
+      ${getReturnButton()}
     `;
-    shouldAutoClose = true;
   }
 
-  return res.send(getHtmlTemplate(`CinetPay - ${transactionStatus?.status || 'Statut'}`, content, shouldAutoClose));
+  return res.send(getHtmlTemplate(`CinetPay - ${transactionStatus?.status || 'Statut'}`, content));
 });
 
-// ✅ FONCTION CSS (inchangée)
+// ✅ NOUVELLE FONCTION : Bouton de retour
+const getReturnButton = (buttonText = 'Retourner à l\'application') => `
+  <button onclick="window.history.back();" style="
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    padding: 14px 24px;
+    border-radius: 10px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    margin-top: 24px;
+    cursor: pointer;
+    width: 100%;
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  " onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 16px rgba(102, 126, 234, 0.5)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(102, 126, 234, 0.4)';">
+    <span style="font-size: 1.2rem;">←</span>
+    <span>${buttonText}</span>
+  </button>
+`;
+
+// CSS (inchangé)
 const getMobileOptimizedCSS = () => `
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -378,12 +389,6 @@ const getMobileOptimizedCSS = () => `
     .status-error { background: #fee2e2; color: #991b1b; }
     .status-warning { background: #fef3c7; color: #92400e; }
     .status-pending { background: #e0e7ff; color: #3730a3; }
-    #countdown {
-      margin-top: 20px;
-      font-weight: 600;
-      color: #6366f1;
-      font-size: 0.9rem;
-    }
     @media (max-width: 480px) {
       .container { padding: 20px; margin: 12px; border-radius: 12px; }
       h1 { font-size: 1.3rem; }
@@ -393,47 +398,7 @@ const getMobileOptimizedCSS = () => `
   </style>
 `;
 
-// ✅ NOUVELLE FONCTION : Script de fermeture automatique
-const getAutoCloseScript = () => `
-  <script>
-    // Délai avant fermeture automatique (3 secondes)
-    let countdown = 3;
-    
-    // Créer l'élément de compte à rebours
-    const countdownElement = document.createElement('p');
-    countdownElement.id = 'countdown';
-    countdownElement.textContent = 'Fermeture automatique dans ' + countdown + 's...';
-    document.querySelector('.container').appendChild(countdownElement);
-    
-    // Démarrer le compte à rebours
-    const interval = setInterval(() => {
-      countdown--;
-      if (countdown > 0) {
-        countdownElement.textContent = 'Fermeture automatique dans ' + countdown + 's...';
-      } else {
-        clearInterval(interval);
-        countdownElement.textContent = 'Fermeture...';
-        
-        // Tenter de fermer la WebView après un court délai
-        setTimeout(() => {
-          // Méthode 1 : Message pour Flutter WebView (cinetpay package)
-          if (window.flutter_inappwebview) {
-            window.flutter_inappwebview.callHandler('CLOSE_WEBVIEW');
-          }
-          
-          // Méthode 2 : Redirection vers about:blank (force la fermeture)
-          window.location.href = 'about:blank';
-          
-          // Méthode 3 : window.close() (peut fonctionner dans certains contextes)
-          window.close();
-        }, 500);
-      }
-    }, 1000);
-  </script>
-`;
-
-// ✅ FONCTION HTML TEMPLATE MODIFIÉE (avec shouldAutoClose)
-const getHtmlTemplate = (title, content, shouldAutoClose = false) => `
+const getHtmlTemplate = (title, content) => `
   <!DOCTYPE html>
   <html lang="fr">
   <head>
@@ -442,7 +407,6 @@ const getHtmlTemplate = (title, content, shouldAutoClose = false) => `
     <meta name="theme-color" content="#667eea">
     <title>${title}</title>
     ${getMobileOptimizedCSS()}
-    ${shouldAutoClose ? getAutoCloseScript() : ''}
   </head>
   <body>
     <div class="container">
