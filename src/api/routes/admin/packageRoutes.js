@@ -3,8 +3,7 @@ const packageController = require('../../controllers/admin/packageController');
 const adminAuth = require('../../middlewares/admin/adminAuth');
 
 const router = express.Router();
-router.route('/')
-  .get(packageController.getAllPackages) 
+
 /**
  * Toutes les routes nécessitent une authentification admin
  */
@@ -13,6 +12,9 @@ router.use(adminAuth.protect);
 /**
  * Routes principales
  */
+
+router.route('/')
+  .get(packageController.getAllPackages) 
 router.route('/')
   .post(packageController.createPackage);     // POST /api/admin/packages
 
