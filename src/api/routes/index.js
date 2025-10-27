@@ -54,7 +54,7 @@ const googlePlayRoutes = require('./user/googlePlayRoutes');
 const googlePlayWebhook = require('./user/googlePlayWebhook');
 const packageRoutes = require('./user/packageRoutes');
 router.use('/user/coupons', couponRoutes);
-route.use('/user/packages', packageRoutes);
+router.use('/user/packages', packageRoutes);
 router.use('/user/formations', userFormationRoutes); 
 router.use('/user', userSubscriptionRoutes);
 router.use('/user/google-play', googlePlayRoutes);
