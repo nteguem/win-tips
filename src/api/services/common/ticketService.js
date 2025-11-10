@@ -65,6 +65,67 @@ async getTickets({ offset = 0, limit = 10, category = null, date = null, isVisib
   };
 }
 
+  /**
+   * NOUVELLE MÉTHODE OPTIMISÉE POUR L'HISTORIQUE
+   * Récupère tous les tickets d'une plage de dates avec leurs prédictions en 2 requêtes
+   * @param {Object} params - Paramètres de recherche
+   * @param {Date} params.startDate - Date de début (incluse)
+   * @param {Date} params.endDate - Date de fin (incluse)
+   * @param {String} params.category - ID de catégorie (optionnel)
+   * @param {Boolean} params.isVisible - Filtre de visibilité (défaut: true)
+   * @returns {Array} Tickets avec leurs prédictions
+   */
+  async getTicketsByDateRange({ startDate, endDate, category = null, isVisible = true }) {
+    const filter = {
+      isVisible,
+      date: {
+        $gte: startDate,
+        $lte: endDate
+      }
+    };
+
+    if (category) {
+      filter.category = category;
+    }
+
+    // 1ère requête : Récupérer tous les tickets de la plage de dates
+    const tickets = await Ticket.find(filter)
+      .populate('category')
+      .sort({ date: -1 })
+      .lean(); // Pour meilleures performances
+
+    if (tickets.length === 0) {
+      return [];
+    }
+
+    // 2ème requête : Récupérer TOUTES les prédictions pour ces tickets en 1 fois
+    const ticketIds = tickets.map(ticket => ticket._id);
+    const allPredictions = await Prediction.find({
+      ticket: { $in: ticketIds }
+    })
+    .populate('event')
+    .populate('matchData')
+    .lean();
+
+    // Grouper les prédictions par ticket
+    const predictionsByTicket = new Map();
+    allPredictions.forEach(pred => {
+      const ticketId = pred.ticket.toString();
+      if (!predictionsByTicket.has(ticketId)) {
+        predictionsByTicket.set(ticketId, []);
+      }
+      predictionsByTicket.get(ticketId).push(pred);
+    });
+
+    // Attacher les prédictions aux tickets
+    const ticketsWithPredictions = tickets.map(ticket => ({
+      ...ticket,
+      predictions: predictionsByTicket.get(ticket._id.toString()) || []
+    }));
+
+    return ticketsWithPredictions;
+  }
+
   // Récupérer un ticket par ID avec ses prédictions
   async getTicketById(id) {
     const ticket = await Ticket.findById(id).populate('category');
@@ -146,7 +207,7 @@ async getTickets({ offset = 0, limit = 10, category = null, date = null, isVisib
 
   
   /**
-   * NOUVELLE MÉTHODE OPTIMISÉE
+   * MÉTHODE EXISTANTE (conservée pour compatibilité)
    * Récupère toutes les prédictions pour plusieurs tickets en une seule requête
    * @param {Array} ticketIds - Array d'IDs de tickets
    * @returns {Array} Toutes les prédictions pour ces tickets
