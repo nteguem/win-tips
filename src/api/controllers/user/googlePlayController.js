@@ -3,7 +3,7 @@ const AppError = require('../../../utils/AppError');
 const googlePlayService = require('../../services/user/GooglePlayService');
 const Package = require('../../models/common/Package');
 
-// Valider un achat depuis Flutter
+// ===== EXISTANT : Valider un ABONNEMENT depuis Flutter =====
 exports.validatePurchase = catchAsync(async (req, res, next) => {
   const { purchaseToken, productId, packageId } = req.body;
   const userId = req.user._id;
@@ -39,13 +39,55 @@ exports.validatePurchase = catchAsync(async (req, res, next) => {
   res.status(200).json({
     status: 'success',
     data: {
-      subscription: result.subscription,
-      message: result.message
+      subscription: result.data.subscription,
+      message: result.data.message
     }
   });
 });
 
-// Vérifier le statut de l'abonnement
+// ===== NOUVEAU : Valider un PRODUIT PONCTUEL depuis Flutter =====
+exports.validateOneTimePurchase = catchAsync(async (req, res, next) => {
+  const { purchaseToken, productId, packageId } = req.body;
+  const userId = req.user._id;
+
+  // Validation des données
+  if (!purchaseToken || !productId || !packageId) {
+    return next(new AppError('Données de validation manquantes', 400));
+  }
+
+  // Vérifier que le package existe
+  const packageItem = await Package.findById(packageId);
+  if (!packageItem) {
+    return next(new AppError('Package introuvable', 404));
+  }
+
+  // Vérifier que c'est bien un produit ponctuel Google
+  if (!packageItem.isGooglePlayOneTimeProduct()) {
+    return next(new AppError('Ce package n\'est pas un produit ponctuel Google Play', 400));
+  }
+
+  // Valider l'achat
+  const result = await googlePlayService.validateOneTimePurchase(
+    purchaseToken,
+    productId,
+    userId,
+    packageId
+  );
+
+  if (!result.success) {
+    return next(new AppError('Validation du produit échouée', 400));
+  }
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      subscription: result.data.subscription,
+      message: result.data.message
+    }
+  });
+});
+
+// ===== EXISTANT : Vérifier le statut de l'abonnement =====
 exports.getSubscriptionStatus = catchAsync(async (req, res, next) => {
   const userId = req.user._id;
 
@@ -57,7 +99,7 @@ exports.getSubscriptionStatus = catchAsync(async (req, res, next) => {
   });
 });
 
-// Webhook RTDN - Recevoir les notifications de Google
+// ===== MODIFIÉ : Webhook RTDN - Recevoir les notifications de Google =====
 exports.handleRTDN = catchAsync(async (req, res, next) => {
   console.log('=== WEBHOOK REÇU ===');
   console.log('Headers:', JSON.stringify(req.headers, null, 2));
@@ -104,9 +146,15 @@ exports.handleRTDN = catchAsync(async (req, res, next) => {
       return res.status(200).send();
     }
 
-    // Traiter la notification d'abonnement
+    // ===== EXISTANT : Traiter la notification d'abonnement =====
     if (notification.subscriptionNotification) {
       console.log('📱 Notification d\'abonnement reçue');
+      await googlePlayService.processNotification(notification);
+    }
+
+    // ===== NOUVEAU : Traiter la notification de produit ponctuel =====
+    if (notification.oneTimeProductNotification) {
+      console.log('🛒 Notification de produit ponctuel reçue');
       await googlePlayService.processNotification(notification);
     }
 
@@ -122,7 +170,7 @@ exports.handleRTDN = catchAsync(async (req, res, next) => {
   }
 });
 
-// Acknowledge manuel d'un achat
+// ===== EXISTANT : Acknowledge manuel d'un achat =====
 exports.acknowledgePurchase = catchAsync(async (req, res, next) => {
   const { purchaseToken } = req.params;
   const userId = req.user._id;
@@ -157,7 +205,7 @@ exports.acknowledgePurchase = catchAsync(async (req, res, next) => {
   });
 });
 
-// Récupérer l'info du produit Google Play pour un package
+// ===== EXISTANT : Récupérer l'info du produit Google Play pour un package =====
 exports.getGoogleProductInfo = catchAsync(async (req, res, next) => {
   const { packageId } = req.params;
 
@@ -177,12 +225,13 @@ exports.getGoogleProductInfo = catchAsync(async (req, res, next) => {
       packageId: packageItem._id,
       packageName: packageItem.name,
       googleProductId: packageItem.googleProductId,
+      googleProductType: packageItem.googleProductType || 'SUBSCRIPTION',
       pricing: packageItem.pricing
     }
   });
 });
 
-// Synchroniser manuellement un abonnement
+// ===== EXISTANT : Synchroniser manuellement un abonnement =====
 exports.syncSubscription = catchAsync(async (req, res, next) => {
   const userId = req.user._id;
 

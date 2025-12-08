@@ -6,19 +6,22 @@ const userAuth = require('../../middlewares/user/userAuth');
 // Routes protégées (utilisateur connecté)
 router.use(userAuth.protect);
 
-// Valider un achat
+// ===== EXISTANT : Valider un abonnement =====
 router.post('/validate-purchase', googlePlayController.validatePurchase);
 
-// Vérifier le statut de l'abonnement
+// ===== NOUVEAU : Valider un produit ponctuel =====
+router.post('/validate-one-time-purchase', googlePlayController.validateOneTimePurchase);
+
+// ===== EXISTANT : Vérifier le statut de l'abonnement =====
 router.get('/subscription-status', googlePlayController.getSubscriptionStatus);
 
-// Acknowledge un achat
+// ===== EXISTANT : Acknowledge un achat =====
 router.post('/acknowledge/:purchaseToken', googlePlayController.acknowledgePurchase);
 
-// Obtenir les infos Google Play d'un package
+// ===== EXISTANT : Obtenir les infos Google Play d'un package =====
 router.get('/products/:packageId', googlePlayController.getGoogleProductInfo);
 
-// Synchroniser manuellement l'abonnement
+// ===== EXISTANT : Synchroniser manuellement l'abonnement =====
 router.post('/sync', googlePlayController.syncSubscription);
 
 module.exports = router;

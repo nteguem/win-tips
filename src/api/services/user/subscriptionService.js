@@ -131,28 +131,30 @@ class SubscriptionService {
   /**
    * MODIFIÉE : Obtenir les abonnements actifs d'un utilisateur (Mobile Money + Google Play)
    */
-async getActiveSubscriptions(userId) {
-  return await Subscription.find({
-    user: userId,
-    status: 'active',
-    $or: [
-      // Tous les abonnements qui ne sont PAS Google Play (inclut ceux sans paymentProvider)
-      {
-        $or: [
-          { paymentProvider: { $exists: false } },
-          { paymentProvider: { $ne: 'GOOGLE_PLAY' } }
-        ],
-        endDate: { $gt: new Date() }
-      },
-      // Google Play
-      {
-        paymentProvider: 'GOOGLE_PLAY'
-      }
-    ]
-  }).populate('package');
-}
+  async getActiveSubscriptions(userId) {
+    return await Subscription.find({
+      user: userId,
+      status: 'active',
+      $or: [
+        // Tous les abonnements qui ne sont PAS Google Play (inclut ceux sans paymentProvider)
+        {
+          $or: [
+            { paymentProvider: { $exists: false } },
+            { paymentProvider: { $ne: 'GOOGLE_PLAY' } }
+          ],
+          endDate: { $gt: new Date() }
+        },
+        // Google Play
+        {
+          paymentProvider: 'GOOGLE_PLAY'
+        }
+      ]
+    }).populate('package');
+  }
+
   /**
    * Vérifier si un utilisateur a accès à une catégorie
+   * Note: Ne vérifie PLUS isActive - les utilisateurs gardent l'accès même si le package n'est plus achetable
    */
   async hasAccessToCategory(userId, categoryId) {
     const activeSubscriptions = await this.getActiveSubscriptions(userId);
@@ -161,7 +163,9 @@ async getActiveSubscriptions(userId) {
       // Récupérer le package ACTUEL avec ses catégories ACTUELLES
       const currentPackage = await Package.findById(subscription.package._id);
       
-      if (currentPackage && currentPackage.isActive && currentPackage.categories.includes(categoryId)) {
+      // Vérifie uniquement que le package existe et contient la catégorie
+      // Plus de vérification isActive - l'utilisateur garde l'accès qu'il a payé
+      if (currentPackage && currentPackage.categories.includes(categoryId)) {
         return true;
       }
     }
@@ -171,6 +175,7 @@ async getActiveSubscriptions(userId) {
 
   /**
    * Vérifier si un utilisateur a accès à au moins une catégorie VIP
+   * Note: Ne vérifie PLUS isActive - les utilisateurs gardent l'accès même si le package n'est plus achetable
    */
   async hasAnyVipAccess(userId) {
     // Récupérer les abonnements actifs de l'utilisateur
@@ -186,7 +191,8 @@ async getActiveSubscriptions(userId) {
       // Récupérer le package ACTUEL (pas celui stocké dans l'abonnement)
       const currentPackage = await Package.findById(subscription.package._id);
       
-      if (currentPackage && currentPackage.isActive) {
+      // Plus de vérification isActive - l'utilisateur garde l'accès qu'il a payé
+      if (currentPackage) {
         categoryIds.push(...currentPackage.categories);
       }
     }
@@ -210,6 +216,7 @@ async getActiveSubscriptions(userId) {
 
   /**
    * Obtenir toutes les catégories VIP auxquelles l'utilisateur a accès
+   * Note: Ne vérifie PLUS isActive - les utilisateurs gardent l'accès même si le package n'est plus achetable
    */
   async getUserVipCategories(userId) {
     const activeSubscriptions = await this.getActiveSubscriptions(userId);
@@ -224,7 +231,8 @@ async getActiveSubscriptions(userId) {
       // Récupérer le package ACTUEL (pas celui stocké dans l'abonnement)
       const currentPackage = await Package.findById(subscription.package._id);
       
-      if (currentPackage && currentPackage.isActive) {
+      // Plus de vérification isActive - l'utilisateur garde l'accès qu'il a payé
+      if (currentPackage) {
         categoryIds.push(...currentPackage.categories);
       }
     }
