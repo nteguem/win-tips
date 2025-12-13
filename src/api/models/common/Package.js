@@ -76,27 +76,43 @@ const packageSchema = new mongoose.Schema({
     }
   },
 
-googleProductId: {
-  type: String,
-  trim: true,
-  sparse: true  // Permet d'avoir plusieurs null mais empêche les doublons si valeur
-},
-
-googlePlanId: {
-  monthly: {
+  googleProductId: {
     type: String,
-    trim: true
+    trim: true,
+    sparse: true  // Permet d'avoir plusieurs null mais empêche les doublons si valeur
   },
-  quarterly: {
-    type: String,
-    trim: true
-  }
-},
 
-availableOnGooglePlay: {
-  type: Boolean,
-  default: false
-},
+  googlePlanId: {
+    monthly: {
+      type: String,
+      trim: true
+    },
+    quarterly: {
+      type: String,
+      trim: true
+    }
+  },
+
+  availableOnGooglePlay: {
+    type: Boolean,
+    default: false
+  },
+
+  // ===== NOUVEAU CHAMP POUR DIFFÉRENCIER SUBSCRIPTIONS VS PRODUITS PONCTUELS =====
+  googleProductType: {
+    type: String,
+    enum: ['SUBSCRIPTION', 'ONE_TIME_PRODUCT'],
+    default: function() {
+      // Si availableOnGooglePlay = true et googleProductId existe
+      // On considère que c'est une SUBSCRIPTION (pour garder l'existant)
+      if (this.availableOnGooglePlay && this.googleProductId) {
+        return 'SUBSCRIPTION';
+      }
+      return null;
+    }
+  },
+  // =============================================================================
+
   formationId: {
     type: mongoose.Schema.ObjectId,
     ref: 'Formation'
@@ -116,11 +132,20 @@ packageSchema.index({ isActive: 1 });
 packageSchema.index({ pricing: 1 });
 packageSchema.index({ formationId: 1 });
 
+// ===== NOUVELLES MÉTHODES HELPERS =====
+// Vérifier si c'est un produit ponctuel Google
+packageSchema.methods.isGooglePlayOneTimeProduct = function() {
+  return this.availableOnGooglePlay && this.googleProductType === 'ONE_TIME_PRODUCT';
+};
 
-// Ajouter cet index après les autres index:
-packageSchema.index({ googleProductId: 1 });
+// Vérifier si c'est un abonnement Google (avec rétrocompatibilité)
+packageSchema.methods.isGooglePlaySubscription = function() {
+  return this.availableOnGooglePlay && 
+    (this.googleProductType === 'SUBSCRIPTION' || !this.googleProductType);
+};
+// =====================================
 
-// Ajouter cette méthode après les autres méthodes:
+// Méthode existante
 packageSchema.methods.getGooglePlayInfo = function() {
   if (!this.availableOnGooglePlay) {
     return null;
@@ -129,7 +154,8 @@ packageSchema.methods.getGooglePlayInfo = function() {
   return {
     productId: this.googleProductId,
     plans: this.googlePlanId,
-    available: true
+    available: true,
+    productType: this.googleProductType || 'SUBSCRIPTION' // Rétrocompatibilité
   };
 };
 
@@ -192,13 +218,7 @@ packageSchema.methods.formatForLanguage = function(lang = 'fr') {
     formation: formation,
     formationId: typeof packageObj.formationId === 'object' ? packageObj.formationId._id : packageObj.formationId,
     isActive: packageObj.isActive,
-    createdAt: packageObj.createdAt,
-    
-    // ✅ AJOUTER CES LIGNES (COPIER-COLLER)
-    availableOnGooglePlay: packageObj.availableOnGooglePlay || false,
-    googleProductId: packageObj.googleProductId || null,
-    googleProductType: packageObj.googleProductType || null,
-    googlePlanId: packageObj.googlePlanId || null
+    createdAt: packageObj.createdAt
   };
 };
 
