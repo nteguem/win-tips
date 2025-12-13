@@ -1,5 +1,5 @@
 const catchAsync = require('../../../utils/catchAsync');
-const AppError = require('../../../utils/AppError');
+const {AppError} = require('../../../utils/AppError');
 const googlePlayService = require('../../services/user/GooglePlayService');
 const Package = require('../../models/common/Package');
 
