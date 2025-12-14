@@ -218,7 +218,11 @@ packageSchema.methods.formatForLanguage = function(lang = 'fr') {
     formation: formation,
     formationId: typeof packageObj.formationId === 'object' ? packageObj.formationId._id : packageObj.formationId,
     isActive: packageObj.isActive,
-    createdAt: packageObj.createdAt
+    createdAt: packageObj.createdAt,
+    availableOnGooglePlay: packageObj.availableOnGooglePlay || false,
+    googleProductId: packageObj.googleProductId || null,
+    googleProductType: packageObj.googleProductType || null,
+    googlePlanId: packageObj.googlePlanId || null
   };
 };
 
