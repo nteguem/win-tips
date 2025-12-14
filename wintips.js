@@ -9,7 +9,7 @@ const { connectDB } = require('./config/database');
 // Chargement des variables d'environnement
 dotenv.config();
 
-const PORT = process.env.PORT || 4500;
+const PORT = process.env.PORT || 4501;
 
 /**
  * Démarre le serveur après initialisation

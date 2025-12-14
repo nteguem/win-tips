@@ -23,6 +23,56 @@ const packageSchema = new mongoose.Schema({
       trim: true
     }
   },
+  
+  // ===== NOUVEAU : PROMESSES DE COTES =====
+  oddsPromise: {
+    daily: {
+      min: {
+        type: Number,
+        min: 1.01,
+        default: null
+      },
+      max: {
+        type: Number,
+        min: 1.01,
+        default: null,
+        validate: {
+          validator: function(value) {
+            // Si max existe, il doit être >= min
+            if (value && this.oddsPromise?.daily?.min) {
+              return value >= this.oddsPromise.daily.min;
+            }
+            return true;
+          },
+          message: 'La cote max doit être supérieure ou égale à la cote min'
+        }
+      }
+    },
+    weekly: {
+      min: {
+        type: Number,
+        min: 1.01,
+        default: null
+      },
+      max: {
+        type: Number,
+        min: 1.01,
+        default: null,
+        validate: {
+          validator: function(value) {
+            // Si max existe, il doit être >= min
+            if (value && this.oddsPromise?.weekly?.min) {
+              return value >= this.oddsPromise.weekly.min;
+            }
+            return true;
+          },
+          message: 'La cote max hebdomadaire doit être supérieure ou égale à la cote min'
+        }
+      }
+    }
+  },
+  // =========================================
+  
   pricing: {
     type: Map,
     of: {
@@ -132,7 +182,35 @@ packageSchema.index({ isActive: 1 });
 packageSchema.index({ pricing: 1 });
 packageSchema.index({ formationId: 1 });
 
-// ===== NOUVELLES MÉTHODES HELPERS =====
+// ===== NOUVELLES MÉTHODES POUR LES PROMESSES DE COTES =====
+packageSchema.methods.hasDailyOddsPromise = function() {
+  return this.oddsPromise?.daily?.min && this.oddsPromise?.daily?.max;
+};
+
+packageSchema.methods.hasWeeklyOddsPromise = function() {
+  return this.oddsPromise?.weekly?.min && this.oddsPromise?.weekly?.max;
+};
+
+packageSchema.methods.getDailyOddsPromise = function() {
+  if (!this.hasDailyOddsPromise()) return null;
+  return {
+    min: this.oddsPromise.daily.min,
+    max: this.oddsPromise.daily.max,
+    formatted: `${this.oddsPromise.daily.min} - ${this.oddsPromise.daily.max}`
+  };
+};
+
+packageSchema.methods.getWeeklyOddsPromise = function() {
+  if (!this.hasWeeklyOddsPromise()) return null;
+  return {
+    min: this.oddsPromise.weekly.min,
+    max: this.oddsPromise.weekly.max,
+    formatted: `${this.oddsPromise.weekly.min} - ${this.oddsPromise.weekly.max}`
+  };
+};
+// ========================================================
+
+// ===== MÉTHODES EXISTANTES =====
 // Vérifier si c'est un produit ponctuel Google
 packageSchema.methods.isGooglePlayOneTimeProduct = function() {
   return this.availableOnGooglePlay && this.googleProductType === 'ONE_TIME_PRODUCT';
@@ -189,7 +267,7 @@ packageSchema.methods.getEconomy = function(currency) {
   return this.economy ? this.economy.get(currency.toUpperCase()) : undefined;
 };
 
-// Méthode pour formater selon la langue
+// Méthode pour formater selon la langue (MISE À JOUR)
 packageSchema.methods.formatForLanguage = function(lang = 'fr') {
   const packageObj = this.toObject();
   
@@ -215,6 +293,14 @@ packageSchema.methods.formatForLanguage = function(lang = 'fr') {
     categories: packageObj.categories,
     badge: packageObj.badge ? (packageObj.badge[lang] || packageObj.badge.fr) : null,
     economy: packageObj.economy instanceof Map ? Object.fromEntries(packageObj.economy) : packageObj.economy,
+    
+    // ===== AJOUT DES PROMESSES DE COTES =====
+    oddsPromise: {
+      daily: packageObj.oddsPromise?.daily || null,
+      weekly: packageObj.oddsPromise?.weekly || null
+    },
+    // ========================================
+    
     formation: formation,
     formationId: typeof packageObj.formationId === 'object' ? packageObj.formationId._id : packageObj.formationId,
     isActive: packageObj.isActive,
