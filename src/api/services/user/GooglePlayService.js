@@ -179,29 +179,39 @@ class GooglePlayService {
 
       console.log('[GooglePlay ONE-TIME] Subscription créée:', subscription._id);
 
-      // 10. Mettre à jour la transaction avec l'ID de subscription
-      googleTx.subscription = subscription._id;
-      await googleTx.save();
+// 10. Mettre à jour la transaction avec l'ID de subscription
+googleTx.subscription = subscription._id;
+await googleTx.save();
 
-      // 11. ✅ CRITIQUE : Acknowledge ET Consume le produit (permet rachats multiples)
-      if (data.acknowledgementState !== 1) {
-        await this.acknowledgeAndConsumeOneTimePurchase(purchaseToken, productId);
-      } else {
-        // Si déjà acknowledged, juste consumer
-        await this.consumeOneTimePurchase(purchaseToken, productId);
-      }
+console.log('[GooglePlay ONE-TIME] Transaction liée à subscription:', subscription._id);
 
-      // 12. Retourner le résultat avec populate
-      const populatedSubscription = await Subscription.findById(subscription._id)
-        .populate('package');
+// 11. ✅ CRITIQUE : Acknowledge ET Consume le produit AVANT de retourner
+try {
+  if (data.acknowledgementState !== 1) {
+    // Pas encore acknowledged → acknowledge + consume
+    console.log('[GooglePlay ONE-TIME] Produit non acknowledged, appel acknowledge + consume...');
+    await this.acknowledgeAndConsumeOneTimePurchase(purchaseToken, productId);
+  } else {
+    // Déjà acknowledged → juste consume
+    console.log('[GooglePlay ONE-TIME] Produit déjà acknowledged, appel consume uniquement...');
+    await this.consumeOneTimePurchase(purchaseToken, productId);
+  }
+} catch (consumeError) {
+  // Log l'erreur mais ne bloque pas le retour (transaction déjà créée)
+  console.error('[GooglePlay ONE-TIME] ⚠️ Erreur consume (non bloquant):', consumeError);
+}
 
-      return {
-        success: true,
-        data: {
-          subscription: populatedSubscription,
-          message: 'Produit activé avec succès'
-        }
-      };
+// 12. Retourner le résultat avec populate
+const populatedSubscription = await Subscription.findById(subscription._id)
+  .populate('package');
+
+return {
+  success: true,
+  data: {
+    subscription: populatedSubscription,
+    message: 'Produit activé avec succès'
+  }
+};
 
     } catch (error) {
       console.error('[GooglePlay ONE-TIME] Erreur validation complète:', error);
