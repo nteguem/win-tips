@@ -157,6 +157,7 @@ exports.login = catchAsync(async (req, res, next) => {
 exports.googleAuth = catchAsync(async (req, res, next) => {
   const { idToken, affiliateCode, city, countryCode, deviceId } = req.body;
   console.log("req.body",req.body)
+  console.log("req.body",countryCode)
   // Validation
   if (!idToken) {
     return next(new AppError('Token Google requis', 400, ErrorCodes.VALIDATION_ERROR));
