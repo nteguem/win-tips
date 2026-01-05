@@ -38,7 +38,7 @@ const conditionalFormationMiddleware = (req, res, next) => {
     }
     
     // Vérifier l'accès VIP pour les formations
-    checkSubscription.checkFormationsVipAccess(req, res, next);
+    checkSubscription.checkVipAccess(req, res, next);
   });
 };
 
