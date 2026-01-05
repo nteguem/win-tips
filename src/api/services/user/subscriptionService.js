@@ -354,6 +354,42 @@ class SubscriptionService {
 
     return subscription ? subscription.paymentProvider : null;
   }
+
+  /**
+   * ✅ NOUVELLE : Vérifier si l'utilisateur a accès à une formation
+   * @param {string} userId - ID de l'utilisateur
+   * @param {Array} requiredPackages - Liste des IDs de packages requis pour la formation
+   * @returns {boolean} - True si l'utilisateur a accès, false sinon
+   */
+  async hasAccessToFormation(userId, requiredPackages) {
+    // Si pas de packages requis ou tableau vide, la formation est gratuite
+    if (!requiredPackages || requiredPackages.length === 0) {
+      return true;
+    }
+
+    // Récupérer les abonnements actifs de l'utilisateur
+    const activeSubscriptions = await this.getActiveSubscriptions(userId);
+
+    if (activeSubscriptions.length === 0) {
+      return false;
+    }
+
+    // Vérifier si l'utilisateur a au moins un abonnement actif
+    // correspondant à un des packages requis
+    for (const subscription of activeSubscriptions) {
+      // Convertir les IDs en string pour la comparaison
+      const subscriptionPackageId = subscription.package._id.toString();
+      const hasRequiredPackage = requiredPackages.some(
+        packageId => packageId.toString() === subscriptionPackageId
+      );
+
+      if (hasRequiredPackage) {
+        return true;
+      }
+    }
+
+    return false;
+  }
 }
 
 module.exports = new SubscriptionService();

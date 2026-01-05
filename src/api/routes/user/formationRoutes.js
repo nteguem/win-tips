@@ -24,7 +24,6 @@ const optionalAuth = (req, res, next) => {
 
 /**
  * ✅ Middleware conditionnel pour l'accès au contenu d'une formation
- * Similaire au middleware des coupons : simple et efficace
  * - Si formation FREE (requiredPackages vide) : accès public
  * - Si formation VIP (requiredPackages non vide) : authentification + vérification
  */
@@ -32,13 +31,12 @@ const conditionalFormationMiddleware = (req, res, next) => {
   // Appliquer l'authentification d'abord
   userAuth.protect(req, res, (authErr) => {
     if (authErr) {
-      // Si erreur d'auth, vérifier si la formation est FREE
-      // Le middleware checkFormationsVipAccess s'en chargera
+      // Si erreur d'auth, l'utilisateur n'est pas connecté
       req.user = null;
     }
     
-    // Vérifier l'accès VIP pour les formations
-    checkSubscription.checkVipAccess(req, res, next);
+    // Vérifier l'accès aux formations avec le nouveau middleware
+    checkSubscription.checkFormationAccess(req, res, next);
   });
 };
 

@@ -163,3 +163,45 @@ exports.checkNoActiveSubscription = catchAsync(async (req, res, next) => {
 
   next();
 });
+
+/**
+ * NOUVEAU : Middleware pour vérifier l'accès aux formations VIP
+ * Récupère la formation par son ID et vérifie les requiredPackages
+ */
+exports.checkFormationAccess = catchAsync(async (req, res, next) => {
+  const formationId = req.params.id;
+  
+  if (!formationId) {
+    return next(new AppError('ID de formation requis', 400, ErrorCodes.VALIDATION_ERROR));
+  }
+
+  // Récupérer la formation
+  const Formation = require('../../models/common/Formation');
+  const formation = await Formation.findById(formationId);
+  
+  if (!formation) {
+    return next(new AppError('Formation non trouvée', 404, ErrorCodes.NOT_FOUND));
+  }
+
+  // Si la formation est gratuite (pas de requiredPackages ou vide), autoriser l'accès
+  if (!formation.requiredPackages || formation.requiredPackages.length === 0) {
+    req.formation = formation;
+    return next();
+  }
+
+  // Pour les formations VIP, vérifier l'authentification
+  if (!req.user) {
+    return next(new AppError('Authentification requise pour accéder à cette formation', 401, ErrorCodes.AUTH_TOKEN_MISSING));
+  }
+
+  // Vérifier si l'utilisateur a un abonnement actif pour au moins un des packages requis
+  const hasAccess = await subscriptionService.hasAccessToFormation(req.user._id, formation.requiredPackages);
+  
+  if (!hasAccess) {
+    return next(new AppError('Abonnement requis pour accéder à cette formation', 403, ErrorCodes.SUBSCRIPTION_REQUIRED));
+  }
+
+  // Attacher la formation à la requête
+  req.formation = formation;
+  next();
+});
