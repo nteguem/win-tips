@@ -464,6 +464,156 @@
         "fr": "Aucun autre but ne sera marqué dans le match",
         "en": "No more goals will be scored in the match"
       }
+    },
+    {
+      "id": "home_qualifies",
+      "position": 32,
+      "priority": "high",
+      "label": {
+        "fr": "Qualification équipe domicile",
+        "en": "Home team qualifies"
+      },
+      "expression": "qualification.home === true",
+      "category": "qualification",
+      "description": {
+        "fr": "L'équipe domicile se qualifie pour le tour suivant (temps réglementaire, prolongations ou tirs au but)",
+        "en": "Home team qualifies for the next round (regular time, extra time or penalties)"
+      }
+    },
+    {
+      "id": "away_qualifies",
+      "position": 33,
+      "priority": "high",
+      "label": {
+        "fr": "Qualification équipe extérieur",
+        "en": "Away team qualifies"
+      },
+      "expression": "qualification.away === true",
+      "category": "qualification",
+      "description": {
+        "fr": "L'équipe extérieur se qualifie pour le tour suivant (temps réglementaire, prolongations ou tirs au but)",
+        "en": "Away team qualifies for the next round (regular time, extra time or penalties)"
+      }
+    },
+    {
+      "id": "home_qualifies_regular_time",
+      "position": 34,
+      "priority": "medium",
+      "label": {
+        "fr": "Domicile qualifié au temps réglementaire",
+        "en": "Home qualifies in regular time"
+      },
+      "expression": "qualification.home === true && qualification.method === 'regular_time'",
+      "category": "qualification",
+      "description": {
+        "fr": "L'équipe domicile se qualifie durant les 90 minutes",
+        "en": "Home team qualifies during the 90 minutes"
+      }
+    },
+    {
+      "id": "away_qualifies_regular_time",
+      "position": 35,
+      "priority": "medium",
+      "label": {
+        "fr": "Extérieur qualifié au temps réglementaire",
+        "en": "Away qualifies in regular time"
+      },
+      "expression": "qualification.away === true && qualification.method === 'regular_time'",
+      "category": "qualification",
+      "description": {
+        "fr": "L'équipe extérieur se qualifie durant les 90 minutes",
+        "en": "Away team qualifies during the 90 minutes"
+      }
+    },
+    {
+      "id": "home_qualifies_extra_time",
+      "position": 36,
+      "priority": "medium",
+      "label": {
+        "fr": "Domicile qualifié aux prolongations",
+        "en": "Home qualifies in extra time"
+      },
+      "expression": "qualification.home === true && qualification.method === 'extra_time'",
+      "category": "qualification",
+      "description": {
+        "fr": "L'équipe domicile se qualifie après les prolongations",
+        "en": "Home team qualifies after extra time"
+      }
+    },
+    {
+      "id": "away_qualifies_extra_time",
+      "position": 37,
+      "priority": "medium",
+      "label": {
+        "fr": "Extérieur qualifié aux prolongations",
+        "en": "Away qualifies in extra time"
+      },
+      "expression": "qualification.away === true && qualification.method === 'extra_time'",
+      "category": "qualification",
+      "description": {
+        "fr": "L'équipe extérieur se qualifie après les prolongations",
+        "en": "Away team qualifies after extra time"
+      }
+    },
+    {
+      "id": "home_qualifies_penalties",
+      "position": 38,
+      "priority": "medium",
+      "label": {
+        "fr": "Domicile qualifié aux tirs au but",
+        "en": "Home qualifies on penalties"
+      },
+      "expression": "qualification.home === true && qualification.method === 'penalties'",
+      "category": "qualification",
+      "description": {
+        "fr": "L'équipe domicile se qualifie aux tirs au but",
+        "en": "Home team qualifies on penalties"
+      }
+    },
+    {
+      "id": "away_qualifies_penalties",
+      "position": 39,
+      "priority": "medium",
+      "label": {
+        "fr": "Extérieur qualifié aux tirs au but",
+        "en": "Away qualifies on penalties"
+      },
+      "expression": "qualification.away === true && qualification.method === 'penalties'",
+      "category": "qualification",
+      "description": {
+        "fr": "L'équipe extérieur se qualifie aux tirs au but",
+        "en": "Away team qualifies on penalties"
+      }
+    },
+    {
+      "id": "match_goes_to_extra_time",
+      "position": 40,
+      "priority": "medium",
+      "label": {
+        "fr": "Match va en prolongations",
+        "en": "Match goes to extra time"
+      },
+      "expression": "hasExtraTime === true",
+      "category": "qualification",
+      "description": {
+        "fr": "Le match nécessite des prolongations",
+        "en": "The match requires extra time"
+      }
+    },
+    {
+      "id": "match_goes_to_penalties",
+      "position": 41,
+      "priority": "medium",
+      "label": {
+        "fr": "Match va aux tirs au but",
+        "en": "Match goes to penalties"
+      },
+      "expression": "hasPenalties === true",
+      "category": "qualification",
+      "description": {
+        "fr": "Le match se décide aux tirs au but",
+        "en": "The match is decided on penalties"
+      }
     }
   ],
   "parametricEvents": [
@@ -790,6 +940,10 @@
     "next_events": {
       "fr": "Prochains événements",
       "en": "Next events"
+    },
+    "qualification": {
+      "fr": "Qualification",
+      "en": "Qualification"
     }
   }
 }
