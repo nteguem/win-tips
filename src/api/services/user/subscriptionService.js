@@ -97,12 +97,24 @@ class SubscriptionService {
   }
 
   /**
-   * Obtenir les informations complètes d'abonnement d'un utilisateur
+   * Obtenir les informations complètes d'abonnement d'un utilisateur.
+   *
+   * Note : on filtre les souscriptions dont le package a été supprimé en BD
+   * (populate('package') renvoie alors null). Sans ce filtre, l'accès
+   * `subscription.package._id` provoquait un crash sur tous les endpoints
+   * qui appellent getUserSubscriptionInfo (login, /me, register, refresh).
    */
   async getUserSubscriptionInfo(userId) {
     const activeSubscriptions = await this.getActiveSubscriptions(userId);
-    
-    const activePackages = activeSubscriptions.map(subscription => ({
+
+    const validSubscriptions = activeSubscriptions.filter(sub => sub.package);
+    if (validSubscriptions.length !== activeSubscriptions.length) {
+      console.warn(
+        `[SubscriptionService] User ${userId} : ${activeSubscriptions.length - validSubscriptions.length} souscription(s) orpheline(s) ignorée(s) (package supprimé)`
+      );
+    }
+
+    const activePackages = validSubscriptions.map(subscription => ({
       id: subscription.package._id,
       name: subscription.package.name,
       description: subscription.package.description,
@@ -122,9 +134,9 @@ class SubscriptionService {
     }));
 
     return {
-      hasActiveSubscription: activeSubscriptions.length > 0,
+      hasActiveSubscription: validSubscriptions.length > 0,
       activePackages,
-      totalActiveSubscriptions: activeSubscriptions.length
+      totalActiveSubscriptions: validSubscriptions.length
     };
   }
 
