@@ -49,6 +49,7 @@ const couponRoutes = require('./user/couponRoutes');
 const smobilpayRoutes = require('./user/smobilpayRoutes');
 const cinetpayRoutes = require('./user/cinetpayRoutes');
 const afribaPayRoutes = require('./user/afribaPayRoutes');
+const korapayRoutes = require('./user/korapayRoutes');
 const userFormationRoutes = require('./user/formationRoutes');
 const googlePlayRoutes = require('./user/googlePlayRoutes');
 const googlePlayWebhook = require('./user/googlePlayWebhook');
@@ -78,6 +79,8 @@ router.use('/payments/smobilpay', smobilpayRoutes);
 router.use('/payments/cinetpay', cinetpayRoutes);
 // Routes de paiement AfribaPay
 router.use('/payments/afribapay', afribaPayRoutes);
+// Routes de paiement KoraPay (NG, GH, KE, ZA, EG, CI)
+router.use('/payments/korapay', korapayRoutes);
 
 /**
  * GET /api/

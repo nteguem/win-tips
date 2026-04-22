@@ -2,6 +2,8 @@ const User = require('../../models/user/User');
 const authService = require('../../services/common/authService');
 const googleAuthService = require('../../services/common/googleAuthService');
 const subscriptionService = require('../../services/user/subscriptionService');
+const smobilpayVerificationService = require('../../services/user/smobilpayVerificationService');
+const korapayVerificationService = require('../../services/user/korapayVerificationService');
 const deviceService = require('../../services/common/deviceService');
 const { AppError, ErrorCodes } = require('../../../utils/AppError');
 const catchAsync = require('../../../utils/catchAsync');
@@ -323,10 +325,26 @@ exports.refresh = catchAsync(async (req, res, next) => {
 exports.getMe = catchAsync(async (req, res, next) => {
   // Populer les infos de l'affilié parrain si existant
   const user = await User.findById(req.user._id).populate('referredBy', 'firstName lastName affiliateCode');
-  
+
+  // Avant de lire l'état d'abonnement, on déclenche une vérification live
+  // pour les paiements PENDING de l'utilisateur. Sans ça, un utilisateur qui
+  // rouvre l'app après avoir payé ne verrait sa souscription qu'à la prochaine
+  // passe du cron (jusqu'à 2 min de délai).
+  //   - Smobilpay : webhook Maviance pointe sur l'instance multi-tenant
+  //   - KoraPay   : webhook désactivé, on ne s'appuie que sur le pull
+  // Vérifications faites en parallèle, tolérantes aux erreurs.
+  await Promise.all([
+    smobilpayVerificationService
+      .verifyUserPendingTransactions(req.user._id)
+      .catch(err => console.error('[getMe] Smobilpay verification failed:', err.message)),
+    korapayVerificationService
+      .verifyUserPendingTransactions(req.user._id)
+      .catch(err => console.error('[getMe] KoraPay verification failed:', err.message))
+  ]);
+
   // Vérifier s'il a un abonnement actif
   const subscriptionInfo = await subscriptionService.getUserSubscriptionInfo(req.user._id);
-  
+
   res.status(200).json({
     success: true,
     data: {

@@ -27,7 +27,7 @@ const subscriptionSchema = new mongoose.Schema({
     currency: {
       type: String,
       required: true,
-      enum: ['XAF','XOF','GMD','CDF','GNF','USD'],
+      enum: ['XAF','XOF','GMD','CDF','GNF','USD','NGN','GHS','KES','ZAR','EGP'],
       default: 'XAF'
     }
   },

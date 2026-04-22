@@ -39,7 +39,7 @@ const smobilpayTransactionSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['PENDING', 'SUCCESS','ERROR'],
+    enum: ['PENDING', 'SUCCESS', 'ERROR', 'EXPIRED'],
     default: 'PENDING'
   },
   phoneNumber: {
@@ -67,6 +67,13 @@ const smobilpayTransactionSchema = new mongoose.Schema({
   processed: {
     type: Boolean,
     default: false
+  },
+  // Date du dernier check côté Maviance (utilisé pour le backoff du cron)
+  lastCheckedAt: Date,
+  // Compteur de tentatives de vérification (info/debug)
+  checkAttempts: {
+    type: Number,
+    default: 0
   }
 }, {
   timestamps: true
@@ -77,6 +84,8 @@ smobilpayTransactionSchema.index({ user: 1, status: 1 });
 smobilpayTransactionSchema.index({ paymentId: 1 });
 smobilpayTransactionSchema.index({ ptn: 1 });
 smobilpayTransactionSchema.index({ processed: 1 });
+// Index pour le cron de vérification (scan rapide des PENDING récentes)
+smobilpayTransactionSchema.index({ status: 1, createdAt: -1 });
 
 // Méthodes utiles
 smobilpayTransactionSchema.methods.isSuccessful = function() {
