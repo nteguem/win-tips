@@ -48,7 +48,7 @@ class CategoryController {
   // POST /categories - Créer une nouvelle catégorie
   async createCategory(req, res) {
     try {
-      const { name, description, icon, successRate, isVip, isActive } = req.body;
+      const { name, description, icon, successRate, isVip, isActive, accessGate } = req.body;
 
       if (!name) {
         return formatError(res, 'Name is required', 400);
@@ -67,6 +67,9 @@ class CategoryController {
         isActive,
         isVip: isVip
       };
+      // Porte de déblocage par pub : pertinente uniquement pour les free.
+      // Pour la retirer côté update, envoyer `accessGate: null`.
+      if (accessGate && !isVip) categoryData.accessGate = accessGate;
 
       const category = await categoryService.createCategory(categoryData);
       
@@ -94,6 +97,9 @@ class CategoryController {
       if (updates.successRate !== undefined && (updates.successRate < 0 || updates.successRate > 100)) {
         return formatError(res, 'Success rate must be between 0 and 100', 400);
       }
+
+      // Si la catégorie passe en VIP, on retire automatiquement la porte.
+      if (updates.isVip === true) updates.accessGate = null;
 
       const category = await categoryService.updateCategory(id, updates);
 

@@ -46,6 +46,7 @@ router.use('/affiliate/dashboard', affiliateDashboardRoutes);
 // ===== ROUTES USER =====
 const userSubscriptionRoutes = require('./user/subscriptionRoutes');
 const couponRoutes = require('./user/couponRoutes');
+const accessRoutes = require('./user/accessRoutes');
 const smobilpayRoutes = require('./user/smobilpayRoutes');
 const cinetpayRoutes = require('./user/cinetpayRoutes');
 const afribaPayRoutes = require('./user/afribaPayRoutes');
@@ -56,7 +57,8 @@ const googlePlayWebhook = require('./user/googlePlayWebhook');
 const packageRoutes = require('./user/packageRoutes');
 router.use('/user/coupons', couponRoutes);
 router.use('/user/packages', packageRoutes);
-router.use('/user/formations', userFormationRoutes); 
+router.use('/user/formations', userFormationRoutes);
+router.use('/user/access', accessRoutes);
 router.use('/user', userSubscriptionRoutes);
 router.use('/user/google-play', googlePlayRoutes);
 router.use('/webhooks', googlePlayWebhook);
@@ -65,12 +67,21 @@ router.use('/webhooks', googlePlayWebhook);
 const deviceRoutes = require('./common/deviceRoutes');
 const topicRoutes = require('./common/topicRoutes');
 const notificationRoutes = require('./common/notificationRoutes');
-const configRoutes = require('./common/configRoutes'); // ← NOUVEAU
+const configRoutes = require('./common/configRoutes');
+const admobSsvRoutes = require('./common/admobSsvRoutes');
 
 router.use('/devices', deviceRoutes);
 router.use('/topics', topicRoutes);
 router.use('/notifications', notificationRoutes);
-router.use('/config', configRoutes); // ← NOUVEAU
+router.use('/config', configRoutes);
+// Callback SSV AdMob — public (appelé par les serveurs Google).
+router.use('/ads', admobSsvRoutes);
+
+// ===== ROUTES DEV (gardées par variable d'env, 404 sinon) =====
+if (process.env.ENABLE_DEV_REWARDS === 'true') {
+  const devAccessRoutes = require('./common/devAccessRoutes');
+  router.use('/dev', devAccessRoutes);
+}
 
 // ===== POINT D'ENTRÉE API =====
 // Routes de paiement Smobilpay

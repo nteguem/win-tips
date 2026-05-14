@@ -1,5 +1,36 @@
 const mongoose = require("mongoose");
 
+/**
+ * Une offre de déblocage : visionner `adsRequired` pubs récompensées donne
+ * accès à tous les coupons de la catégorie pendant `durationMinutes` minutes
+ * (null = à vie).
+ */
+const AccessGateOptionSchema = new mongoose.Schema({
+  durationMinutes: { type: Number, default: null, min: 1 },
+  adsRequired: { type: Number, required: true, min: 1 }
+}, { _id: false });
+
+/**
+ * Porte de déblocage par visionnage de pubs récompensées (AdMob rewarded + SSV),
+ * portée par la CATÉGORIE : tous les coupons de la catégorie en héritent.
+ * Sous-document optionnel : absent ⇒ catégorie en accès libre.
+ * Ne concerne que les catégories free (l'API ne l'évalue que côté non-VIP).
+ */
+const AccessGateSchema = new mongoose.Schema({
+  type: {
+    type: String,
+    enum: ['ad_reward'],
+    required: true
+  },
+  options: {
+    type: [AccessGateOptionSchema],
+    validate: {
+      validator: (v) => Array.isArray(v) && v.length > 0,
+      message: 'accessGate.options doit contenir au moins une offre'
+    }
+  }
+}, { _id: false });
+
 const CategorySchema = new mongoose.Schema({
   name: {
     type: String,
@@ -30,6 +61,13 @@ const CategorySchema = new mongoose.Schema({
   isActive: {
     type: Boolean,
     default: true
+  },
+
+  // Porte de déblocage par pub appliquée à TOUS les coupons de cette catégorie.
+  // Absent ⇒ catégorie en accès libre. Pour retirer la porte : `accessGate: null`.
+  accessGate: {
+    type: AccessGateSchema,
+    default: undefined
   }
 }, {
   timestamps: true

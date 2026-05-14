@@ -1,5 +1,7 @@
 const TicketService = require('../../services/common/ticketService');
 const subscriptionService = require('../../services/user/subscriptionService');
+const accessGateService = require('../../services/common/accessGateService');
+const UserAccessUnlock = require('../../models/common/UserAccessUnlock');
 
 class CouponController {
   
@@ -46,12 +48,46 @@ class CouponController {
       }
       // Si isVip === null, on garde tous les tickets (comportement par défaut)
 
+      // ===== AD-UNLOCK GATE : déterminer l'état pour les catégories free gatées =====
+      // On évalue le gate UNIQUEMENT sur les catégories free gatées présentes
+      // dans la réponse. `req.user` peut être absent (accès anonyme aux free).
+      const userId = req.user && req.user._id ? req.user._id : null;
+
+      const gatedCategoryIds = [];
+      const seenGatedIds = new Set();
+      for (const ticket of filteredData) {
+        if (ticket.category.isVip) continue;
+        if (!accessGateService.categoryIsGated(ticket.category)) continue;
+        const idStr = ticket.category._id.toString();
+        if (seenGatedIds.has(idStr)) continue;
+        seenGatedIds.add(idStr);
+        gatedCategoryIds.push(ticket.category._id);
+      }
+
+      let unlockCountByCategory = new Map();
+      const userActiveUnlocks = new Map(); // catId(string) -> doc
+      if (gatedCategoryIds.length > 0) {
+        unlockCountByCategory = await accessGateService.countCategoryUnlocks(gatedCategoryIds);
+        if (userId) {
+          const docs = await UserAccessUnlock.find({
+            user: userId,
+            resourceType: 'category',
+            resource: { $in: gatedCategoryIds }
+          });
+          for (const doc of docs) {
+            if (doc.isAccessActive()) {
+              userActiveUnlocks.set(String(doc.resource), doc);
+            }
+          }
+        }
+      }
+
       // Grouper les tickets par catégorie
       const categoriesMap = new Map();
-      
+
       filteredData.forEach(ticket => {
         const categoryId = ticket.category._id.toString();
-        
+
         if (!categoriesMap.has(categoryId)) {
           categoriesMap.set(categoryId, {
             id: ticket.category._id,
@@ -65,11 +101,31 @@ class CouponController {
             coupons: []
           });
         }
-        
+
         const category = categoriesMap.get(categoryId);
         category.totalCoupons++;
-        
-        // Formater le coupon
+
+        // Décider si ce coupon est verrouillé (porte active, pas d'unlock actif).
+        const isGated = !ticket.category.isVip && accessGateService.categoryIsGated(ticket.category);
+        const isUnlocked = isGated ? userActiveUnlocks.has(categoryId) : true;
+        const locked = isGated && !isUnlocked;
+
+        let gateInfo = null;
+        if (isGated) {
+          const offers = ticket.category.accessGate.options.map(accessGateService.publicOption);
+          const userDoc = userActiveUnlocks.get(categoryId) || null;
+          gateInfo = {
+            type: 'ad_reward',
+            offers,
+            requiresAuth: !userId,
+            unlockCount: unlockCountByCategory.get(categoryId) || 0,
+            state: accessGateService.buildState(userDoc)
+          };
+        }
+
+        // Formater le coupon. Si verrouillé : on masque les prédictions (event
+        // nul) tout en gardant le compteur + cote totale pour l'aperçu UI.
+        const totalOdds = ticket.predictions.reduce((total, pred) => total * pred.odds, 1).toFixed(2);
         const coupon = {
           id: ticket._id,
           title: ticket.title,
@@ -77,57 +133,105 @@ class CouponController {
           closingAt: ticket.closingAt,
           status: ticket.status,
           totalPredictions: ticket.predictions.length,
-          totalOdds: ticket.predictions.reduce((total, pred) => total * pred.odds, 1).toFixed(2),
-          predictions: ticket.predictions.map(pred => ({
-            id: pred._id,
-            odds: pred.odds,
-            status: pred.status,
-            sport: pred?.sport,
-            reason: pred?.reason || null,
-            star: pred?.star || false,
-            event: {
-              id: pred.event.id,
-              label: pred.event.label[lang] || pred.event.label.fr || pred.event.label.current,
-              description: pred.event.description.current,
-              category: pred.event.category
-            },
-            match: {
-              id: pred.matchData.id,
-              date: pred.matchData.date,
-              status: pred.matchData.status,
-              league: {
-                name: pred.matchData.league.name,
-                country: pred.matchData.league.country,
-                logo: pred.matchData.league.logo,
-                countryFlag: pred.matchData.league.countryFlag,
-              },
-              teams: {
-                home: {
-                  id: pred.matchData?.teams?.home?.id,
-                  name: pred.matchData?.teams?.home?.name,
-                  logo: pred.matchData?.teams?.home?.logo
-                },
-                away: {
-                  id: pred.matchData?.teams?.away?.id,
-                  name: pred.matchData?.teams?.away?.name,
-                  logo: pred.matchData?.teams?.away?.logo
+          totalOdds,
+          ...(isGated ? {
+            locked,
+            unlocked: !locked,
+            unlockedUntil: !locked && userActiveUnlocks.get(categoryId) ? userActiveUnlocks.get(categoryId).expiresAt : null,
+            gate: gateInfo
+          } : {}),
+          predictions: locked
+            ? ticket.predictions.map(pred => ({
+                id: pred._id,
+                odds: pred.odds,
+                status: pred.status,
+                sport: pred?.sport,
+                star: pred?.star || false,
+                locked: true,
+                event: null,
+                match: {
+                  id: pred.matchData?.id,
+                  date: pred.matchData?.date,
+                  status: pred.matchData?.status,
+                  league: pred.matchData?.league ? {
+                    name: pred.matchData.league.name,
+                    country: pred.matchData.league.country,
+                    logo: pred.matchData.league.logo,
+                    countryFlag: pred.matchData.league.countryFlag,
+                  } : null,
+                  teams: {
+                    home: {
+                      id: pred.matchData?.teams?.home?.id,
+                      name: pred.matchData?.teams?.home?.name,
+                      logo: pred.matchData?.teams?.home?.logo
+                    },
+                    away: {
+                      id: pred.matchData?.teams?.away?.id,
+                      name: pred.matchData?.teams?.away?.name,
+                      logo: pred.matchData?.teams?.away?.logo
+                    }
+                  },
+                  score: pred.matchData?.score ? {
+                    home: pred.matchData.score.home,
+                    away: pred.matchData.score.away,
+                    status: pred.matchData.status
+                  } : null,
+                  venue: pred.matchData?.venue ? {
+                    name: pred.matchData.venue.name,
+                    city: pred.matchData.venue.city
+                  } : null
                 }
-              },
-              score: pred.matchData.score ? {
-                home: pred.matchData.score.home,
-                away: pred.matchData.score.away,
-                status: pred.matchData.status
-              } : null,
-              venue: pred.matchData.venue ? {
-                name: pred.matchData.venue.name,
-                city: pred.matchData.venue.city
-              } : null
-            }
-          })),
+              }))
+            : ticket.predictions.map(pred => ({
+                id: pred._id,
+                odds: pred.odds,
+                status: pred.status,
+                sport: pred?.sport,
+                reason: pred?.reason || null,
+                star: pred?.star || false,
+                event: {
+                  id: pred.event.id,
+                  label: pred.event.label[lang] || pred.event.label.fr || pred.event.label.current,
+                  description: pred.event.description.current,
+                  category: pred.event.category
+                },
+                match: {
+                  id: pred.matchData.id,
+                  date: pred.matchData.date,
+                  status: pred.matchData.status,
+                  league: {
+                    name: pred.matchData.league.name,
+                    country: pred.matchData.league.country,
+                    logo: pred.matchData.league.logo,
+                    countryFlag: pred.matchData.league.countryFlag,
+                  },
+                  teams: {
+                    home: {
+                      id: pred.matchData?.teams?.home?.id,
+                      name: pred.matchData?.teams?.home?.name,
+                      logo: pred.matchData?.teams?.home?.logo
+                    },
+                    away: {
+                      id: pred.matchData?.teams?.away?.id,
+                      name: pred.matchData?.teams?.away?.name,
+                      logo: pred.matchData?.teams?.away?.logo
+                    }
+                  },
+                  score: pred.matchData.score ? {
+                    home: pred.matchData.score.home,
+                    away: pred.matchData.score.away,
+                    status: pred.matchData.status
+                  } : null,
+                  venue: pred.matchData.venue ? {
+                    name: pred.matchData.venue.name,
+                    city: pred.matchData.venue.city
+                  } : null
+                }
+              })),
           createdAt: ticket.createdAt,
           updatedAt: ticket.updatedAt
         };
-        
+
         category.coupons.push(coupon);
       });
 

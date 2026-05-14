@@ -6,22 +6,22 @@ const vipAccess = require('../../middlewares/user/checkSubscription');
 const router = express.Router();
 
 /**
- * Middleware conditionnel qui applique l'authentification et la vérification VIP
- * seulement quand isVip=true
+ * Middleware conditionnel :
+ *  - isVip=true   → auth obligatoire + vérification VIP
+ *  - sinon (free) → auth OPTIONNELLE (req.user défini si Bearer valide ; sinon
+ *    accès anonyme). On a besoin de connaître l'utilisateur pour évaluer
+ *    l'état de la porte AdMob sur les catégories free gatées.
  */
 const conditionalVipMiddleware = (req, res, next) => {
   const isVip = req.query.isVip === 'true';
-  
+
   if (isVip) {
-    // Pour les coupons VIP : authentification + vérification VIP
     userAuth.protect(req, res, (authErr) => {
       if (authErr) return next(authErr);
-      
       vipAccess.checkCouponsVipAccess(req, res, next);
     });
   } else {
-    // Pour les coupons gratuits : accès public
-    next();
+    userAuth.optional(req, res, next);
   }
 };
 
