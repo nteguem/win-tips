@@ -53,6 +53,14 @@ class CouponController {
       // dans la réponse. `req.user` peut être absent (accès anonyme aux free).
       const userId = req.user && req.user._id ? req.user._id : null;
 
+      // Compatibilité ascendante : les anciens builds Flutter (< feature gate)
+      // n'envoient pas ce header et leur `Prediction.fromJson` exige `event`
+      // non-null. On filtre donc complètement les coupons verrouillés pour eux
+      // → la catégorie disparaît de leur feed (UX dégradée mais aucun crash).
+      // Les nouveaux builds envoient `X-Feature-Gate: v1` et reçoivent les
+      // coupons verrouillés avec `locked:true` + prédictions masquées.
+      const supportsGate = (req.headers['x-feature-gate'] || '').toLowerCase() === 'v1';
+
       const gatedCategoryIds = [];
       const seenGatedIds = new Set();
       for (const ticket of filteredData) {
@@ -80,6 +88,16 @@ class CouponController {
             }
           }
         }
+      }
+
+      // Filtrer les coupons verrouillés pour les anciens clients (compat).
+      if (!supportsGate && gatedCategoryIds.length > 0) {
+        filteredData = filteredData.filter(ticket => {
+          if (ticket.category.isVip) return true;
+          if (!accessGateService.categoryIsGated(ticket.category)) return true;
+          // Catégorie gatée : on garde seulement si l'utilisateur a un unlock actif.
+          return userActiveUnlocks.has(ticket.category._id.toString());
+        });
       }
 
       // Grouper les tickets par catégorie
