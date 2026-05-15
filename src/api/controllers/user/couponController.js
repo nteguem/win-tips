@@ -64,11 +64,22 @@ class CouponController {
         gatedCategoryIds.push(ticket.category._id);
       }
 
+      // Bypass abonné : un user qui a déjà payé un forfait actif n'a JAMAIS à
+      // débloquer quoi que ce soit. Tous les gates (catégories free) sont
+      // considérés comme ouverts pour lui — les pronostics sont renvoyés en
+      // clair, et la clé `gate` est omise du payload.
+      let userHasActiveSubscription = false;
+      if (userId && gatedCategoryIds.length > 0) {
+        const activeSubs = await subscriptionService.getActiveSubscriptions(userId);
+        userHasActiveSubscription = activeSubs.some(sub => sub.package);
+      }
+
       let unlockCountByCategory = new Map();
       const userActiveUnlocks = new Map(); // catId(string) -> doc
       if (gatedCategoryIds.length > 0) {
         unlockCountByCategory = await accessGateService.countCategoryUnlocks(gatedCategoryIds);
-        if (userId) {
+        if (userId && !userHasActiveSubscription) {
+          // Inutile de requêter les unlocks d'un abonné : le bypass couvre tout.
           const docs = await UserAccessUnlock.find({
             user: userId,
             resourceType: 'category',
@@ -106,12 +117,18 @@ class CouponController {
         category.totalCoupons++;
 
         // Décider si ce coupon est verrouillé (porte active, pas d'unlock actif).
+        // Un abonné actif bypass le gate intégralement — peu importe les unlocks.
         const isGated = !ticket.category.isVip && accessGateService.categoryIsGated(ticket.category);
-        const isUnlocked = isGated ? userActiveUnlocks.has(categoryId) : true;
+        const isUnlocked = isGated
+          ? (userHasActiveSubscription || userActiveUnlocks.has(categoryId))
+          : true;
         const locked = isGated && !isUnlocked;
 
         let gateInfo = null;
-        if (isGated) {
+        // On n'expose `gate` au client QUE si la porte est encore réellement
+        // active pour ce user. Pour un abonné, on omet le bloc — pas de
+        // bannière de déblocage à afficher côté UI.
+        if (isGated && !userHasActiveSubscription) {
           const offers = ticket.category.accessGate.options.map(accessGateService.publicOption);
           const userDoc = userActiveUnlocks.get(categoryId) || null;
           gateInfo = {
