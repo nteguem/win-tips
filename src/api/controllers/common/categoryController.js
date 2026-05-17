@@ -48,7 +48,7 @@ class CategoryController {
   // POST /categories - Créer une nouvelle catégorie
   async createCategory(req, res) {
     try {
-      const { name, description, icon, successRate, isVip, isActive, accessGate } = req.body;
+      const { name, description, icon, successRate, isVip, isActive, accessGate, externalSources } = req.body;
 
       if (!name) {
         return formatError(res, 'Name is required', 400);
@@ -70,6 +70,17 @@ class CategoryController {
       // Porte de déblocage par pub : pertinente uniquement pour les free.
       // Pour la retirer côté update, envoyer `accessGate: null`.
       if (accessGate && !isVip) categoryData.accessGate = accessGate;
+      // Sources externes (sync sortante bigwin -> wintips) : array filtre
+      if (Array.isArray(externalSources)) {
+        categoryData.externalSources = externalSources
+          .filter((s) => s && s.system && s.appId && s.categoryId)
+          .map((s) => ({
+            system: String(s.system),
+            appId: String(s.appId),
+            categoryId: String(s.categoryId),
+            label: s.label || '',
+          }));
+      }
 
       const category = await categoryService.createCategory(categoryData);
       
@@ -100,6 +111,18 @@ class CategoryController {
 
       // Si la catégorie passe en VIP, on retire automatiquement la porte.
       if (updates.isVip === true) updates.accessGate = null;
+
+      // Sources externes (sync sortante) : normalise et filtre les entrees invalides.
+      if (Array.isArray(updates.externalSources)) {
+        updates.externalSources = updates.externalSources
+          .filter((s) => s && s.system && s.appId && s.categoryId)
+          .map((s) => ({
+            system: String(s.system),
+            appId: String(s.appId),
+            categoryId: String(s.categoryId),
+            label: s.label || '',
+          }));
+      }
 
       const category = await categoryService.updateCategory(id, updates);
 

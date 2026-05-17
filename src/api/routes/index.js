@@ -36,7 +36,12 @@ router.use('/admin/events', adminEventRoutes);
 router.use('/admin/affiliates', adminAffiliateRoutes);
 router.use('/admin/commissions', adminCommissionRoutes);
 router.use('/admin/affiliate-types', adminAffiliateTypeRoutes);
-router.use('/admin/formations', adminFormationRoutes); 
+router.use('/admin/formations', adminFormationRoutes);
+
+// ===== ROUTES INTERNES (sync sortante depuis bigwin) =====
+// ⚠️ V1 : pas d'auth. Voir internalSyncController pour le plan V2.
+const internalSyncRoutes = require('./common/internalSyncRoutes');
+router.use('/internal/sync', internalSyncRoutes);
 
 // ===== ROUTES AFFILIATE =====
 const affiliateDashboardRoutes = require('./affiliate/dashboardRoutes');

@@ -68,9 +68,38 @@ const CategorySchema = new mongoose.Schema({
   accessGate: {
     type: AccessGateSchema,
     default: undefined
-  }
+  },
+
+  // Sources externes : liste des categories d'autres systemes (bigwin et
+  // ses apps multi-tenant) dont les tickets publies seront automatiquement
+  // clones dans CETTE categorie wintips.
+  //
+  // Exemple : "Pass Decouverte" wintips veut absorber les CDJ de bigwin
+  //           -> externalSources = [{ system:'bigwin', appId:'bigwin',
+  //                                   categoryId:'688f4b53...' }]
+  //
+  // Si vide => aucun ticket externe ne sera clone dans cette categorie.
+  externalSources: {
+    type: [{
+      system: { type: String, required: true },     // ex: 'bigwin'
+      appId: { type: String, required: true },      // ex: 'bigwin', 'goatips'...
+      categoryId: { type: String, required: true }, // ObjectId source en string
+      // libelle humain optionnel pour faciliter le debug + affichage UI
+      label: { type: String, default: '' },
+      _id: false,
+    }],
+    default: [],
+  },
 }, {
   timestamps: true
+});
+
+// Index multikey pour la resolution rapide a chaque publication
+// (find one Category where externalSources matches {system,appId,categoryId})
+CategorySchema.index({
+  'externalSources.system': 1,
+  'externalSources.appId': 1,
+  'externalSources.categoryId': 1,
 });
 
 module.exports = mongoose.model("Category", CategorySchema);
