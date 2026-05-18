@@ -27,9 +27,19 @@ exports.getAvailablePackages = catchAsync(async (req, res, next) => {
     return next(new AppError(`paymentMode invalide: ${paymentMode}`, 400, ErrorCodes.VALIDATION_ERROR));
   }
 
+  // ── DEBUG TEMP ─────────────────────────────────────────────────────────
+  console.log('[getAvailablePackages] paymentMode=%s filter=%j', paymentMode, filter);
+
   const packages = await Package.find(filter)
     .populate('categories', 'name description isVip')
     .populate('formationId');
+
+  console.log('[getAvailablePackages] %d packs trouvés :', packages.length);
+  for (const p of packages) {
+    console.log('  - %s | paymentMode=%s | adsRequired=%s | name.fr=%s',
+      p._id, p.paymentMode, p.adsRequired, p.name?.fr || p.name);
+  }
+  // ── /DEBUG ─────────────────────────────────────────────────────────────
 
   // Tri : par adsRequired croissant pour 'ads', par prix sinon
   const sortedPackages = packages.sort((a, b) => {
