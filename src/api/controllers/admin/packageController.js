@@ -87,11 +87,23 @@ exports.getPackage = catchAsync(async (req, res, next) => {
  * Créer un nouveau package
  */
 exports.createPackage = catchAsync(async (req, res, next) => {
-  const { name, description, pricing, duration, categories, badge, economy, formationId } = req.body;
+  const {
+    name, description, pricing, duration, categories, badge, economy, formationId,
+    paymentMode, adsRequired,
+  } = req.body;
 
-  // Validation des champs obligatoires
-  if (!name?.fr || !name?.en || !pricing?.XAF || !duration) {
-    return next(new AppError('Nom (FR/EN), prix en XAF et durée sont requis', 400, ErrorCodes.VALIDATION_ERROR));
+  // Validation : la nature des champs requis dépend du mode de paiement.
+  //   money (défaut) : pricing.XAF requis
+  //   ads            : adsRequired >= 1 requis ; pricing peut être absent
+  const mode = paymentMode || 'money';
+  if (!name?.fr || !name?.en || !duration) {
+    return next(new AppError('Nom (FR/EN) et durée sont requis', 400, ErrorCodes.VALIDATION_ERROR));
+  }
+  if (mode === 'money' && !pricing?.XAF) {
+    return next(new AppError('Prix en XAF requis pour un pack en mode argent', 400, ErrorCodes.VALIDATION_ERROR));
+  }
+  if (mode === 'ads' && (!adsRequired || adsRequired < 1)) {
+    return next(new AppError('adsRequired >= 1 requis pour un pack en mode pubs', 400, ErrorCodes.VALIDATION_ERROR));
   }
 
   // Vérifier que les catégories existent
@@ -113,12 +125,14 @@ exports.createPackage = catchAsync(async (req, res, next) => {
   const package = await Package.create({
     name,
     description,
-    pricing,
+    pricing: mode === 'ads' ? undefined : pricing,
     duration,
     categories: categories || [],
     badge,
-    economy,
-    formationId
+    economy: mode === 'ads' ? undefined : economy,
+    formationId,
+    paymentMode: mode,
+    adsRequired: mode === 'ads' ? adsRequired : null,
   });
 
   // Populer les relations pour la réponse
@@ -138,7 +152,10 @@ exports.createPackage = catchAsync(async (req, res, next) => {
  * Modifier un package
  */
 exports.updatePackage = catchAsync(async (req, res, next) => {
-  const { name, description, pricing, duration, categories, badge, economy, formationId, isActive } = req.body;
+  const {
+    name, description, pricing, duration, categories, badge, economy, formationId, isActive,
+    paymentMode, adsRequired,
+  } = req.body;
 
   // Vérifier que le package existe
   let package = await Package.findById(req.params.id);
@@ -162,23 +179,38 @@ exports.updatePackage = catchAsync(async (req, res, next) => {
     }
   }
 
-  // Mettre à jour les champs
-  const updateData = {};
-  if (name !== undefined) updateData.name = name;
-  if (description !== undefined) updateData.description = description;
-  if (pricing !== undefined) updateData.pricing = pricing;
-  if (duration !== undefined) updateData.duration = duration;
-  if (categories !== undefined) updateData.categories = categories;
-  if (badge !== undefined) updateData.badge = badge;
-  if (economy !== undefined) updateData.economy = economy;
-  if (formationId !== undefined) updateData.formationId = formationId;
-  if (isActive !== undefined) updateData.isActive = isActive;
+  // Mettre à jour les champs.
+  // IMPORTANT : pour que le pre-save Mongoose (mutex paymentMode ↔ champs)
+  // s'exécute correctement, on assigne sur l'instance et on appelle save()
+  // plutôt que findByIdAndUpdate avec pipeline brut.
+  if (name !== undefined) package.name = name;
+  if (description !== undefined) package.description = description;
+  if (duration !== undefined) package.duration = duration;
+  if (categories !== undefined) package.categories = categories;
+  if (badge !== undefined) package.badge = badge;
+  if (formationId !== undefined) package.formationId = formationId;
+  if (isActive !== undefined) package.isActive = isActive;
 
-  package = await Package.findByIdAndUpdate(
-    req.params.id,
-    updateData,
-    { new: true, runValidators: true }
-  ).populate('categories', 'name isVip').populate('formationId');
+  // Mode de paiement + champs liés. Si le mode change, le pre-save efface
+  // automatiquement pricing/economy/adsRequired non-pertinents.
+  if (paymentMode !== undefined) package.paymentMode = paymentMode;
+  const effectiveMode = package.paymentMode || 'money';
+
+  if (effectiveMode === 'ads') {
+    // En mode ads : seul adsRequired compte
+    if (adsRequired !== undefined) package.adsRequired = adsRequired;
+    package.pricing = undefined;
+    package.economy = undefined;
+  } else {
+    // En mode money : pricing + economy, pas d'adsRequired
+    if (pricing !== undefined) package.pricing = pricing;
+    if (economy !== undefined) package.economy = economy;
+    package.adsRequired = null;
+  }
+
+  await package.save();
+  await package.populate('categories', 'name isVip');
+  await package.populate('formationId');
 
   res.status(200).json({
     success: true,

@@ -41,12 +41,19 @@ const UserAccessUnlockSchema = new mongoose.Schema({
     required: true
   },
 
+  // 'category'      : déblocage temporaire d'une catégorie de coupons free
+  //                    (durationMinutes du selectedOption fait expirer l'accès)
+  // 'package_unlock' : "paiement" d'un Package par visionnage de pubs — quand
+  //                    seuil atteint, le service packageAdUnlockService crée
+  //                    une Subscription pour la durée du pack.
   resourceType: {
     type: String,
-    enum: ['category'],
+    enum: ['category', 'package_unlock'],
     default: 'category'
   },
 
+  // ObjectId de la ressource ciblée : Category._id pour 'category',
+  // Package._id pour 'package_unlock'.
   resource: {
     type: mongoose.Schema.Types.ObjectId,
     required: true

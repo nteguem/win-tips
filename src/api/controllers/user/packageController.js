@@ -4,36 +4,60 @@ const { AppError, ErrorCodes } = require('../../../utils/AppError');
 const catchAsync = require('../../../utils/catchAsync');
 
 /**
- * Obtenir tous les packages disponibles (user)
+ * Obtenir tous les packages disponibles (user).
+ *
+ * Query params:
+ *   - currency : filtre les packs money par devise disponible
+ *   - lang     : 'fr' ou 'en'
+ *   - paymentMode : 'money' (défaut) | 'ads' | 'all'
+ *       'money' → uniquement les packs payables en argent (rétrocompat)
+ *       'ads'   → uniquement les packs débloquables par pubs
+ *       'all'   → les deux types (le client filtrera lui-même)
  */
 exports.getAvailablePackages = catchAsync(async (req, res, next) => {
-  const { currency, lang = 'fr' } = req.query;  
-  const packages = await Package.find({ isActive: true })
+  const { currency, lang = 'fr', paymentMode = 'money' } = req.query;
+
+  // Filtre Mongoose
+  const filter = { isActive: true };
+  if (paymentMode === 'money') {
+    filter.paymentMode = { $in: ['money', null] }; // tolérance docs legacy sans champ
+  } else if (paymentMode === 'ads') {
+    filter.paymentMode = 'ads';
+  } else if (paymentMode !== 'all') {
+    return next(new AppError(`paymentMode invalide: ${paymentMode}`, 400, ErrorCodes.VALIDATION_ERROR));
+  }
+
+  const packages = await Package.find(filter)
     .populate('categories', 'name description isVip')
     .populate('formationId');
 
-  // Trier manuellement par prix dans la devise demandée
+  // Tri : par adsRequired croissant pour 'ads', par prix sinon
   const sortedPackages = packages.sort((a, b) => {
+    if ((a.paymentMode || 'money') === 'ads' && (b.paymentMode || 'money') === 'ads') {
+      return (a.adsRequired || 0) - (b.adsRequired || 0);
+    }
     const priceA = a.getPricing(currency || 'XAF') || 0;
     const priceB = b.getPricing(currency || 'XAF') || 0;
     return priceA - priceB;
   });
 
   let result = sortedPackages.map(pkg => pkg.formatForLanguage(lang));
-  
-  if (currency) {    
-    // Filtrer d'abord les packages qui ont la devise
-    const packagesWithCurrency = result.filter(pkg => {
-      return pkg.pricing && pkg.pricing[currency] !== undefined;
-    });
-      
-    // Puis transformer pour ne garder que la devise demandée
-    result = packagesWithCurrency.map(pkg => {
-      const packageData = { ...pkg };
-      packageData.pricing = { [currency]: pkg.pricing[currency] };
-      packageData.economy = pkg.economy ? { [currency]: pkg.economy[currency] } : null;
-      return packageData;
-    });
+
+  // Filtre par devise UNIQUEMENT pour les packs 'money' (les packs 'ads'
+  // n'ont pas de pricing, on les laisse passer tels quels).
+  if (currency) {
+    result = result
+      .filter(pkg => {
+        if ((pkg.paymentMode || 'money') === 'ads') return true; // bypass filtre devise
+        return pkg.pricing && pkg.pricing[currency] !== undefined;
+      })
+      .map(pkg => {
+        if ((pkg.paymentMode || 'money') === 'ads') return pkg;
+        const packageData = { ...pkg };
+        packageData.pricing = { [currency]: pkg.pricing[currency] };
+        packageData.economy = pkg.economy ? { [currency]: pkg.economy[currency] } : null;
+        return packageData;
+      });
   }
 
   res.status(200).json({
@@ -41,6 +65,7 @@ exports.getAvailablePackages = catchAsync(async (req, res, next) => {
     data: {
       packages: result,
       count: result.length,
+      paymentMode,
       ...(currency && { currency })
     }
   });
