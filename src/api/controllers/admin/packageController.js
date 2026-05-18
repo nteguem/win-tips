@@ -9,44 +9,47 @@ const catchAsync = require('../../../utils/catchAsync');
  */
 exports.getAllPackages = catchAsync(async (req, res, next) => {
   const { lang = 'fr', currency = 'XAF' } = req.query;
-  
+
   // Récupération de tous les packages
   const packages = await Package.find()
     .populate('categories', 'name description isVip')
     .populate('formationId');
 
-  // FILTRER uniquement les packages qui ont la devise demandée
-  const packagesWithCurrency = packages.filter(pkg => {
-    const price = pkg.getPricing(currency);
-    return price !== null && price !== undefined;
-  });
-
-  // Si aucun package n'a cette devise, retourner vide
-  if (!packagesWithCurrency.length) {
-    return res.status(200).json({
-      success: true,
-      data: {
-        packages: [],
-        count: 0,
-        currency: currency
-      }
+  // Séparation par mode de paiement.
+  // - Les packs 'ads' n'ont PAS de pricing → on les garde toujours (pas de
+  //   filtre par devise applicable).
+  // - Les packs 'money' sont filtrés par la devise demandée.
+  const adsPackages = packages.filter(pkg => (pkg.paymentMode || 'money') === 'ads');
+  const moneyPackagesWithCurrency = packages
+    .filter(pkg => (pkg.paymentMode || 'money') === 'money')
+    .filter(pkg => {
+      const price = pkg.getPricing(currency);
+      return price !== null && price !== undefined;
     });
-  }
 
-  // Trier par prix dans la devise demandée
-  const sortedPackages = packagesWithCurrency.sort((a, b) => {
+  // Tri : ads par adsRequired croissant, money par prix dans la devise
+  adsPackages.sort((a, b) => (a.adsRequired || 0) - (b.adsRequired || 0));
+  moneyPackagesWithCurrency.sort((a, b) => {
     const priceA = a.getPricing(currency) || 0;
     const priceB = b.getPricing(currency) || 0;
     return priceA - priceB;
   });
 
-  // Formater selon la langue ET filtrer par devise
-  const formattedPackages = sortedPackages.map(pkg => {
+  const allRelevant = [...moneyPackagesWithCurrency, ...adsPackages];
+
+  // Formater selon la langue
+  const formattedPackages = allRelevant.map(pkg => {
     const formatted = pkg.formatForLanguage(lang);
-    
-    formatted.pricing = formatted.pricing[currency] || 0;
-    formatted.economy = formatted.economy ? (formatted.economy[currency] || 0) : null;
-    
+
+    if ((formatted.paymentMode || 'money') === 'money') {
+      formatted.pricing = (formatted.pricing && formatted.pricing[currency]) || 0;
+      formatted.economy = formatted.economy ? (formatted.economy[currency] || 0) : null;
+    } else {
+      // Pack ads : pas de prix
+      formatted.pricing = null;
+      formatted.economy = null;
+    }
+
     return formatted;
   });
 
