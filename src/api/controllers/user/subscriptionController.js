@@ -119,23 +119,34 @@ exports.checkCategoryAccess = catchAsync(async (req, res, next) => {
 exports.getSubscriptionStatus = catchAsync(async (req, res, next) => {
   const activeSubscriptions = await subscriptionService.getActiveSubscriptions(req.user._id);
 
+  // Filtrer les souscriptions orphelines (package supprimé en BD)
+  const validSubscriptions = activeSubscriptions.filter(sub => sub.package);
+
   // Récupérer toutes les catégories accessibles
   const accessibleCategories = [];
-  for (const subscription of activeSubscriptions) {
-    accessibleCategories.push(...subscription.package.categories);
+  for (const subscription of validSubscriptions) {
+    if (subscription.package && Array.isArray(subscription.package.categories)) {
+      accessibleCategories.push(...subscription.package.categories);
+    }
   }
 
-  // Supprimer les doublons
-  const uniqueCategories = [...new Set(accessibleCategories.map(cat => cat._id.toString()))]
-    .map(id => accessibleCategories.find(cat => cat._id.toString() === id));
+  // Supprimer les doublons (catégories peuvent être populées (objet) ou pas (ObjectId))
+  const seen = new Set();
+  const uniqueCategories = [];
+  for (const cat of accessibleCategories) {
+    const id = (cat && cat._id ? cat._id : cat).toString();
+    if (seen.has(id)) continue;
+    seen.add(id);
+    uniqueCategories.push(cat);
+  }
 
   res.status(200).json({
     success: true,
     data: {
-      hasActiveSubscription: activeSubscriptions.length > 0,
-      activeSubscriptions,
+      hasActiveSubscription: validSubscriptions.length > 0,
+      activeSubscriptions: validSubscriptions,
       accessibleCategories: uniqueCategories,
-      subscriptionCount: activeSubscriptions.length
+      subscriptionCount: validSubscriptions.length
     }
   });
 });
