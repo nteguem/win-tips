@@ -61,6 +61,10 @@ exports.getAvailablePackages = catchAsync(async (req, res, next) => {
 
   // Filtre par devise UNIQUEMENT pour les packs 'money' (les packs 'ads'
   // n'ont pas de pricing, on les laisse passer tels quels).
+  // Format de sortie pour les packs 'money' : `pricing` et `economy` sont
+  // des nombres directs (pas un objet `{XAF: ...}`) — c'est le contrat
+  // historique attendu par Flutter (PackageCatalog.fromJson lit
+  // `json['pricing'] is num`).
   if (currency) {
     result = result
       .filter(pkg => {
@@ -68,10 +72,18 @@ exports.getAvailablePackages = catchAsync(async (req, res, next) => {
         return pkg.pricing && pkg.pricing[currency] !== undefined;
       })
       .map(pkg => {
-        if ((pkg.paymentMode || 'money') === 'ads') return pkg;
+        if ((pkg.paymentMode || 'money') === 'ads') {
+          // Packs ads : aplatir aussi (mais à 0) pour que Flutter parse pareil
+          const adsData = { ...pkg };
+          adsData.pricing = 0;
+          adsData.economy = null;
+          return adsData;
+        }
         const packageData = { ...pkg };
-        packageData.pricing = { [currency]: pkg.pricing[currency] };
-        packageData.economy = pkg.economy ? { [currency]: pkg.economy[currency] } : null;
+        packageData.pricing = pkg.pricing[currency];
+        packageData.economy = pkg.economy && pkg.economy[currency] != null
+          ? pkg.economy[currency]
+          : null;
         return packageData;
       });
   }
