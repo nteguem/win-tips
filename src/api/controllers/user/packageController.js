@@ -3,6 +3,12 @@ const subscriptionService = require('../../services/user/subscriptionService');
 const { AppError, ErrorCodes } = require('../../../utils/AppError');
 const catchAsync = require('../../../utils/catchAsync');
 
+// Marqueur visible au boot pour vérifier que ce fichier est chargé par Node
+// après un redémarrage pm2. Si tu ne vois pas cette ligne dans `pm2 logs`
+// après un restart, c'est que Node ne charge pas ce fichier (autre branche,
+// autre process, etc.).
+console.log('🟢 [packageController.js] chargé', new Date().toISOString());
+
 /**
  * Obtenir tous les packages disponibles (user).
  *
@@ -27,16 +33,16 @@ exports.getAvailablePackages = catchAsync(async (req, res, next) => {
     return next(new AppError(`paymentMode invalide: ${paymentMode}`, 400, ErrorCodes.VALIDATION_ERROR));
   }
 
-  // ── DEBUG TEMP ─────────────────────────────────────────────────────────
-  console.log('[getAvailablePackages] paymentMode=%s filter=%j', paymentMode, filter);
+  // ── DEBUG TEMP [v2 marker] ────────────────────────────────────────────
+  console.log('🔵 [getAvailablePackages][v2] paymentMode=%s filter=%j', paymentMode, filter);
 
   const packages = await Package.find(filter)
     .populate('categories', 'name description isVip')
     .populate('formationId');
 
-  console.log('[getAvailablePackages] %d packs trouvés :', packages.length);
+  console.log('🔵 [getAvailablePackages][v2] %d packs trouvés :', packages.length);
   for (const p of packages) {
-    console.log('  - %s | paymentMode=%s | adsRequired=%s | name.fr=%s',
+    console.log('🔵   - %s | paymentMode=%s | adsRequired=%s | name.fr=%s',
       p._id, p.paymentMode, p.adsRequired, p.name?.fr || p.name);
   }
   // ── /DEBUG ─────────────────────────────────────────────────────────────
