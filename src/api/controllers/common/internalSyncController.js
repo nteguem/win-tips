@@ -69,7 +69,12 @@ exports.createTicket = async (req, res) => {
 /**
  * POST /api/internal/sync/tickets/:id/predictions
  *
- * Body : { predictions: [{ matchData, event, odds, sport }] }
+ * Body : { predictions: [{ matchData, event, odds, sport, star? }] }
+ *
+ * Note : si `star` n'est pas fourni par bigwin (cas normal car bigwin ne
+ * gère pas cette notion côté schema), on force `star: 5` pour que la
+ * note maximale soit affichée dans le front wintips. Le défaut Mongoose
+ * (`star: 0`) cassait l'affichage des étoiles côté UI.
  */
 exports.bulkPredictions = async (req, res) => {
   try {
@@ -81,7 +86,13 @@ exports.bulkPredictions = async (req, res) => {
     const exists = await Ticket.exists({ _id: id });
     if (!exists) return formatError(res, 'Ticket wintips introuvable', 404);
 
-    const created = await predictionService.addPredictionsToTicket(id, predictions);
+    // Force star=5 si non fourni ou à 0 (synchronisations bigwin → wintips).
+    const normalized = predictions.map((p) => ({
+      ...p,
+      star: (typeof p.star === 'number' && p.star > 0) ? p.star : 5,
+    }));
+
+    const created = await predictionService.addPredictionsToTicket(id, normalized);
     res.status(201);
     return formatSuccess(res, { data: created, message: 'Predictions added' });
   } catch (err) {
