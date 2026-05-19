@@ -46,9 +46,12 @@ const UserAccessUnlockSchema = new mongoose.Schema({
   // 'package_unlock' : "paiement" d'un Package par visionnage de pubs — quand
   //                    seuil atteint, le service packageAdUnlockService crée
   //                    une Subscription pour la durée du pack.
+  // 'wheel_spin'    : déblocage d'1 tour de la roue de la chance par
+  //                    visionnage de pubs. Le wheelService.finalize() est
+  //                    appelé quand seuil atteint et tire le lot.
   resourceType: {
     type: String,
-    enum: ['category', 'package_unlock'],
+    enum: ['category', 'package_unlock', 'wheel_spin'],
     default: 'category'
   },
 

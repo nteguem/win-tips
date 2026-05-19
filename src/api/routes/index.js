@@ -25,7 +25,8 @@ const adminEventRoutes = require('./admin/eventRoutes');
 const adminAffiliateRoutes = require('./admin/affiliateRoutes');
 const adminCommissionRoutes = require('./admin/commissionRoutes');
 const adminAffiliateTypeRoutes = require('./admin/affiliateTypeRoutes');
-const adminFormationRoutes = require('./admin/formationRoutes'); 
+const adminFormationRoutes = require('./admin/formationRoutes');
+const adminWheelRoutes = require('./admin/wheelAdminRoutes');
 
 router.use('/admin/packages', adminPackageRoutes);
 router.use('/admin/categories', adminCategoryRoutes);
@@ -37,6 +38,7 @@ router.use('/admin/affiliates', adminAffiliateRoutes);
 router.use('/admin/commissions', adminCommissionRoutes);
 router.use('/admin/affiliate-types', adminAffiliateTypeRoutes);
 router.use('/admin/formations', adminFormationRoutes);
+router.use('/admin/wheel', adminWheelRoutes);
 
 // ===== ROUTES INTERNES (sync sortante depuis bigwin) =====
 // ⚠️ V1 : pas d'auth. Voir internalSyncController pour le plan V2.
@@ -60,10 +62,12 @@ const userFormationRoutes = require('./user/formationRoutes');
 const googlePlayRoutes = require('./user/googlePlayRoutes');
 const googlePlayWebhook = require('./user/googlePlayWebhook');
 const packageRoutes = require('./user/packageRoutes');
+const wheelRoutes = require('./user/wheelRoutes');
 router.use('/user/coupons', couponRoutes);
 router.use('/user/packages', packageRoutes);
 router.use('/user/formations', userFormationRoutes);
 router.use('/user/access', accessRoutes);
+router.use('/user/wheel', wheelRoutes);
 router.use('/user', userSubscriptionRoutes);
 router.use('/user/google-play', googlePlayRoutes);
 router.use('/webhooks', googlePlayWebhook);
