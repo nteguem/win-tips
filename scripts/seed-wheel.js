@@ -52,6 +52,8 @@ const PRIZES = [
     enabled: true
   },
   {
+    // Si packageId pas fourni → wheelService.findBestVipPackage() attribuera
+    // automatiquement le pack avec le plus de catégories au moment du gain.
     name: { fr: 'Accès VIP 24h', en: 'VIP access 24h' },
     type: 'subscription',
     subscription: { packageId: VIP_PACKAGE_ID, durationHours: 24 },
@@ -59,7 +61,7 @@ const PRIZES = [
     icon: '👑',
     order: 2,
     weight: 20,
-    enabled: !!VIP_PACKAGE_ID
+    enabled: true
   },
   {
     name: { fr: 'Cash niveau 1', en: 'Cash Tier 1' },

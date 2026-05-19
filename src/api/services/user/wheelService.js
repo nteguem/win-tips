@@ -20,8 +20,37 @@ const WheelConfig = require('../../models/common/WheelConfig');
 const WheelSpin = require('../../models/common/WheelSpin');
 const WheelUserStats = require('../../models/common/WheelUserStats');
 const Subscription = require('../../models/common/Subscription');
+const Package = require('../../models/common/Package');
 const walletService = require('../common/walletService');
 const { AppError, ErrorCodes } = require('../../../utils/AppError');
+
+/**
+ * Détermine le "meilleur" package à attribuer pour un lot subscription dont
+ * le packageId n'est pas explicitement configuré. Le meilleur = celui actif
+ * avec le PLUS de catégories (et en cas d'égalité, durée la plus longue).
+ *
+ * Filtre :
+ *   - isActive=true
+ *   - paymentMode='money' (on évite les packs déblocables par pubs)
+ *
+ * Cache en mémoire 60s pour éviter de re-query à chaque spin.
+ */
+let _bestPackageCache = { id: null, expiresAt: 0 };
+async function findBestVipPackage() {
+  if (_bestPackageCache.id && Date.now() < _bestPackageCache.expiresAt) {
+    return _bestPackageCache.id;
+  }
+  const results = await Package.aggregate([
+    { $match: { isActive: true, paymentMode: { $ne: 'ads' } } },
+    { $addFields: { categoryCount: { $size: { $ifNull: ['$categories', []] } } } },
+    { $sort: { categoryCount: -1, duration: -1 } },
+    { $limit: 1 },
+    { $project: { _id: 1 } }
+  ]);
+  const id = results[0]?._id || null;
+  _bestPackageCache = { id, expiresAt: Date.now() + 60_000 };
+  return id;
+}
 
 function startOfDay(d = new Date()) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
 function startOfMonth(d = new Date()) { return new Date(d.getFullYear(), d.getMonth(), 1); }
@@ -183,19 +212,31 @@ async function spin(userId, { currency = 'XAF', lang = 'fr', clientRequestId } =
       stats.ticketsBalance += n;
       stats.totalTicketsEarned = (stats.totalTicketsEarned || 0) + n;
       status = 'claimed_auto';
-    } else if (prize.type === 'subscription' && prize.subscription?.packageId) {
-      const startDate = new Date();
-      const endDate = new Date(startDate.getTime() + (prize.subscription.durationHours || 24) * 3600 * 1000);
-      const sub = await Subscription.create({
-        user: userId,
-        package: prize.subscription.packageId,
-        startDate, endDate,
-        pricing: { amount: 0, currency: 'XAF' },
-        status: 'active',
-        paymentProvider: 'ADS',
-        paymentReference: `wheel:${userId}:${Date.now()}`
-      });
-      subId = sub._id;
+    } else if (prize.type === 'subscription') {
+      // Si l'admin n'a pas configuré de packageId sur le lot → fallback
+      // automatique sur le "best package" (celui qui a le plus de catégories,
+      // i.e. l'offre la plus généreuse — typiquement le mensuel premium).
+      let packageId = prize.subscription?.packageId || null;
+      if (!packageId) {
+        packageId = await findBestVipPackage();
+      }
+      if (packageId) {
+        const startDate = new Date();
+        const endDate = new Date(startDate.getTime() + (prize.subscription?.durationHours || 24) * 3600 * 1000);
+        const sub = await Subscription.create({
+          user: userId,
+          package: packageId,
+          startDate, endDate,
+          pricing: { amount: 0, currency: 'XAF' },
+          status: 'active',
+          paymentProvider: 'ADS',
+          paymentReference: `wheel:${userId}:${Date.now()}`
+        });
+        subId = sub._id;
+      }
+      // Marque toujours claimed_auto même si pas de package trouvé (pour ne pas
+      // bloquer le spin — l'user voit "Tu as gagné un accès VIP" et un admin
+      // gérera manuellement si fallback est vide).
       status = 'claimed_auto';
     } else if (prize.type === 'physical') {
       status = 'pending_delivery';
