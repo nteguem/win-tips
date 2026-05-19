@@ -33,9 +33,14 @@ const WheelConfigSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 WheelConfigSchema.statics.getSingleton = async function () {
-  let doc = await this.findOne({ _singleton: 'wheel' });
-  if (!doc) doc = await this.create({ _singleton: 'wheel' });
-  return doc;
+  // Upsert atomique : si deux requêtes arrivent simultanément, MongoDB garantit
+  // qu'une seule création passe (l'autre fait juste une lecture).
+  // `setDefaultsOnInsert` applique les valeurs `default` du schéma à l'insertion.
+  return this.findOneAndUpdate(
+    { _singleton: 'wheel' },
+    { $setOnInsert: { _singleton: 'wheel' } },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
 };
 
 WheelConfigSchema.methods.toAdminJSON = function () {

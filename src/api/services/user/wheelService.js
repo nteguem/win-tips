@@ -278,8 +278,17 @@ async function getState(userId, lang = 'fr') {
  * puis RESET l'UserAccessUnlock.
  */
 async function finalize(doc, userId, lang = 'fr') {
-  // Idempotence stricte : un WheelSpin déjà créé pour cet unlock ?
-  const existing = await WheelSpin.findOne({ unlockId: doc._id }).populate('prize');
+  // Idempotence stricte par NONCE : le nonce change à chaque start() — c'est
+  // lui qui identifie un cycle de spin, pas l'unlockId (qui est réutilisé).
+  // Sans nonce (cas anormal) on bail out.
+  if (!doc.nonce) {
+    throw new AppError(
+      'Spin sans nonce — démarre un nouveau tour.',
+      400,
+      ErrorCodes.OPERATION_NOT_ALLOWED
+    );
+  }
+  const existing = await WheelSpin.findOne({ nonce: doc.nonce }).populate('prize');
   if (existing) return formatSpin(existing, lang);
 
   const prize = await drawPrize(userId);
@@ -360,6 +369,7 @@ async function finalize(doc, userId, lang = 'fr') {
       prize: prize._id,
       prizeSnapshot: snapshot,
       unlockId: doc._id,
+      nonce: doc.nonce,
       adsRequired: doc.selectedOption?.adsRequired || 0,
       wasFreeSpin: (doc.selectedOption?.adsRequired || 0) === 0,
       status,
@@ -367,9 +377,9 @@ async function finalize(doc, userId, lang = 'fr') {
       subscriptionCreated: subId
     });
   } catch (e) {
-    // E11000 = race condition sur l'index unique unlockId → on relit
+    // E11000 = race condition sur l'index unique nonce → on relit le doc existant
     if (e.code === 11000) {
-      const existing2 = await WheelSpin.findOne({ unlockId: doc._id }).populate('prize');
+      const existing2 = await WheelSpin.findOne({ nonce: doc.nonce }).populate('prize');
       if (existing2) return formatSpin(existing2, lang);
     }
     throw e;

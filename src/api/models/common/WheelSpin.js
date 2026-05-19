@@ -24,12 +24,22 @@ const WheelSpinSchema = new mongoose.Schema({
     freeSpin: { count: Number }
   },
 
-  // Référence à l'unlock qui a généré ce spin — idempotence stricte.
+  // Référence à l'unlock qui a généré ce spin — pour audit (PAS unique :
+  // le même UserAccessUnlock est réutilisé entre spins, on reset son contenu).
   unlockId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'UserAccessUnlock',
     required: true,
-    unique: true
+    index: true
+  },
+
+  // Nonce du cycle de spin — UNIQUE et change à chaque start(). C'est lui qui
+  // garantit l'idempotence du finalize(), pas l'unlockId (qui est réutilisé).
+  nonce: {
+    type: String,
+    required: true,
+    unique: true,
+    index: true
   },
 
   adsRequired: { type: Number, default: 0 },
