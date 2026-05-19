@@ -146,13 +146,14 @@ async function spin(userId, { currency = 'XAF', lang = 'fr', clientRequestId } =
 
   const prize = await drawPrize(userId);
 
-  // Snapshot complet du prize (incluant amounts multi-devises pour audit)
+  // Snapshot complet du prize. On fige l'amount/currency choisis pour cet user
+  // (fallback USD si sa devise n'est pas configurée sur le lot).
   const snapshot = {
     name: prize.name,
     type: prize.type,
     cash: prize.cash ? {
-      amount: prize.getCashAmountFor(currency, cfg.defaultCurrency),
-      currency: prize.getCashCurrency(currency, cfg.defaultCurrency)
+      amount: prize.getCashAmountFor(currency),
+      currency: prize.getCashCurrency(currency)
     } : null,
     physical: prize.physical,
     subscription: prize.subscription,
@@ -165,8 +166,8 @@ async function spin(userId, { currency = 'XAF', lang = 'fr', clientRequestId } =
 
   try {
     if (prize.type === 'cash') {
-      const amount = prize.getCashAmountFor(currency, cfg.defaultCurrency) || 0;
-      const cashCur = prize.getCashCurrency(currency, cfg.defaultCurrency);
+      const amount = prize.getCashAmountFor(currency) || 0;
+      const cashCur = prize.getCashCurrency(currency);
       if (amount > 0) {
         const { transaction } = await walletService.credit({
           userId, amount, currency: cashCur,

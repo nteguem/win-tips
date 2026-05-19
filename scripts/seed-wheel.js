@@ -65,18 +65,9 @@ const PRIZES = [
     name: { fr: 'Cash niveau 1', en: 'Cash Tier 1' },
     type: 'cash',
     cash: {
-      amounts: {
-        XAF: 1000,
-        XOF: 1000,
-        CDF: 50000,
-        GNF: 25000,
-        GMD: 200,
-        NGN: 4000,
-        GHS: 30,
-        KES: 350,
-        USD: 2
-      },
-      // Rétro-compat
+      // Devises gérées : XAF & XOF (zones franc CFA — mêmes packages, parité 1:1)
+      // + USD comme fallback universel pour tout autre pays.
+      amounts: { XAF: 1000, XOF: 1000, USD: 2 },
       amount: 1000,
       currency: 'XAF'
     },
@@ -91,17 +82,7 @@ const PRIZES = [
     name: { fr: 'Cash niveau 2', en: 'Cash Tier 2' },
     type: 'cash',
     cash: {
-      amounts: {
-        XAF: 5000,
-        XOF: 5000,
-        CDF: 250000,
-        GNF: 125000,
-        GMD: 1000,
-        NGN: 20000,
-        GHS: 150,
-        KES: 1750,
-        USD: 10
-      },
+      amounts: { XAF: 5000, XOF: 5000, USD: 10 },
       amount: 5000,
       currency: 'XAF'
     },
@@ -116,17 +97,7 @@ const PRIZES = [
     name: { fr: 'Jackpot Cash', en: 'Cash Jackpot' },
     type: 'cash',
     cash: {
-      amounts: {
-        XAF: 50000,
-        XOF: 50000,
-        CDF: 2500000,
-        GNF: 1250000,
-        GMD: 10000,
-        NGN: 200000,
-        GHS: 1500,
-        KES: 17500,
-        USD: 100
-      },
+      amounts: { XAF: 50000, XOF: 50000, USD: 100 },
       amount: 50000,
       currency: 'XAF'
     },

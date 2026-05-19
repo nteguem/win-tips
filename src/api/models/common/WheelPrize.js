@@ -89,36 +89,47 @@ const WheelPrizeSchema = new mongoose.Schema({
 WheelPrizeSchema.index({ enabled: 1, order: 1 });
 WheelPrizeSchema.index({ isFallback: 1 });
 
+// Fallback de devise quand la map n'a pas la devise demandée.
+// On aligne sur les devises utilisées dans les packages (XAF, XOF) ; pour
+// tout pays hors de cette zone, on retombe sur USD.
+const CURRENCY_FALLBACK = 'USD';
+
 /**
- * Retourne le montant cash pour la devise demandée, avec fallback.
- * Ordre : amounts[currency] > amounts[fallbackCurrency] > amount (legacy).
+ * Retourne le montant cash pour la devise demandée.
+ * Ordre :
+ *   1. amounts[currency]    (devise locale de l'user)
+ *   2. amounts[USD]         (fallback universel — devises hors XAF/XOF)
+ *   3. amount (legacy)
  */
-WheelPrizeSchema.methods.getCashAmountFor = function (currency, fallbackCurrency = 'XAF') {
+WheelPrizeSchema.methods.getCashAmountFor = function (currency) {
   if (this.type !== 'cash') return null;
-  const cur = (currency || fallbackCurrency || 'XAF').toUpperCase();
+  const cur = String(currency || CURRENCY_FALLBACK).toUpperCase();
   const map = this.cash?.amounts;
-  if (map && map.size > 0) {
+  if (map && typeof map.has === 'function' && map.size > 0) {
     if (map.has(cur)) return map.get(cur);
-    const fb = (fallbackCurrency || 'XAF').toUpperCase();
-    if (map.has(fb)) return map.get(fb);
+    if (map.has(CURRENCY_FALLBACK)) return map.get(CURRENCY_FALLBACK);
   }
-  // Fallback rétro-compat
   return this.cash?.amount ?? null;
 };
 
-WheelPrizeSchema.methods.getCashCurrency = function (currency, fallbackCurrency = 'XAF') {
+/**
+ * Retourne la devise effectivement utilisée (currency demandée si dispo, sinon USD).
+ */
+WheelPrizeSchema.methods.getCashCurrency = function (currency) {
   if (this.type !== 'cash') return null;
-  const cur = (currency || fallbackCurrency || 'XAF').toUpperCase();
+  const cur = String(currency || CURRENCY_FALLBACK).toUpperCase();
   const map = this.cash?.amounts;
-  if (map && map.has(cur)) return cur;
-  const fb = (fallbackCurrency || 'XAF').toUpperCase();
-  if (map && map.has(fb)) return fb;
-  return this.cash?.currency || fb;
+  if (map && typeof map.has === 'function') {
+    if (map.has(cur)) return cur;
+    if (map.has(CURRENCY_FALLBACK)) return CURRENCY_FALLBACK;
+  }
+  return this.cash?.currency || CURRENCY_FALLBACK;
 };
 
 // Vue publique pour le client mobile — masque les probabilités et les caps.
-// `currency` permet de retourner le montant dans la devise locale de l'user.
-WheelPrizeSchema.methods.toPublicJSON = function (lang = 'fr', currency = 'XAF') {
+// `currency` permet de retourner le montant dans la devise locale de l'user
+// (fallback USD si la devise n'est pas configurée sur le lot).
+WheelPrizeSchema.methods.toPublicJSON = function (lang = 'fr', currency) {
   return {
     _id: this._id,
     name: (this.name && (this.name[lang] || this.name.fr)) || '',
