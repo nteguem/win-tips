@@ -12,8 +12,30 @@ const WheelConfigSchema = new mongoose.Schema({
   // Kill-switch global de la feature
   wheelEnabled: { type: Boolean, default: true },
 
-  // Coût en pubs récompensées pour 1 tour (configurable depuis l'admin)
+  // Coût en pubs récompensées pour 1 tour (rétro-compat — remplacé par
+  // ticketPacks ci-dessous). Conservé pour les anciennes apps.
   adsPerSpin: { type: Number, min: 0, default: 3 },
+
+  // Packs de tours achetables par l'user en regardant des pubs.
+  // Chaque pack : N tours pour M pubs visionnées. L'admin configure plusieurs
+  // paliers (1 tour, 5 tours, 15 tours...) avec un ratio dégressif favorisant
+  // les gros packs pour pousser l'user à voir + de pubs d'un coup.
+  ticketPacks: {
+    type: [{
+      tickets: { type: Number, min: 1, required: true },
+      adsRequired: { type: Number, min: 1, required: true },
+      label: {
+        fr: { type: String, default: '' },
+        en: { type: String, default: '' }
+      },
+      featured: { type: Boolean, default: false }  // mis en avant côté UI
+    }],
+    default: () => ([
+      { tickets: 1,  adsRequired: 3,  label: { fr: '1 tour',   en: '1 spin'   } },
+      { tickets: 5,  adsRequired: 12, label: { fr: '5 tours',  en: '5 spins'  }, featured: true },
+      { tickets: 15, adsRequired: 30, label: { fr: '15 tours', en: '15 spins' } }
+    ])
+  },
 
   // Cooldown entre 2 spins consécutifs en secondes (anti-bot)
   cooldownSec: { type: Number, min: 0, default: 5 },

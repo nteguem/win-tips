@@ -29,7 +29,17 @@ const WheelPrizeSchema = new mongoose.Schema({
   },
 
   // Détails par type — seul le bloc correspondant au `type` est lu.
+  // Pour `cash` : montants multi-devises (pattern Package.pricing). On lit
+  // `amounts[user.currency]`, fallback sur `amounts[defaultCurrency]` de la
+  // config wheel. Les anciens champs amount/currency sont conservés UNIQUEMENT
+  // comme fallback de rétro-compat — l'admin doit migrer vers `amounts`.
   cash: {
+    amounts: {
+      type: Map,
+      of: { type: Number, min: 0 },
+      default: () => new Map()
+    },
+    // Rétro-compat (à supprimer une fois la migration faite) :
     amount: { type: Number, min: 0, default: null },
     currency: { type: String, default: 'XAF', uppercase: true }
   },
@@ -79,8 +89,36 @@ const WheelPrizeSchema = new mongoose.Schema({
 WheelPrizeSchema.index({ enabled: 1, order: 1 });
 WheelPrizeSchema.index({ isFallback: 1 });
 
+/**
+ * Retourne le montant cash pour la devise demandée, avec fallback.
+ * Ordre : amounts[currency] > amounts[fallbackCurrency] > amount (legacy).
+ */
+WheelPrizeSchema.methods.getCashAmountFor = function (currency, fallbackCurrency = 'XAF') {
+  if (this.type !== 'cash') return null;
+  const cur = (currency || fallbackCurrency || 'XAF').toUpperCase();
+  const map = this.cash?.amounts;
+  if (map && map.size > 0) {
+    if (map.has(cur)) return map.get(cur);
+    const fb = (fallbackCurrency || 'XAF').toUpperCase();
+    if (map.has(fb)) return map.get(fb);
+  }
+  // Fallback rétro-compat
+  return this.cash?.amount ?? null;
+};
+
+WheelPrizeSchema.methods.getCashCurrency = function (currency, fallbackCurrency = 'XAF') {
+  if (this.type !== 'cash') return null;
+  const cur = (currency || fallbackCurrency || 'XAF').toUpperCase();
+  const map = this.cash?.amounts;
+  if (map && map.has(cur)) return cur;
+  const fb = (fallbackCurrency || 'XAF').toUpperCase();
+  if (map && map.has(fb)) return fb;
+  return this.cash?.currency || fb;
+};
+
 // Vue publique pour le client mobile — masque les probabilités et les caps.
-WheelPrizeSchema.methods.toPublicJSON = function (lang = 'fr') {
+// `currency` permet de retourner le montant dans la devise locale de l'user.
+WheelPrizeSchema.methods.toPublicJSON = function (lang = 'fr', currency = 'XAF') {
   return {
     _id: this._id,
     name: (this.name && (this.name[lang] || this.name.fr)) || '',
@@ -89,7 +127,10 @@ WheelPrizeSchema.methods.toPublicJSON = function (lang = 'fr') {
     icon: this.icon,
     order: this.order,
     cash: this.type === 'cash'
-      ? { amount: this.cash?.amount, currency: this.cash?.currency }
+      ? {
+          amount: this.getCashAmountFor(currency),
+          currency: this.getCashCurrency(currency)
+        }
       : null,
     physical: this.type === 'physical'
       ? { label: this.physical?.label }
@@ -103,9 +144,14 @@ WheelPrizeSchema.methods.toPublicJSON = function (lang = 'fr') {
   };
 };
 
-// Vue admin — inclut probas, caps, état complet.
+// Vue admin — inclut probas, caps, état complet. Sérialise la Map en objet plat.
 WheelPrizeSchema.methods.toAdminJSON = function () {
   const obj = this.toObject();
+  if (obj.cash && obj.cash.amounts instanceof Map) {
+    obj.cash.amounts = Object.fromEntries(obj.cash.amounts);
+  } else if (obj.cash && obj.cash.amounts && typeof obj.cash.amounts === 'object') {
+    // déjà sérialisé en objet par toObject
+  }
   delete obj.__v;
   return obj;
 };

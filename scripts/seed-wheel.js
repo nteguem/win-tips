@@ -1,21 +1,18 @@
-// Seed initial pour la "Roue de la Chance".
+// Seed initial pour la "Roue de la Chance" — V2 (tickets-based + multi-devises).
 //
-// Crée le singleton WheelConfig + les 7 lots de base :
-//   - Dommage (fallback)
-//   - 1 Tour gratuit
-//   - Accès VIP 24h
-//   - 1 000 FCFA
-//   - 5 000 FCFA
-//   - 50 000 FCFA
-//   - iPhone 14
+// Crée le singleton WheelConfig (avec ticketPacks) + 7 lots avec amounts
+// multi-devises (XAF + CDF + XOF en défaut, l'admin ajustera).
 //
 // Idempotent : ne recrée pas les lots déjà présents (matching par name.fr).
+// Si tu veux RECRÉER les lots à zéro, supprime-les d'abord depuis Mongo
+// ou utilise le flag FORCE_RESEED=1.
 //
 // Lance avec :
 //   $env:MONGO_URI='...' ; node scripts/seed-wheel.js
+//   ou : MONGO_URI='...' node scripts/seed-wheel.js
 //
-// Optionnel — si un packageId VIP existe pour le lot "Accès VIP 24h" :
-//   $env:WHEEL_VIP_PACKAGE_ID='6532...'
+// Pour repeupler de zéro :
+//   $env:FORCE_RESEED='1' ; node scripts/seed-wheel.js
 
 require('dotenv').config();
 const mongoose = require('mongoose');
@@ -31,6 +28,7 @@ if (!URI) {
 }
 
 const VIP_PACKAGE_ID = process.env.WHEEL_VIP_PACKAGE_ID || null;
+const FORCE = process.env.FORCE_RESEED === '1';
 
 const PRIZES = [
   {
@@ -61,12 +59,27 @@ const PRIZES = [
     icon: '👑',
     order: 2,
     weight: 20,
-    enabled: !!VIP_PACKAGE_ID  // désactivé tant que packageId n'est pas configuré
+    enabled: !!VIP_PACKAGE_ID
   },
   {
-    name: { fr: '1 000 FCFA', en: '1,000 FCFA' },
+    name: { fr: 'Cash niveau 1', en: 'Cash Tier 1' },
     type: 'cash',
-    cash: { amount: 1000, currency: 'XAF' },
+    cash: {
+      amounts: {
+        XAF: 1000,
+        XOF: 1000,
+        CDF: 50000,
+        GNF: 25000,
+        GMD: 200,
+        NGN: 4000,
+        GHS: 30,
+        KES: 350,
+        USD: 2
+      },
+      // Rétro-compat
+      amount: 1000,
+      currency: 'XAF'
+    },
     color: '#4C8DFF',
     icon: '💵',
     order: 3,
@@ -75,9 +88,23 @@ const PRIZES = [
     caps: { userDay: 2 }
   },
   {
-    name: { fr: '5 000 FCFA', en: '5,000 FCFA' },
+    name: { fr: 'Cash niveau 2', en: 'Cash Tier 2' },
     type: 'cash',
-    cash: { amount: 5000, currency: 'XAF' },
+    cash: {
+      amounts: {
+        XAF: 5000,
+        XOF: 5000,
+        CDF: 250000,
+        GNF: 125000,
+        GMD: 1000,
+        NGN: 20000,
+        GHS: 150,
+        KES: 1750,
+        USD: 10
+      },
+      amount: 5000,
+      currency: 'XAF'
+    },
     color: '#FFB020',
     icon: '💰',
     order: 4,
@@ -86,13 +113,27 @@ const PRIZES = [
     caps: { userDay: 1, globalDay: 5 }
   },
   {
-    name: { fr: '50 000 FCFA', en: '50,000 FCFA' },
+    name: { fr: 'Jackpot Cash', en: 'Cash Jackpot' },
     type: 'cash',
-    cash: { amount: 50000, currency: 'XAF' },
+    cash: {
+      amounts: {
+        XAF: 50000,
+        XOF: 50000,
+        CDF: 2500000,
+        GNF: 1250000,
+        GMD: 10000,
+        NGN: 200000,
+        GHS: 1500,
+        KES: 17500,
+        USD: 100
+      },
+      amount: 50000,
+      currency: 'XAF'
+    },
     color: '#FF5B5B',
     icon: '💎',
     order: 5,
-    weight: 0,  // désactivé par défaut côté tirage (mais visible sur la roue)
+    weight: 0,
     enabled: true,
     caps: { globalDay: 1, userMonth: 1 }
   },
@@ -103,7 +144,7 @@ const PRIZES = [
     color: '#0A7A46',
     icon: '📱',
     order: 6,
-    weight: 0,  // désactivé par défaut — l'admin active quand prêt
+    weight: 0,
     enabled: true,
     caps: { window: { days: 120, max: 1 } }
   }
@@ -112,19 +153,33 @@ const PRIZES = [
 async function run() {
   console.log('Connexion MongoDB...');
   await mongoose.connect(URI);
-  console.log('Connecté.');
+  console.log('Connecté à :', mongoose.connection.name);
 
-  // 1. Config singleton
+  if (FORCE) {
+    console.log('FORCE_RESEED=1 → suppression de tous les lots et reset config...');
+    await WheelPrize.deleteMany({});
+    await WheelConfig.deleteMany({});
+  }
+
+  // 1. Config singleton (les ticketPacks par défaut sont définis dans le schema)
   const cfg = await WheelConfig.getSingleton();
-  console.log(`WheelConfig: adsPerSpin=${cfg.adsPerSpin}, enabled=${cfg.wheelEnabled}, dailyMax=${cfg.dailyMaxSpinsPerUser}`);
+  console.log('WheelConfig :', {
+    adsPerSpin: cfg.adsPerSpin,
+    cooldownSec: cfg.cooldownSec,
+    dailyMax: cfg.dailyMaxSpinsPerUser,
+    enabled: cfg.wheelEnabled,
+    ticketPacks: (cfg.ticketPacks || []).length + ' pack(s)'
+  });
+  (cfg.ticketPacks || []).forEach((p, i) => {
+    console.log('  Pack #' + i + ': ' + p.tickets + ' tour(s) = ' + p.adsRequired + ' pubs (' + (p.label?.fr || '-') + ')' + (p.featured ? ' ★' : ''));
+  });
 
-  // 2. Lots (idempotent)
-  let created = 0;
-  let skipped = 0;
+  // 2. Lots
+  let created = 0, skipped = 0;
   for (const data of PRIZES) {
     const existing = await WheelPrize.findOne({ 'name.fr': data.name.fr });
     if (existing) {
-      console.log(`  [skip] "${data.name.fr}" existe déjà (${existing._id})`);
+      console.log(`  [skip] "${data.name.fr}" (${existing._id})`);
       skipped++;
       continue;
     }
@@ -138,9 +193,9 @@ async function run() {
 
   console.log(`\nFini. ${created} lot(s) créé(s), ${skipped} déjà présent(s).`);
   console.log('\nProchaines étapes :');
-  console.log('  1. Depuis le backoffice, configure les probabilités et les caps selon ta stratégie.');
-  console.log('  2. Pour le lot "Accès VIP 24h", relance avec WHEEL_VIP_PACKAGE_ID=<packageId>.');
-  console.log('  3. Active les lots "50 000 FCFA" et "iPhone 14" en mettant weight > 0 depuis l\'admin.');
+  console.log('  1. Pour "Accès VIP 24h" : seed avec WHEEL_VIP_PACKAGE_ID=<packageId>.');
+  console.log('  2. Activer "Jackpot Cash" et "iPhone 14" en mettant weight > 0 depuis l\'admin.');
+  console.log('  3. Ajuster les amounts par devise dans le backoffice si besoin.');
 
   await mongoose.disconnect();
   process.exit(0);

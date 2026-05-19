@@ -24,12 +24,14 @@ const WheelSpinSchema = new mongoose.Schema({
     freeSpin: { count: Number }
   },
 
-  // Référence à l'unlock qui a généré ce spin — pour audit (PAS unique :
-  // le même UserAccessUnlock est réutilisé entre spins, on reset son contenu).
+  // Référence à l'unlock qui a généré ce spin — pour audit.
+  // Dans le NOUVEAU FLOW (V2 tickets), le spin est synchrone et n'utilise pas
+  // d'UserAccessUnlock — ce champ est donc nullable. Les anciens spins gardent
+  // leur unlockId pour traçabilité.
   unlockId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'UserAccessUnlock',
-    required: true,
+    default: null,
     index: true
   },
 

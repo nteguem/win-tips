@@ -1,37 +1,20 @@
 // src/api/services/user/wheelService.js
 //
-// Cœur métier de la "Roue de la Chance".
+// Cœur métier de la "Roue de la Chance" — V2 avec système de TICKETS.
 //
-// Architecture du tour de roue :
-//   1. start(userId)
-//      - vérifie le cooldown, la limite quotidienne, l'état activé de la roue
-//      - si l'user a un free_spin → crée un UserAccessUnlock 'wheel_spin'
-//        directement `unlocked` (adsRequired=0) ; décrémente freeSpinsRemaining
-//      - sinon → crée un UserAccessUnlock 'wheel_spin' `in_progress` avec
-//        un nonce frais et adsRequired = config.adsPerSpin
-//      - renvoie { nonce, adsRequired, wasFreeSpin }
+// Architecture :
+//   - L'user a un solde de tours (ticketsBalance) géré dans WheelUserStats.
+//   - Pour gagner des tours, il passe par wheelTicketService (qui consomme
+//     des pubs via le pipeline SSV existant).
+//   - Pour tourner la roue, il dépense 1 tour : c'est synchrone côté serveur
+//     (pas de pubs à ce moment-là). Le mobile fait converger son animation
+//     vers le segment du lot retourné.
 //
-//   2. Le client mobile lance les pubs récompensées en passant le nonce
-//      dans le `customData` AdMob. Le pipeline SSV partagé
-//      (accessGateService.recordVerifiedReward) incrémente `verifiedCount`
-//      atomiquement (idempotent via transactionId).
-//
-//   3. getState(userId) — polling
-//      - si l'unlock est `in_progress` → renvoie la progression (ads watched / required)
-//      - si `unlocked` → appelle finalize() qui :
-//          a) tire un lot pondéré (drawPrize) en respectant les caps
-//          b) applique le lot (crédit wallet | crée Subscription | +free_spin | physical)
-//          c) enregistre un WheelSpin (idempotent via unlockId unique)
-//          d) RESET l'UserAccessUnlock pour permettre le prochain spin
-//          e) renvoie le spin (avec prize) — le mobile fait converger
-//             l'animation de la roue vers ce segment
-//
-// L'ordre "ads PUIS tirage" est anti-cheat : impossible de connaître le lot
-// avant la fin des pubs. Le mobile reçoit le résultat juste avant
-// l'animation finale.
+// Le tirage reste pondéré + capé exactement comme avant. Idempotence du spin
+// via un `clientRequestId` optionnel (le mobile peut retry sans consommer
+// 2 tickets en cas de timeout réseau).
 
 const crypto = require('crypto');
-const UserAccessUnlock = require('../../models/common/UserAccessUnlock');
 const WheelPrize = require('../../models/common/WheelPrize');
 const WheelConfig = require('../../models/common/WheelConfig');
 const WheelSpin = require('../../models/common/WheelSpin');
@@ -40,53 +23,29 @@ const Subscription = require('../../models/common/Subscription');
 const walletService = require('../common/walletService');
 const { AppError, ErrorCodes } = require('../../../utils/AppError');
 
-const RESOURCE_TYPE_WHEEL = 'wheel_spin';
-
-function startOfDay(d = new Date()) {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
-}
-function startOfMonth(d = new Date()) {
-  return new Date(d.getFullYear(), d.getMonth(), 1);
-}
+function startOfDay(d = new Date()) { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
+function startOfMonth(d = new Date()) { return new Date(d.getFullYear(), d.getMonth(), 1); }
 
 /**
  * Vérifie qu'un lot peut être tiré : enabled + tous les caps satisfaits.
- * Les compteurs sont calculés à la volée par count() sur WheelSpin (indexé).
  */
 async function isPrizeAvailable(prize, userId) {
   if (!prize.enabled) return false;
   const c = prize.caps || {};
-
   if (c.globalDay != null) {
-    const n = await WheelSpin.countDocuments({
-      prize: prize._id,
-      createdAt: { $gte: startOfDay() }
-    });
+    const n = await WheelSpin.countDocuments({ prize: prize._id, createdAt: { $gte: startOfDay() } });
     if (n >= c.globalDay) return false;
   }
   if (c.globalMonth != null) {
-    const n = await WheelSpin.countDocuments({
-      prize: prize._id,
-      createdAt: { $gte: startOfMonth() }
-    });
+    const n = await WheelSpin.countDocuments({ prize: prize._id, createdAt: { $gte: startOfMonth() } });
     if (n >= c.globalMonth) return false;
   }
   if (c.userDay != null) {
-    const n = await WheelSpin.countDocuments({
-      user: userId,
-      prize: prize._id,
-      createdAt: { $gte: startOfDay() }
-    });
+    const n = await WheelSpin.countDocuments({ user: userId, prize: prize._id, createdAt: { $gte: startOfDay() } });
     if (n >= c.userDay) return false;
   }
   if (c.userMonth != null) {
-    const n = await WheelSpin.countDocuments({
-      user: userId,
-      prize: prize._id,
-      createdAt: { $gte: startOfMonth() }
-    });
+    const n = await WheelSpin.countDocuments({ user: userId, prize: prize._id, createdAt: { $gte: startOfMonth() } });
     if (n >= c.userMonth) return false;
   }
   if (c.userLifetime != null) {
@@ -95,43 +54,33 @@ async function isPrizeAvailable(prize, userId) {
   }
   if (c.window && c.window.days && c.window.max != null) {
     const since = new Date(Date.now() - c.window.days * 86400000);
-    const n = await WheelSpin.countDocuments({
-      prize: prize._id,
-      createdAt: { $gte: since }
-    });
+    const n = await WheelSpin.countDocuments({ prize: prize._id, createdAt: { $gte: since } });
     if (n >= c.window.max) return false;
   }
   return true;
 }
 
 /**
- * Tirage pondéré parmi les lots `enabled` ET non-capés. Si tous les lots
- * non-fallback sont indisponibles → fallback (lot marqué isFallback) → sinon
- * 1er lot enabled.
+ * Tirage pondéré parmi les lots dispos, avec fallback isFallback.
  */
 async function drawPrize(userId) {
   const all = await WheelPrize.find({ enabled: true });
   if (all.length === 0) {
     throw new AppError('Aucun lot configuré sur la roue.', 500, ErrorCodes.SERVICE_UNAVAILABLE);
   }
-
   const available = [];
   for (const p of all) {
     if (await isPrizeAvailable(p, userId)) available.push(p);
   }
-
   if (available.length === 0) {
     const fb = await WheelPrize.findOne({ isFallback: true, enabled: true });
     return fb || all[0];
   }
-
   const totalWeight = available.reduce((s, p) => s + Math.max(0, p.weight || 0), 0);
   if (totalWeight <= 0) {
-    // Tous weights à 0 : on tire le fallback si dispo, sinon uniforme
     const fb = available.find(p => p.isFallback) || available[0];
     return fb;
   }
-
   let r = Math.random() * totalWeight;
   for (const p of available) {
     r -= Math.max(0, p.weight || 0);
@@ -141,164 +90,70 @@ async function drawPrize(userId) {
 }
 
 /**
- * Démarre 1 tour. Si l'user a un free_spin accumulé → unlock immédiat.
+ * Spin synchrone : consomme 1 ticket, tire un lot, applique, crée WheelSpin.
+ *
+ * @param {string} userId
+ * @param {object} opts
+ * @param {string} opts.currency - devise locale de l'user (XAF, CDF, etc.) — affecte le montant cash crédité
+ * @param {string} opts.lang     - langue pour la sérialisation
+ * @param {string} opts.clientRequestId - optionnel, idempotence côté mobile (retry safe)
+ *
+ * @returns spin formaté
  */
-async function start(userId) {
+async function spin(userId, { currency = 'XAF', lang = 'fr', clientRequestId } = {}) {
   const cfg = await WheelConfig.getSingleton();
   if (!cfg.wheelEnabled) {
-    throw new AppError(
-      'La roue est temporairement indisponible.',
-      503,
-      ErrorCodes.SERVICE_UNAVAILABLE
-    );
+    throw new AppError('La roue est temporairement indisponible.', 503, ErrorCodes.SERVICE_UNAVAILABLE);
+  }
+
+  // Idempotence client : si un WheelSpin existe déjà pour ce clientRequestId,
+  // on le retourne au lieu de consommer un nouveau ticket.
+  if (clientRequestId) {
+    const existing = await WheelSpin.findOne({ nonce: `cli-${clientRequestId}` }).populate('prize');
+    if (existing) return formatSpin(existing, lang, currency);
   }
 
   const stats = await WheelUserStats.getOrCreate(userId);
 
-  // Cooldown
+  // Cooldown anti-bot (existant)
   if (stats.lastSpinAt && cfg.cooldownSec > 0) {
-    const elapsedSec = (Date.now() - stats.lastSpinAt.getTime()) / 1000;
-    if (elapsedSec < cfg.cooldownSec) {
+    const elapsed = (Date.now() - stats.lastSpinAt.getTime()) / 1000;
+    if (elapsed < cfg.cooldownSec) {
       throw new AppError(
-        `Patiente ${Math.ceil(cfg.cooldownSec - elapsedSec)}s avant de relancer.`,
-        429,
-        ErrorCodes.RATE_LIMIT_EXCEEDED
+        `Patiente ${Math.ceil(cfg.cooldownSec - elapsed)}s avant de relancer.`,
+        429, ErrorCodes.RATE_LIMIT_EXCEEDED
       );
     }
   }
 
-  // Limite quotidienne
-  const todayCount = await WheelSpin.countDocuments({
-    user: userId,
-    createdAt: { $gte: startOfDay() }
-  });
+  // Limite quotidienne (anti-farm)
+  const todayCount = await WheelSpin.countDocuments({ user: userId, createdAt: { $gte: startOfDay() } });
   if (todayCount >= cfg.dailyMaxSpinsPerUser) {
+    throw new AppError('Tu as atteint le maximum de tours pour aujourd\'hui.', 429, ErrorCodes.RATE_LIMIT_EXCEEDED);
+  }
+
+  // *** Consommation du ticket ***
+  if ((stats.ticketsBalance || 0) < 1) {
     throw new AppError(
-      'Tu as atteint le maximum de tours pour aujourd\'hui.',
-      429,
-      ErrorCodes.RATE_LIMIT_EXCEEDED
+      'Tu n\'as plus de tours. Regarde des pubs pour en obtenir.',
+      402,  // 402 Payment Required → sémantiquement parfait
+      ErrorCodes.PAYMENT_REQUIRED
     );
   }
-
-  // Free spin disponible ?
-  const useFreeSpin = stats.freeSpinsRemaining > 0;
-  const adsRequired = useFreeSpin ? 0 : cfg.adsPerSpin;
-
-  // Trouver/réinitialiser l'unlock (singleton par user : resource = config._id)
-  let doc = await UserAccessUnlock.findOne({
-    user: userId,
-    resourceType: RESOURCE_TYPE_WHEEL,
-    resource: cfg._id
-  });
-
-  if (doc) {
-    doc.status = adsRequired === 0 ? 'unlocked' : 'in_progress';
-    doc.verifiedCount = 0;
-    doc.rewards = [];
-    doc.unlockedAt = adsRequired === 0 ? new Date() : null;
-    doc.expiresAt = null;
-  } else {
-    doc = new UserAccessUnlock({
-      user: userId,
-      resourceType: RESOURCE_TYPE_WHEEL,
-      resource: cfg._id,
-      status: adsRequired === 0 ? 'unlocked' : 'in_progress',
-      unlockedAt: adsRequired === 0 ? new Date() : null
-    });
-  }
-
-  doc.selectedOption = { adsRequired, durationMinutes: null };
-  doc.nonce = crypto.randomBytes(24).toString('hex');
-  await doc.save();
-
-  if (useFreeSpin) {
-    stats.freeSpinsRemaining = Math.max(0, stats.freeSpinsRemaining - 1);
-    await stats.save();
-  }
-
-  return {
-    nonce: doc.nonce,
-    adsRequired,
-    adsWatched: 0,
-    completed: adsRequired === 0,
-    wasFreeSpin: useFreeSpin,
-    freeSpinsRemaining: stats.freeSpinsRemaining
-  };
-}
-
-/**
- * État courant. Si unlocked et pas encore finalisé → tirage + distribution.
- */
-async function getState(userId, lang = 'fr') {
-  const cfg = await WheelConfig.getSingleton();
-  const stats = await WheelUserStats.getOrCreate(userId);
-
-  const doc = await UserAccessUnlock.findOne({
-    user: userId,
-    resourceType: RESOURCE_TYPE_WHEEL,
-    resource: cfg._id
-  });
-
-  if (!doc || (!doc.nonce && doc.status === 'in_progress')) {
-    return {
-      hasActiveSpin: false,
-      adsRequired: cfg.adsPerSpin,
-      adsWatched: 0,
-      completed: false,
-      nonce: null,
-      freeSpinsRemaining: stats.freeSpinsRemaining,
-      spin: null
-    };
-  }
-
-  const adsRequired = doc.selectedOption?.adsRequired ?? cfg.adsPerSpin;
-  const view = {
-    hasActiveSpin: doc.status === 'in_progress',
-    adsRequired,
-    adsWatched: Math.min(doc.verifiedCount || 0, adsRequired || Number.MAX_SAFE_INTEGER),
-    completed: doc.status === 'unlocked',
-    nonce: doc.nonce,
-    freeSpinsRemaining: stats.freeSpinsRemaining,
-    spin: null
-  };
-
-  if (doc.status === 'unlocked') {
-    view.spin = await finalize(doc, userId, lang);
-    // Après finalize, l'unlock est reset → on reflète l'état "prêt pour
-    // un nouveau spin" mais on garde `spin` pour que le client affiche le résultat.
-    view.completed = true;
-    view.hasActiveSpin = false;
-    // adsWatched stays at adsRequired pour la barre de progression UI
-  }
-  return view;
-}
-
-/**
- * Tire un lot, applique, crée WheelSpin (idempotent via unlockId unique),
- * puis RESET l'UserAccessUnlock.
- */
-async function finalize(doc, userId, lang = 'fr') {
-  // Idempotence stricte par NONCE : le nonce change à chaque start() — c'est
-  // lui qui identifie un cycle de spin, pas l'unlockId (qui est réutilisé).
-  // Sans nonce (cas anormal) on bail out.
-  if (!doc.nonce) {
-    throw new AppError(
-      'Spin sans nonce — démarre un nouveau tour.',
-      400,
-      ErrorCodes.OPERATION_NOT_ALLOWED
-    );
-  }
-  const existing = await WheelSpin.findOne({ nonce: doc.nonce }).populate('prize');
-  if (existing) return formatSpin(existing, lang);
+  // Décrémente AVANT le tirage (atomicité approximative — si erreur en aval,
+  // l'user perd un ticket mais ne reçoit pas le prize : compensable manuellement).
+  stats.ticketsBalance = Math.max(0, stats.ticketsBalance - 1);
 
   const prize = await drawPrize(userId);
-  const stats = await WheelUserStats.getOrCreate(userId);
 
-  // Snapshot du prize (résistant aux modifs admin)
+  // Snapshot complet du prize (incluant amounts multi-devises pour audit)
   const snapshot = {
     name: prize.name,
     type: prize.type,
-    cash: prize.cash,
+    cash: prize.cash ? {
+      amount: prize.getCashAmountFor(currency, cfg.defaultCurrency),
+      currency: prize.getCashCurrency(currency, cfg.defaultCurrency)
+    } : null,
     physical: prize.physical,
     subscription: prize.subscription,
     freeSpin: prize.freeSpin
@@ -310,78 +165,80 @@ async function finalize(doc, userId, lang = 'fr') {
 
   try {
     if (prize.type === 'cash') {
-      const amount = prize.cash?.amount || 0;
-      const currency = (prize.cash?.currency || 'XAF').toUpperCase();
+      const amount = prize.getCashAmountFor(currency, cfg.defaultCurrency) || 0;
+      const cashCur = prize.getCashCurrency(currency, cfg.defaultCurrency);
       if (amount > 0) {
         const { transaction } = await walletService.credit({
-          userId,
-          amount,
-          currency,
-          source: { kind: 'wheel_spin', ref: doc._id },
+          userId, amount, currency: cashCur,
+          source: { kind: 'wheel_spin', ref: null },
           description: `Gain roue: ${prize.name?.fr || 'cash'}`
         });
         walletTxId = transaction._id;
-        status = 'claimed_auto';
-      } else {
-        status = 'claimed_auto';
       }
-    } else if (prize.type === 'free_spin') {
-      stats.freeSpinsRemaining += prize.freeSpin?.count || 1;
-      await stats.save();
       status = 'claimed_auto';
-    } else if (prize.type === 'subscription') {
-      if (prize.subscription?.packageId) {
-        const startDate = new Date();
-        const endDate = new Date(
-          startDate.getTime() + (prize.subscription.durationHours || 24) * 3600 * 1000
-        );
-        const sub = await Subscription.create({
-          user: userId,
-          package: prize.subscription.packageId,
-          startDate,
-          endDate,
-          pricing: { amount: 0, currency: 'XAF' },
-          status: 'active',
-          paymentProvider: 'ADS',
-          paymentReference: `wheel:${doc._id.toString()}`
-        });
-        subId = sub._id;
-        status = 'claimed_auto';
-      } else {
-        status = 'claimed_auto';
-      }
+    } else if (prize.type === 'free_spin') {
+      // Un free_spin gagné = +N tickets directement
+      const n = prize.freeSpin?.count || 1;
+      stats.ticketsBalance += n;
+      stats.totalTicketsEarned = (stats.totalTicketsEarned || 0) + n;
+      status = 'claimed_auto';
+    } else if (prize.type === 'subscription' && prize.subscription?.packageId) {
+      const startDate = new Date();
+      const endDate = new Date(startDate.getTime() + (prize.subscription.durationHours || 24) * 3600 * 1000);
+      const sub = await Subscription.create({
+        user: userId,
+        package: prize.subscription.packageId,
+        startDate, endDate,
+        pricing: { amount: 0, currency: 'XAF' },
+        status: 'active',
+        paymentProvider: 'ADS',
+        paymentReference: `wheel:${userId}:${Date.now()}`
+      });
+      subId = sub._id;
+      status = 'claimed_auto';
     } else if (prize.type === 'physical') {
       status = 'pending_delivery';
     } else {
-      // 'none' / Dommage
       status = 'claimed_auto';
     }
   } catch (e) {
-    // On enregistre quand même le spin pour traçabilité (l'admin pourra
-    // re-traiter manuellement le crédit). Log non bloquant.
-    console.error('[wheelService.finalize] Apply prize failed:', e.message);
+    console.error('[wheelService.spin] Apply prize failed:', e.message);
   }
 
+  // Génère un nonce unique pour ce spin (utilisé pour l'index unique + idempotence client)
+  const spinNonce = clientRequestId
+    ? `cli-${clientRequestId}`
+    : `sync-${crypto.randomBytes(12).toString('hex')}-${Date.now()}`;
+
+  // Création du WheelSpin
   let spin;
   try {
     spin = await WheelSpin.create({
       user: userId,
       prize: prize._id,
       prizeSnapshot: snapshot,
-      unlockId: doc._id,
-      nonce: doc.nonce,
-      adsRequired: doc.selectedOption?.adsRequired || 0,
-      wasFreeSpin: (doc.selectedOption?.adsRequired || 0) === 0,
+      unlockId: null,           // pas d'unlock dans le nouveau flow synchrone
+      nonce: spinNonce,
+      adsRequired: 0,           // 0 — pas de pubs au moment du spin
+      wasFreeSpin: false,
       status,
       walletTransaction: walletTxId,
       subscriptionCreated: subId
     });
   } catch (e) {
-    // E11000 = race condition sur l'index unique nonce → on relit le doc existant
     if (e.code === 11000) {
-      const existing2 = await WheelSpin.findOne({ nonce: doc.nonce }).populate('prize');
-      if (existing2) return formatSpin(existing2, lang);
+      // Race sur nonce (clientRequestId reused) → on retourne l'existant
+      const existing = await WheelSpin.findOne({ nonce: spinNonce }).populate('prize');
+      if (existing) {
+        // Restaure le ticket consommé (rollback)
+        stats.ticketsBalance += 1;
+        await stats.save();
+        return formatSpin(existing, lang, currency);
+      }
     }
+    // Restaure le ticket en cas d'erreur fatale
+    stats.ticketsBalance += 1;
+    await stats.save();
     throw e;
   }
 
@@ -390,26 +247,14 @@ async function finalize(doc, userId, lang = 'fr') {
   stats.totalSpins = (stats.totalSpins || 0) + 1;
   await stats.save();
 
-  // Reset de l'unlock pour permettre le prochain spin
-  doc.status = 'in_progress';
-  doc.verifiedCount = 0;
-  doc.rewards = [];
-  doc.unlockedAt = null;
-  doc.expiresAt = null;
-  doc.nonce = null;
-  doc.selectedOption = { adsRequired: null, durationMinutes: null };
-  await doc.save();
-
-  // Populate prize pour la vue retournée
   await spin.populate('prize');
-  return formatSpin(spin, lang);
+  return formatSpin(spin, lang, currency);
 }
 
 /**
- * Formatte un WheelSpin pour le client. Utilise le snapshot pour les champs
- * (résiste aux suppressions/modifs du WheelPrize).
+ * Formatte un WheelSpin pour le client.
  */
-function formatSpin(spin, lang = 'fr') {
+function formatSpin(spin, lang = 'fr', currency = 'XAF') {
   const p = spin.prize || {};
   const snap = spin.prizeSnapshot || {};
   const name = snap.name || p.name || {};
@@ -434,40 +279,50 @@ function formatSpin(spin, lang = 'fr') {
 }
 
 /**
- * Config publique pour le client mobile : liste ordonnée des lots visibles
- * (sans probas ni caps), config UI (adsPerSpin, etc.).
+ * Config publique pour le client — adapte les montants cash à la devise de l'user.
  */
-async function getPublicConfig(lang = 'fr') {
+async function getPublicConfig(lang = 'fr', currency = 'XAF') {
   const cfg = await WheelConfig.getSingleton();
   const prizes = await WheelPrize.find({ enabled: true }).sort({ order: 1, createdAt: 1 });
   return {
     wheelEnabled: cfg.wheelEnabled,
-    adsPerSpin: cfg.adsPerSpin,
+    adsPerSpin: cfg.adsPerSpin,             // rétro-compat
     cooldownSec: cfg.cooldownSec,
     dailyMaxSpinsPerUser: cfg.dailyMaxSpinsPerUser,
     defaultCurrency: cfg.defaultCurrency,
-    prizes: prizes.map(p => p.toPublicJSON(lang))
+    prizes: prizes.map(p => p.toPublicJSON(lang, currency))
   };
 }
 
 /**
  * Historique des spins d'un user (paginé, descendant).
  */
-async function getHistory(userId, { limit = 20, skip = 0, lang = 'fr' } = {}) {
+async function getHistory(userId, { limit = 20, skip = 0, lang = 'fr', currency = 'XAF' } = {}) {
   const spins = await WheelSpin.find({ user: userId })
     .sort({ createdAt: -1 })
     .skip(skip)
     .limit(Math.min(limit, 100))
     .populate('prize');
-  return spins.map(s => formatSpin(s, lang));
+  return spins.map(s => formatSpin(s, lang, currency));
+}
+
+/**
+ * Récupère le solde de tickets + stats user (vue publique pour le mobile).
+ */
+async function getUserStats(userId) {
+  const stats = await WheelUserStats.getOrCreate(userId);
+  return {
+    ticketsBalance: stats.ticketsBalance || 0,
+    totalTicketsEarned: stats.totalTicketsEarned || 0,
+    totalSpins: stats.totalSpins || 0,
+    lastSpinAt: stats.lastSpinAt
+  };
 }
 
 module.exports = {
-  RESOURCE_TYPE_WHEEL,
-  start,
-  getState,
+  spin,
   drawPrize,
-  finalize,
   getPublicConfig,
-  getHistory
+  getHistory,
+  getUserStats
 };

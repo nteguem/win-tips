@@ -8,9 +8,13 @@ const mongoose = require('mongoose');
 const WheelUserStatsSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
 
-  // Tours gratuits accumulés (gagnés via prize de type free_spin).
-  // Consommés en priorité au prochain spin (avant de demander des pubs).
-  freeSpinsRemaining: { type: Number, default: 0, min: 0 },
+  // Solde de TOURS disponibles. L'user gagne des tours en regardant des pubs
+  // via un pack (ticketPacks configurables). Chaque spin consomme 1 tour.
+  // C'est la "monnaie interne" de la roue.
+  ticketsBalance: { type: Number, default: 0, min: 0 },
+
+  // Compteur total de tickets gagnés (jamais décrémenté — pour stats)
+  totalTicketsEarned: { type: Number, default: 0 },
 
   lastSpinAt: { type: Date, default: null },
   totalSpins: { type: Number, default: 0 }

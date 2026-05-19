@@ -1,10 +1,6 @@
 // src/api/routes/user/wheelRoutes.js
 //
-// Routes user pour la "Roue de la Chance". Le pattern reprend
-// packageAdUnlockController : start (création nonce) + state (polling).
-//
-// Le pipeline SSV AdMob existant (admobSsvRoutes) gère les callbacks Google
-// via le `nonce` — pas besoin de routes spécifiques pour les pubs.
+// Routes user pour la "Roue de la Chance" V2 (tickets-based).
 
 const express = require('express');
 const wheelController = require('../../controllers/user/wheelController');
@@ -12,15 +8,22 @@ const userAuth = require('../../middlewares/user/userAuth');
 
 const router = express.Router();
 
-// Route publique — config + lots visibles (pour pré-charger l'UI avant login)
+// Route publique (config + lots)
 router.get('/config', wheelController.getConfig);
 
-// Toutes les autres routes exigent l'auth user
+// Toutes les autres routes : auth user requise
 router.use(userAuth.protect);
 
-// Cycle de spin
-router.post('/spin/start', wheelController.startSpin);
-router.get('/spin/state', wheelController.getSpinState);
+// Solde de tickets / stats user
+router.get('/stats', wheelController.getStats);
+
+// Spin (consomme 1 ticket, retourne le lot tiré)
+router.post('/spin', wheelController.spin);
+
+// Tickets — déblocage via pubs
+router.get('/ticket-packs', wheelController.listTicketPacks);
+router.post('/tickets/unlock/start', wheelController.startTicketsUnlock);
+router.get('/tickets/unlock/state', wheelController.getTicketsUnlockState);
 
 // Historique
 router.get('/history', wheelController.getHistory);
