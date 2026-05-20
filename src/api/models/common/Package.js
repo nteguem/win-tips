@@ -306,13 +306,27 @@ packageSchema.methods.formatForLanguage = function(lang = 'fr') {
     };
   }
   
+  // Traduit les catégories imbriquées (populées) : name/description bilingues
+  // → strings dans la langue demandée. Tolère l'ancien format string.
+  const pickLang = (field) => {
+    if (field == null) return '';
+    if (typeof field === 'string') return field;
+    return field[lang] || field.fr || field.en || '';
+  };
+  const translatedCategories = Array.isArray(packageObj.categories)
+    ? packageObj.categories.map((cat) => {
+        if (!cat || typeof cat !== 'object') return cat;
+        return { ...cat, name: pickLang(cat.name), description: pickLang(cat.description) };
+      })
+    : packageObj.categories;
+
   return {
     _id: packageObj._id,
     name: packageObj.name[lang] || packageObj.name.fr,
     description: packageObj.description ? (packageObj.description[lang] || packageObj.description.fr) : null,
     pricing: packageObj.pricing instanceof Map ? Object.fromEntries(packageObj.pricing) : packageObj.pricing,
     duration: packageObj.duration,
-    categories: packageObj.categories,
+    categories: translatedCategories,
     badge: packageObj.badge ? (packageObj.badge[lang] || packageObj.badge.fr) : null,
     economy: packageObj.economy instanceof Map ? Object.fromEntries(packageObj.economy) : packageObj.economy,
 

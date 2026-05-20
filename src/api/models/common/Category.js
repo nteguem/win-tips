@@ -32,12 +32,17 @@ const AccessGateSchema = new mongoose.Schema({
 }, { _id: false });
 
 const CategorySchema = new mongoose.Schema({
+  // Nom bilingue. Pattern aligné sur bigwin v2 : chaque document stocke
+  // toutes les langues, et `formatForLanguage(lang)` aplatit avant l'envoi
+  // au client. Plus de `unique` (impossible proprement sur un sous-objet).
   name: {
-    type: String,
-    required: true,
-    unique: true
+    fr: { type: String, required: true, trim: true },
+    en: { type: String, required: true, trim: true }
   },
-  description: String,
+  description: {
+    fr: { type: String, default: '' },
+    en: { type: String, default: '' }
+  },
   icon: {
     type: String,
     default: "🧾"
@@ -101,5 +106,31 @@ CategorySchema.index({
   'externalSources.appId': 1,
   'externalSources.categoryId': 1,
 });
+
+/**
+ * Lit un champ i18n en tolérant l'ancien format (string brute, avant migration)
+ * ET le nouveau format ({ fr, en }). Fallback : lang demandée → fr → en.
+ */
+function pickLang(field, lang) {
+  if (field == null) return '';
+  if (typeof field === 'string') return field;          // legacy non migré
+  return field[lang] || field.fr || field.en || '';
+}
+
+/**
+ * Aplatit la catégorie pour le client : `name` et `description` deviennent des
+ * strings dans la langue demandée. Le mobile reçoit donc toujours du texte
+ * simple — aucun changement requis côté app.
+ */
+CategorySchema.methods.formatForLanguage = function (lang = 'fr') {
+  const obj = this.toObject();
+  obj.name = pickLang(this.name, lang);
+  obj.description = pickLang(this.description, lang);
+  delete obj.__v;
+  return obj;
+};
+
+// Helper statique réutilisable (ex: couponController qui imbrique la catégorie).
+CategorySchema.statics.pickLang = pickLang;
 
 module.exports = mongoose.model("Category", CategorySchema);

@@ -2,6 +2,7 @@ const TicketService = require('../../services/common/ticketService');
 const subscriptionService = require('../../services/user/subscriptionService');
 const accessGateService = require('../../services/common/accessGateService');
 const UserAccessUnlock = require('../../models/common/UserAccessUnlock');
+const Category = require('../../models/common/Category');
 
 class CouponController {
   
@@ -100,12 +101,13 @@ class CouponController {
         const categoryId = ticket.category._id.toString();
 
         if (!categoriesMap.has(categoryId)) {
+          // Traduction du nom/description selon `lang` (catégories bilingues).
           categoriesMap.set(categoryId, {
             id: ticket.category._id,
-            name: ticket.category.name,
+            name: Category.pickLang(ticket.category.name, lang),
             icon: ticket.category.icon,
             successRate: ticket.category.successRate,
-            description: ticket.category.description || null,
+            description: Category.pickLang(ticket.category.description, lang) || null,
             isVip: ticket.category.isVip,
             isActive: ticket.category.isActive,
             totalCoupons: 0,

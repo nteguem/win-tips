@@ -97,14 +97,18 @@ exports.getTicketsUnlockState = catchAsync(async (req, res) => {
 // ====== HISTORIQUE ========================================================
 
 exports.getHistory = catchAsync(async (req, res) => {
-  const limit = Math.min(parseInt(req.query.limit, 10) || 20, 100);
+  const limit = Math.min(parseInt(req.query.limit, 10) || 10, 50);
   const skip = parseInt(req.query.skip, 10) || 0;
-  const data = await wheelService.getHistory(req.user._id, {
+  const result = await wheelService.getHistory(req.user._id, {
     limit, skip,
     lang: getLang(req),
     currency: getCurrency(req)
   });
-  res.status(200).json({ success: true, data });
+  res.status(200).json({
+    success: true,
+    data: result.items,
+    pagination: result.pagination
+  });
 });
 
 // ====== WALLET (inchangé) =================================================

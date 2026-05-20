@@ -2,13 +2,36 @@
 const categoryService = require('../../services/common/categoryService');
 const { formatSuccess, formatError } = require('../../../utils/responseFormatter');
 
+/**
+ * Normalise un champ i18n en { fr, en }.
+ *  - { fr, en }       → conservé (chaque langue manquante repompée sur l'autre)
+ *  - "texte" (string) → { fr: texte, en: texte }  (tolérance ancien client)
+ *  - null/undefined   → null
+ */
+function normalizeI18n(value) {
+  if (value == null) return null;
+  if (typeof value === 'string') {
+    const v = value.trim();
+    return v ? { fr: v, en: v } : null;
+  }
+  if (typeof value === 'object') {
+    const fr = (value.fr || '').toString().trim();
+    const en = (value.en || '').toString().trim();
+    if (!fr && !en) return null;
+    return { fr: fr || en, en: en || fr };
+  }
+  return null;
+}
+
 class CategoryController {
 
   // GET /categories - Récupérer toutes les catégories
+  // `lang` (fr|en) traduit name/description. `raw=true` renvoie le format brut
+  // bilingue (utile pour le backoffice qui édite les 2 langues).
   async getCategories(req, res) {
     try {
-      const { offset = 0, limit = 10, isVip, isActive } = req.query;
-           
+      const { offset = 0, limit = 10, isVip, isActive, lang = 'fr', raw } = req.query;
+
       const result = await categoryService.getCategories({
         offset: parseInt(offset),
         limit: parseInt(limit),
@@ -17,7 +40,9 @@ class CategoryController {
       });
 
       formatSuccess(res, {
-        data: result.data,
+        data: raw === 'true'
+          ? result.data
+          : result.data.map(cat => cat.formatForLanguage(lang)),
         pagination: result.pagination,
         message: 'Categories retrieved successfully'
       });
@@ -30,6 +55,7 @@ class CategoryController {
   async getCategoryById(req, res) {
     try {
       const { id } = req.params;
+      const { lang = 'fr', raw } = req.query;
       const category = await categoryService.getCategoryById(id);
 
       if (!category) {
@@ -37,7 +63,7 @@ class CategoryController {
       }
 
       formatSuccess(res, {
-        data: category,
+        data: raw === 'true' ? category : category.formatForLanguage(lang),
         message: 'Category retrieved successfully'
       });
     } catch (error) {
@@ -50,9 +76,13 @@ class CategoryController {
     try {
       const { name, description, icon, successRate, isVip, isActive, accessGate, externalSources } = req.body;
 
-      if (!name) {
-        return formatError(res, 'Name is required', 400);
+      // Le nom doit être bilingue : { fr, en }. On tolère une string brute
+      // (anciens clients) en la dupliquant sur les 2 langues.
+      const normName = normalizeI18n(name);
+      if (!normName || !normName.fr || !normName.en) {
+        return formatError(res, 'Name is required with both fr and en translations', 400);
       }
+      const normDesc = normalizeI18n(description) || { fr: '', en: '' };
 
       // Validation du successRate
       if (successRate !== undefined && (successRate < 0 || successRate > 100)) {
@@ -60,8 +90,8 @@ class CategoryController {
       }
 
       const categoryData = {
-        name,
-        description,
+        name: normName,
+        description: normDesc,
         icon,
         successRate,
         isActive,
@@ -83,10 +113,10 @@ class CategoryController {
       }
 
       const category = await categoryService.createCategory(categoryData);
-      
+
       res.status(201);
       formatSuccess(res, {
-        data: category,
+        data: category ? category.formatForLanguage('fr') : category,
         message: 'Category created successfully'
       });
     } catch (error) {
@@ -102,11 +132,23 @@ class CategoryController {
   async updateCategory(req, res) {
     try {
       const { id } = req.params;
-      const updates = req.body;
+      const updates = { ...req.body };
 
       // Validation du successRate si présent dans les updates
       if (updates.successRate !== undefined && (updates.successRate < 0 || updates.successRate > 100)) {
         return formatError(res, 'Success rate must be between 0 and 100', 400);
+      }
+
+      // Normalise name/description en format bilingue { fr, en } si fournis.
+      if (updates.name !== undefined) {
+        const n = normalizeI18n(updates.name);
+        if (!n || !n.fr || !n.en) {
+          return formatError(res, 'Name must include both fr and en translations', 400);
+        }
+        updates.name = n;
+      }
+      if (updates.description !== undefined) {
+        updates.description = normalizeI18n(updates.description) || { fr: '', en: '' };
       }
 
       // Si la catégorie passe en VIP, on retire automatiquement la porte.
@@ -131,7 +173,7 @@ class CategoryController {
       }
 
       formatSuccess(res, {
-        data: category,
+        data: category.formatForLanguage('fr'),
         message: 'Category updated successfully'
       });
     } catch (error) {

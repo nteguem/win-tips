@@ -338,14 +338,27 @@ async function getPublicConfig(lang = 'fr', currency = 'XAF') {
 
 /**
  * Historique des spins d'un user (paginé, descendant).
+ * Pagination par 10 par défaut. Renvoie aussi `hasNext` pour le "load more".
  */
-async function getHistory(userId, { limit = 20, skip = 0, lang = 'fr', currency = 'XAF' } = {}) {
-  const spins = await WheelSpin.find({ user: userId })
-    .sort({ createdAt: -1 })
-    .skip(skip)
-    .limit(Math.min(limit, 100))
-    .populate('prize');
-  return spins.map(s => formatSpin(s, lang, currency));
+async function getHistory(userId, { limit = 10, skip = 0, lang = 'fr', currency = 'XAF' } = {}) {
+  const lim = Math.min(limit, 50);
+  const [spins, total] = await Promise.all([
+    WheelSpin.find({ user: userId })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(lim)
+      .populate('prize'),
+    WheelSpin.countDocuments({ user: userId })
+  ]);
+  return {
+    items: spins.map(s => formatSpin(s, lang, currency)),
+    pagination: {
+      skip,
+      limit: lim,
+      total,
+      hasNext: (skip + spins.length) < total
+    }
+  };
 }
 
 /**
