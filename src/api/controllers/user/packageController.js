@@ -66,10 +66,19 @@ exports.getAvailablePackages = catchAsync(async (req, res, next) => {
   // historique attendu par Flutter (PackageCatalog.fromJson lit
   // `json['pricing'] is num`).
   if (currency) {
+    // En USD, le paiement passe EXCLUSIVEMENT par Google Play : les
+    // intégrateurs mobile money (AfribaPay/Smobilpay/CinetPay/KoraPay) ne
+    // couvrent que XAF/XOF/CDF. On ne propose donc, en USD, que les packs
+    // money réellement achetables sur Google Play.
+    const usdGooglePlayOnly = String(currency).toUpperCase() === 'USD';
     result = result
       .filter(pkg => {
         if ((pkg.paymentMode || 'money') === 'ads') return true; // bypass filtre devise
-        return pkg.pricing && pkg.pricing[currency] !== undefined;
+        if (!(pkg.pricing && pkg.pricing[currency] !== undefined)) return false;
+        if (usdGooglePlayOnly && !(pkg.availableOnGooglePlay && pkg.googleProductId)) {
+          return false;
+        }
+        return true;
       })
       .map(pkg => {
         if ((pkg.paymentMode || 'money') === 'ads') {
