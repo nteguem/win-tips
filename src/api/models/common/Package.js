@@ -293,16 +293,24 @@ packageSchema.methods.getEconomy = function(currency) {
 packageSchema.methods.formatForLanguage = function(lang = 'fr') {
   const packageObj = this.toObject();
   
-  // Formater la formation si elle est populée
+  // Formater la formation si elle est POPULÉE. Attention : un ObjectId non
+  // populé satisfait `typeof === 'object'` — on vérifie donc la présence de
+  // `title` (champ réel d'une Formation populée) avant de la traiter.
   let formation = null;
-  if (packageObj.formationId && typeof packageObj.formationId === 'object') {
+  const fId = packageObj.formationId;
+  if (fId && typeof fId === 'object' && fId.title) {
+    const tr = (field) => {
+      if (field == null) return '';
+      if (typeof field === 'string') return field;
+      return field[lang] || field.fr || field.en || '';
+    };
     formation = {
-      _id: packageObj.formationId._id,
-      title: packageObj.formationId.title[lang] || packageObj.formationId.title.fr,
-      description: packageObj.formationId.description[lang] || packageObj.formationId.description.fr,
-      isActive: packageObj.formationId.isActive,
-      createdAt: packageObj.formationId.createdAt,
-      updatedAt: packageObj.formationId.updatedAt
+      _id: fId._id,
+      title: tr(fId.title),
+      description: tr(fId.description),
+      isActive: fId.isActive,
+      createdAt: fId.createdAt,
+      updatedAt: fId.updatedAt
     };
   }
   
