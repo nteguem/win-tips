@@ -53,6 +53,19 @@ exports.getConfigByCountryCode = catchAsync(async (req, res, next) => {
 
 
 /**
+ * @route GET /config/countries
+ * @desc Liste publique des pays actifs (pour le sélecteur de pays mobile)
+ * @access Public
+ */
+exports.getActiveCountries = catchAsync(async (req, res, next) => {
+  const countries = await configService.getActiveCountriesPublic();
+  formatSuccess(res, {
+    message: 'Pays actifs récupérés avec succès',
+    data: countries
+  });
+});
+
+/**
  * @route GET /admin/config
  * @desc Obtenir toutes les configurations
  * @access Admin

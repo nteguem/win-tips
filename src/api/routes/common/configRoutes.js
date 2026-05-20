@@ -14,6 +14,11 @@ const router = express.Router();
 // Obtenir config par IP (onboarding)
 router.post('/', configController.getConfigByIp);
 
+// Liste publique des pays actifs (selecteur de pays mobile).
+// DOIT etre declaree AVANT /:countryCode sinon "countries" est capture
+// comme un code pays.
+router.get('/countries', configController.getActiveCountries);
+
 // Obtenir config par code pays
 router.get('/:countryCode', configController.getConfigByCountryCode);
 
