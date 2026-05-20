@@ -7,6 +7,7 @@ const logger = require('./src/utils/logger');
 const { connectDB } = require('./config/database');
 const smobilpayVerificationJob = require('./src/core/jobs/smobilpayVerificationJob');
 const korapayVerificationJob = require('./src/core/jobs/korapayVerificationJob');
+const googlePlaySyncJob = require('./src/jobs/googlePlaySyncJob');
 
 // Chargement des variables d'environnement
 dotenv.config();
@@ -29,6 +30,10 @@ const startServer = async () => {
     // Démarrer les jobs de fond (après DB et HTTP prêts)
     smobilpayVerificationJob.start();
     korapayVerificationJob.start();
+    // Jobs Google Play : synchro des abonnements, nettoyage des abonnements
+    // expirés (Mobile Money + Google Play) et acknowledge d'urgence des achats
+    // non confirmés (sinon Google rembourse automatiquement après 3 jours).
+    googlePlaySyncJob.start();
   } catch (error) {
     logger.error(`Failed to start server: ${error.message}`);
     process.exit(1);
