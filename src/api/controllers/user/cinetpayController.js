@@ -168,12 +168,16 @@ exports.paymentReturn = catchAsync(async (req, res) => {
     return res.send(htmlTemplate('CinetPay', content));
   }
 
+  // merchant_transaction_id vient des query params → échapper avant
+  // toute interpolation HTML (sinon XSS reflété).
+  const safeId = escapeHtml(merchantTransactionId);
+
   const transaction = await CinetpayTransaction.findOne({ transactionId: merchantTransactionId });
   if (!transaction) {
     return res.status(404).send(htmlTemplate('CinetPay', `
       <div class="icon">❌</div>
       <h1 class="error">Transaction non trouvée</h1>
-      <div class="transaction-id">${merchantTransactionId}</div>
+      <div class="transaction-id">${safeId}</div>
     `));
   }
 
@@ -193,14 +197,14 @@ exports.paymentReturn = catchAsync(async (req, res) => {
       <h1 class="success">Paiement Réussi !</h1>
       <div class="status-badge status-success">✅ Confirmé</div>
       <p>Votre abonnement a été activé.</p>
-      <div class="transaction-id">${merchantTransactionId}</div>
+      <div class="transaction-id">${safeId}</div>
     `;
   } else if (status === 'REFUSED' || status === 'CANCELED') {
     content = `
       <div class="icon">❌</div>
       <h1 class="error">Paiement Échoué</h1>
       <div class="status-badge status-error">${status === 'CANCELED' ? '🚫 Annulé' : '❌ Refusé'}</div>
-      <div class="transaction-id">${merchantTransactionId}</div>
+      <div class="transaction-id">${safeId}</div>
       <p>Veuillez réessayer ou contacter le support.</p>
     `;
   } else {
@@ -209,12 +213,20 @@ exports.paymentReturn = catchAsync(async (req, res) => {
       <h1 class="pending">Paiement en cours</h1>
       <div class="status-badge status-pending">⏳ En attente</div>
       <p>Votre paiement est en cours de traitement.</p>
-      <div class="transaction-id">${merchantTransactionId}</div>
+      <div class="transaction-id">${safeId}</div>
     `;
   }
 
   return res.send(htmlTemplate(`CinetPay - ${status}`, content));
 });
+
+// Échappe les caractères HTML dangereux — protège contre le XSS reflété
+// quand on interpole une valeur issue des query params dans la page.
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
 
 function htmlTemplate(title, content) {
   return `<!DOCTYPE html><html lang="fr"><head>
