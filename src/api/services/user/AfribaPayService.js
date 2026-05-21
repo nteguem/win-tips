@@ -49,19 +49,26 @@ function generateUrls() {
 
 /**
  * Construit un reference_id compatible AfribaPay.
- * L'API AfribaPay rejette les caractères accentués (û, é, à, …) et autres
- * caractères spéciaux dans le reference_id. On translittère donc en ASCII
- * (û → u, é → e) et on retire tout caractère non supporté restant.
+ * L'API AfribaPay rejette les accents (û, é, à…), les apostrophes et la
+ * ponctuation non-ASCII. On translittère donc en ASCII propre :
+ *   - normalize('NFD') décompose les accents (é → e + diacritique)
+ *   - les apostrophes (droites ET typographiques) → espace, AVANT le strip,
+ *     pour éviter de coller les mots (L'Élan → "L Elan", pas "LElan")
+ *   - tout caractère hors [a-zA-Z0-9 _-] (dont les diacritiques NFD) → supprimé
+ *   - espaces compressés, trim, longueur bornée à 100
+ * Ex : "L'Élan - 7 jours" → "L Elan - 7 jours"
  */
 function buildReferenceId(packageDoc) {
-  const raw = `${packageDoc.name.fr} - ${packageDoc.duration} jours`;
-  // normalize('NFD') sépare les accents de leur lettre de base ; le filtre
-  // suivant ne garde que l'ASCII, ce qui supprime les accents (û → u, é → e).
-  return raw
+  const name = packageDoc.name?.fr || packageDoc.name?.en || packageDoc.name || 'Package';
+  const raw = `${name} - ${packageDoc.duration} jours`;
+  const clean = raw
     .normalize('NFD')
+    .replace(/['’‘`´]/g, ' ')
     .replace(/[^a-zA-Z0-9 _-]/g, '')
     .replace(/\s+/g, ' ')
-    .trim();
+    .trim()
+    .slice(0, 100);
+  return clean || `Package ${packageDoc.duration}j`;
 }
 
 /**
