@@ -1,6 +1,12 @@
 /**
  * @fileoverview Point d'entrée de l'application
  */
+
+// Force Node à résoudre l'IPv4 en premier pour les requêtes HTTP sortantes.
+// Sans ça, sur les VPS dual-stack, Node 17+ part en IPv6 par défaut et les
+// PSP qui whitelistent l'IPv4 nous refusent (CinetPay 2011 NOT_ALLOWED).
+require('dns').setDefaultResultOrder('ipv4first');
+
 const dotenv = require('dotenv');
 const app = require('./src/app');
 const logger = require('./src/utils/logger');

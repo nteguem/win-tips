@@ -1,4 +1,9 @@
 // models/user/CinetpayTransaction.js
+//
+// Transaction CinetPay — nouvelle API (api.cinetpay.co/v1).
+// `transactionId` = merchant_transaction_id envoyé à CinetPay (notre id,
+// max 30 chars). `cinetpayTransactionId` = id retourné par CinetPay.
+
 const mongoose = require('mongoose');
 
 const cinetpayTransactionSchema = new mongoose.Schema({
@@ -7,112 +12,66 @@ const cinetpayTransactionSchema = new mongoose.Schema({
     required: true,
     unique: true
   },
+
+  cinetpayTransactionId: String,
+
   user: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
     required: true
   },
+
   package: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Package',
     required: true
   },
-  paymentToken: {
-    type: String
-  },
-  paymentUrl: {
-    type: String
-  },
+
+  paymentToken: String,
+  notifyToken: String,
+  paymentUrl: String,
+
   amount: {
     type: Number,
     required: true
   },
+
   currency: {
     type: String,
     default: 'XOF'
   },
+
   status: {
     type: String,
-    enum: ['PENDING', 'ACCEPTED', 'REFUSED', 'WAITING_FOR_CUSTOMER', 'CANCELED'],
+    enum: ['PENDING', 'INITIATED', 'ACCEPTED', 'REFUSED', 'WAITING_FOR_CUSTOMER', 'CANCELED'],
     default: 'PENDING'
   },
-  phoneNumber: {
-    type: String,
-    required: true
-  },
+
+  // Optionnel : avec le checkout hosté, le n° est saisi sur la page
+  // CinetPay → on ne le demande plus au mobile.
+  phoneNumber: String,
+
   customerName: {
     type: String,
     required: true
   },
-  description: {
-    type: String
-  },
-  paymentMethod: {
-    type: String // OMCM, MOMO, CARD, etc.
-  },
-  operatorTransactionId: {
-    type: String // operator_id retourné par CinetPay
-  },
-  paymentDate: {
-    type: Date
-  },
-  fundAvailabilityDate: {
-    type: Date
-  },
-  
-  // URLs
-  notifyUrl: {
-    type: String
-  },
-  returnUrl: {
-    type: String
-  },
-  
-  // Réponse API
-  apiResponseId: {
-    type: String
-  },
-  
-  // Champs webhook CinetPay
-  cpmTransDate: {
-    type: Date
-  },
-  cpmErrorMessage: {
-    type: String // SUCCES, PAYMENT_FAILED, TRANSACTION_CANCEL
-  },
-  cpmPhonePrefix: {
-    type: String
-  },
-  cpmLanguage: {
-    type: String
-  },
-  cpmVersion: {
-    type: String
-  },
-  cpmPaymentConfig: {
-    type: String
-  },
-  cpmPageAction: {
-    type: String
-  },
-  cpmCustom: {
-    type: String
-  },
-  cpmDesignation: {
-    type: String
-  },
-  webhookSignature: {
-    type: String
-  },
-  
-  // Erreurs
-  errorCode: {
-    type: String
-  },
-  errorMessage: {
-    type: String
-  },
-  
+
+  description: String,
+  paymentMethod: String,
+  paymentDate: Date,
+
+  notifyUrl: String,
+  returnUrl: String,
+
+  // Réponse `details` de l'API CinetPay (init + status check)
+  detailsCode: Number,
+  detailsStatus: String,
+  detailsMessage: String,
+  mustBeRedirected: Boolean,
+
+  errorCode: String,
+  errorMessage: String,
+
   processed: {
     type: Boolean,
     default: false
@@ -121,19 +80,18 @@ const cinetpayTransactionSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Index pour performance
-cinetpayTransactionSchema.index({ transactionId: 1 });
+// transactionId : index déjà créé par `unique: true` ci-dessus.
+cinetpayTransactionSchema.index({ cinetpayTransactionId: 1 });
 cinetpayTransactionSchema.index({ user: 1, status: 1 });
-cinetpayTransactionSchema.index({ paymentToken: 1 });
 cinetpayTransactionSchema.index({ processed: 1 });
+cinetpayTransactionSchema.index({ notifyToken: 1 });
 
-// Méthodes utiles
-cinetpayTransactionSchema.methods.isSuccessful = function() {
+cinetpayTransactionSchema.methods.isSuccessful = function () {
   return this.status === 'ACCEPTED';
 };
 
-cinetpayTransactionSchema.methods.isPending = function() {
-  return this.status === 'PENDING';
+cinetpayTransactionSchema.methods.isPending = function () {
+  return this.status === 'PENDING' || this.status === 'INITIATED' || this.status === 'WAITING_FOR_CUSTOMER';
 };
 
 module.exports = mongoose.model('CinetpayTransaction', cinetpayTransactionSchema);
