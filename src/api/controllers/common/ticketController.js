@@ -2,7 +2,26 @@
 const ticketService = require('../../services/common/ticketService');
 const categoryService = require('../../services/common/categoryService');
 const correctAndNotifyService = require('../../services/admin/correctAndNotifyService');
+const Category = require('../../models/common/Category');
 const { formatSuccess, formatError } = require('../../../utils/responseFormatter');
+
+/**
+ * Aplatit le nom/description bilingue ({fr,en}) de la catégorie peuplée d'un
+ * ticket en chaîne simple : le backoffice et l'app attendent du texte, pas un
+ * objet (sinon React plante en tentant d'afficher l'objet).
+ */
+function flattenTicketCategory(ticket, lang = 'fr') {
+  if (!ticket) return ticket;
+  const t = typeof ticket.toObject === 'function' ? ticket.toObject() : ticket;
+  if (t.category && typeof t.category === 'object' && t.category.name !== undefined) {
+    t.category = {
+      ...t.category,
+      name: Category.pickLang(t.category.name, lang),
+      description: Category.pickLang(t.category.description, lang),
+    };
+  }
+  return t;
+}
 
 class TicketController {
 
@@ -19,8 +38,9 @@ class TicketController {
         isVisible: isVisible !== undefined ? isVisible === 'true' : null // null = pas de filtre
       });
 
+      const lang = req.query.lang || 'fr';
       formatSuccess(res, {
-        data: result.data,
+        data: result.data.map((t) => flattenTicketCategory(t, lang)),
         pagination: result.pagination,
         message: 'Tickets retrieved successfully'
       });
@@ -40,7 +60,7 @@ class TicketController {
       }
 
       formatSuccess(res, {
-        data: ticket,
+        data: flattenTicketCategory(ticket, req.query.lang || 'fr'),
         message: 'Ticket retrieved successfully'
       });
     } catch (error) {
