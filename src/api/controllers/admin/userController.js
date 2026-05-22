@@ -7,6 +7,9 @@ const { AppError, ErrorCodes } = require('../../../utils/AppError');
 const catchAsync = require('../../../utils/catchAsync');
 const { toXAF } = require('../../../utils/currency');
 
+// Providers de paiement réels (argent) — exclut les déblocages par pub.
+const MONEY_PROVIDERS = ['MOBILE_MONEY', 'GOOGLE_PLAY'];
+
 /** Échappe les métacaractères d'une chaîne pour un usage dans une RegExp. */
 function escapeRegex(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -33,7 +36,11 @@ exports.getUserStats = catchAsync(async (req, res) => {
       { $sort: { count: -1 } },
       { $limit: 8 },
     ]),
-    Subscription.distinct('user', { status: 'active', endDate: { $gt: now } }),
+    Subscription.distinct('user', {
+      status: 'active',
+      endDate: { $gt: now },
+      paymentProvider: { $in: MONEY_PROVIDERS },
+    }),
   ]);
 
   res.status(200).json({
@@ -85,9 +92,13 @@ exports.getUsers = catchAsync(async (req, res) => {
     if (req.query.endDate) match.createdAt.$lte = new Date(req.query.endDate);
   }
 
-  // Identifiants des utilisateurs VIP (abonnement actif) — sert au badge et
-  // au filtre par abonnement.
-  const vipIds = await Subscription.distinct('user', { status: 'active', endDate: { $gt: now } });
+  // Identifiants des utilisateurs VIP : abonnement PAYANT actif (pub exclue).
+  // Sert au badge VIP et au filtre par abonnement.
+  const vipIds = await Subscription.distinct('user', {
+    status: 'active',
+    endDate: { $gt: now },
+    paymentProvider: { $in: MONEY_PROVIDERS },
+  });
   if (req.query.subscription === 'vip') match._id = { $in: vipIds };
   if (req.query.subscription === 'free') match._id = { $nin: vipIds };
 
@@ -155,7 +166,12 @@ exports.getUser = catchAsync(async (req, res, next) => {
     totalSpentXAF += revenueXAF;
     return { ...s, revenueXAF };
   });
-  const hasActive = subs.some((s) => s.status === 'active' && new Date(s.endDate) > now);
+  const hasActive = subs.some(
+    (s) =>
+      s.status === 'active' &&
+      new Date(s.endDate) > now &&
+      MONEY_PROVIDERS.includes(s.paymentProvider)
+  );
 
   res.status(200).json({
     success: true,
