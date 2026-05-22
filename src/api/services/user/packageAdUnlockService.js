@@ -199,19 +199,6 @@ async function ensureSubscription(doc, pkg, userId) {
     paymentReference: ref,
   });
 
-  // 3. Commission éventuelle si l'user a un parrain
-  try {
-    const User = require('../../models/user/User');
-    const commissionService = require('../common/commissionService');
-    const user = await User.findById(userId).lean();
-    if (user && user.referredBy) {
-      await commissionService.createCommission(sub._id);
-    }
-  } catch (e) {
-    // Non bloquant — on log et on continue
-    console.warn('[packageAdUnlockService] Commission création échouée:', e.message);
-  }
-
   return sub;
 }
 

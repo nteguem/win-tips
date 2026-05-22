@@ -12,32 +12,22 @@ const catchAsync = require('../../../utils/catchAsync');
  * Inscription utilisateur avec génération automatique d'email
  */
 exports.register = catchAsync(async (req, res, next) => {
-  const { phoneNumber, countryCode, dialCode, password, pseudo, affiliateCode, city, deviceId } = req.body;
+  const { phoneNumber, countryCode, dialCode, password, pseudo, city, deviceId } = req.body;
 
   // Validation des champs obligatoires
   if (!phoneNumber || !password) {
     return next(new AppError('Téléphone et mot de passe requis', 400, ErrorCodes.VALIDATION_ERROR));
   }
-  
+
   // Vérifier si le numéro existe déjà
   const existingUser = await User.findOne({ phoneNumber });
   if (existingUser) {
     return next(new AppError('Ce numéro de téléphone est déjà utilisé', 400, ErrorCodes.VALIDATION_ERROR));
   }
-  
-  // Valider le code affilié si fourni
-  let affiliate = null;
-  if (affiliateCode) {
-    try {
-      affiliate = await authService.validateAffiliateCode(affiliateCode);
-    } catch (error) {
-      return next(error);
-    }
-  }
-  
+
   // Générer l'email automatiquement avec vérification d'unicité
   const generatedEmail = await generateUniqueUserEmail(phoneNumber, pseudo, countryCode);
-  
+
   // Créer l'utilisateur
   const user = await User.create({
     phoneNumber,
@@ -47,9 +37,8 @@ exports.register = catchAsync(async (req, res, next) => {
     dialCode,
     countryCode,
     city,
-    authProvider: 'local', // Nouveau champ
-    emailVerified: false,   // Nouveau champ
-    referredBy: affiliate?._id
+    authProvider: 'local',
+    emailVerified: false
   });
   
   // Générer les tokens
@@ -157,7 +146,7 @@ exports.login = catchAsync(async (req, res, next) => {
  * Authentification avec Google (login + register combiné)
  */
 exports.googleAuth = catchAsync(async (req, res, next) => {
-  const { idToken, affiliateCode, city, countryCode, deviceId } = req.body;
+  const { idToken, city, countryCode, deviceId } = req.body;
   console.log("req.body",req.body)
   console.log("req.body",countryCode)
   // Validation
@@ -173,7 +162,6 @@ exports.googleAuth = catchAsync(async (req, res, next) => {
     
     // 2. Créer ou récupérer l'utilisateur
     const { user, isNewUser } = await googleAuthService.findOrCreateGoogleUser(googleData, {
-      affiliateCode,
       city,
       countryCode
     });
@@ -323,8 +311,7 @@ exports.refresh = catchAsync(async (req, res, next) => {
  * Obtenir les informations de l'utilisateur connecté
  */
 exports.getMe = catchAsync(async (req, res, next) => {
-  // Populer les infos de l'affilié parrain si existant
-  const user = await User.findById(req.user._id).populate('referredBy', 'firstName lastName affiliateCode');
+  const user = await User.findById(req.user._id);
 
   // Avant de lire l'état d'abonnement, on déclenche une vérification live
   // pour les paiements PENDING de l'utilisateur. Sans ça, un utilisateur qui

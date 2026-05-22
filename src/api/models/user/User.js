@@ -58,10 +58,6 @@ const userSchema = new mongoose.Schema({
   city: String,
   dialCode: String,
   countryCode: String,
-  referredBy: {
-    type: mongoose.Schema.ObjectId,
-    ref: 'Affiliate'
-  },
   isActive: {
     type: Boolean,
     default: true
@@ -81,7 +77,6 @@ userSchema.index({ phoneNumber: 1 });
 userSchema.index({ email: 1 });
 userSchema.index({ googleId: 1 });
 userSchema.index({ pseudo: 1 });
-userSchema.index({ referredBy: 1 });
 userSchema.index({ isActive: 1 });
 userSchema.index({ authProvider: 1 });
 

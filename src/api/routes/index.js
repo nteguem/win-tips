@@ -8,11 +8,9 @@ const router = express.Router();
 
 // ===== ROUTES D'AUTHENTIFICATION =====
 const adminAuthRoutes = require('./admin/authRoutes');
-const affiliateAuthRoutes = require('./affiliate/authRoutes');
 const userAuthRoutes = require('./user/authRoutes');
 
 router.use('/admin/auth', adminAuthRoutes);
-router.use('/affiliate/auth', affiliateAuthRoutes);
 router.use('/user/auth', userAuthRoutes);
 
 // ===== ROUTES ADMIN =====
@@ -22,9 +20,6 @@ const adminTicketRoutes = require('./admin/ticketRoutes');
 const adminPredictionRoutes = require('./admin/predictionRoutes');
 const adminSportsRoutes = require('./admin/sportsRoutes');
 const adminEventRoutes = require('./admin/eventRoutes');
-const adminAffiliateRoutes = require('./admin/affiliateRoutes');
-const adminCommissionRoutes = require('./admin/commissionRoutes');
-const adminAffiliateTypeRoutes = require('./admin/affiliateTypeRoutes');
 const adminFormationRoutes = require('./admin/formationRoutes');
 const adminWheelRoutes = require('./admin/wheelAdminRoutes');
 const adminDashboardRoutes = require('./admin/dashboardRoutes');
@@ -42,9 +37,6 @@ router.use('/admin/tickets', adminTicketRoutes);
 router.use('/admin/predictions', adminPredictionRoutes);
 router.use('/admin/sports', adminSportsRoutes);
 router.use('/admin/events', adminEventRoutes);
-router.use('/admin/affiliates', adminAffiliateRoutes);
-router.use('/admin/commissions', adminCommissionRoutes);
-router.use('/admin/affiliate-types', adminAffiliateTypeRoutes);
 router.use('/admin/formations', adminFormationRoutes);
 router.use('/admin/wheel', adminWheelRoutes);
 
@@ -52,11 +44,6 @@ router.use('/admin/wheel', adminWheelRoutes);
 // ⚠️ V1 : pas d'auth. Voir internalSyncController pour le plan V2.
 const internalSyncRoutes = require('./common/internalSyncRoutes');
 router.use('/internal/sync', internalSyncRoutes);
-
-// ===== ROUTES AFFILIATE =====
-const affiliateDashboardRoutes = require('./affiliate/dashboardRoutes');
-
-router.use('/affiliate/dashboard', affiliateDashboardRoutes);
 
 // ===== ROUTES USER =====
 const userSubscriptionRoutes = require('./user/subscriptionRoutes');

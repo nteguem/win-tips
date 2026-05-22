@@ -3,7 +3,6 @@ const Package = require('../../models/common/Package');
 const User = require('../../models/user/User');
 const Category = require('../../models/common/Category');
 const GooglePlayTransaction = require('../../models/user/GooglePlayTransaction');
-const commissionService = require('../common/commissionService');
 const { AppError, ErrorCodes } = require('../../../utils/AppError');
 
 class SubscriptionService {
@@ -46,11 +45,6 @@ class SubscriptionService {
       paymentReference,
       paymentProvider: 'MOBILE_MONEY'
     });
-    
-    // Créer commission si l'utilisateur a un parrain
-    if (user.referredBy) {
-      await commissionService.createCommission(subscription._id);
-    }
 
     return subscription;
   }
@@ -87,11 +81,6 @@ class SubscriptionService {
       googlePlayTransaction: googleTransactionId,
       autoRenewing: purchaseData.autoRenewing
     });
-
-    // Créer commission si l'utilisateur a un parrain
-    if (user.referredBy) {
-      await commissionService.createCommission(subscription._id);
-    }
 
     return subscription;
   }
@@ -312,13 +301,6 @@ class SubscriptionService {
 
     // Annuler l'abonnement Mobile Money
     await subscription.cancel();
-
-    // Annuler la commission associée via commissionService
-    const Commission = require('../../models/common/Commission');
-    const commission = await Commission.findOne({ subscription: subscriptionId });
-    if (commission && commission.status === 'pending') {
-      await commissionService.cancelCommissions([commission._id], 'Abonnement annulé par utilisateur');
-    }
 
     return subscription;
   }

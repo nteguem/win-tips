@@ -1,10 +1,13 @@
 /**
  * @fileoverview Contrôleur du tableau de bord admin (vue d'ensemble).
  *
- * Agrège les ventes, les utilisateurs, les abonnements actifs et la
- * performance des pronostics. Toutes les agrégations passent par
- * `Subscription.aggregate` afin de contourner le hook `pre('find')` du modèle
- * Subscription qui masque les abonnements expirés.
+ * Règle métier : une « vente » correspond UNIQUEMENT à un abonnement payé
+ * en argent (Mobile Money ou Google Play). Les abonnements débloqués via la
+ * publicité (paymentProvider='ADS') ne sont PAS comptés comme des ventes.
+ *
+ * Toutes les agrégations passent par `Subscription.aggregate` afin de
+ * contourner le hook `pre('find')` du modèle Subscription qui masque les
+ * abonnements expirés.
  */
 const Subscription = require('../../models/common/Subscription');
 const User = require('../../models/user/User');
@@ -14,6 +17,9 @@ const catchAsync = require('../../../utils/catchAsync');
 const { toXAF } = require('../../../utils/currency');
 
 const PERIODS = ['today', '7d', '30d', 'all'];
+
+// Providers considérés comme un paiement réel en argent → comptés en ventes.
+const MONEY_PROVIDERS = ['MOBILE_MONEY', 'GOOGLE_PLAY'];
 
 /** Résout la plage de dates correspondant à une période. */
 function resolveRange(period) {
@@ -53,8 +59,9 @@ exports.getDashboardStats = catchAsync(async (req, res) => {
   const prev = previousRange(start, end);
   const now = new Date();
 
-  // ===== VENTES (abonnements créés dans la période) =====
-  const salesAgg = await Subscription.aggregate([
+  // ===== ABONNEMENTS CRÉÉS DANS LA PÉRIODE =====
+  // On distingue les ventes (argent) des déblocages par pub (ADS).
+  const subsAgg = await Subscription.aggregate([
     { $match: { createdAt: { $gte: start, $lte: end } } },
     {
       $group: {
@@ -65,28 +72,35 @@ exports.getDashboardStats = catchAsync(async (req, res) => {
     },
   ]);
 
-  let salesCount = 0;
+  let salesCount = 0; // ventes = paiement en argent uniquement
   let salesRevenueXAF = 0;
-  const providerMap = {};
+  let adsCount = 0; // abonnements débloqués par la pub
   const currencyMap = {};
-  for (const row of salesAgg) {
+  for (const row of subsAgg) {
     const provider = row._id.provider || 'MOBILE_MONEY';
     const currency = row._id.currency || 'XAF';
+    if (provider === 'ADS') {
+      adsCount += row.count;
+      continue;
+    }
+    // Vente réelle (argent).
     const xaf = toXAF(row.amount, currency);
     salesCount += row.count;
     salesRevenueXAF += xaf;
-    if (!providerMap[provider]) providerMap[provider] = { provider, count: 0, revenueXAF: 0 };
-    providerMap[provider].count += row.count;
-    providerMap[provider].revenueXAF += xaf;
     if (!currencyMap[currency]) currencyMap[currency] = { currency, count: 0, amount: 0, amountXAF: 0 };
     currencyMap[currency].count += row.count;
     currencyMap[currency].amount += row.amount;
     currencyMap[currency].amountXAF += xaf;
   }
 
-  // Ventes de la période précédente (pour la tendance).
+  // Ventes de la période précédente (argent uniquement) pour la tendance.
   const prevAgg = await Subscription.aggregate([
-    { $match: { createdAt: { $gte: prev.start, $lt: prev.end } } },
+    {
+      $match: {
+        createdAt: { $gte: prev.start, $lt: prev.end },
+        paymentProvider: { $in: MONEY_PROVIDERS },
+      },
+    },
     { $group: { _id: '$pricing.currency', count: { $sum: 1 }, amount: { $sum: '$pricing.amount' } } },
   ]);
   let prevCount = 0;
@@ -96,45 +110,14 @@ exports.getDashboardStats = catchAsync(async (req, res) => {
     prevRevenueXAF += toXAF(row.amount, row._id || 'XAF');
   }
 
-  // ===== COURBE DES 30 DERNIERS JOURS =====
-  const chartStart = new Date();
-  chartStart.setHours(0, 0, 0, 0);
-  chartStart.setDate(chartStart.getDate() - 29);
-  const chartAgg = await Subscription.aggregate([
-    { $match: { createdAt: { $gte: chartStart } } },
+  // ===== TOP PACKAGES (ventes en argent de la période) =====
+  const pkgAgg = await Subscription.aggregate([
     {
-      $group: {
-        _id: {
-          day: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
-          currency: '$pricing.currency',
-        },
-        count: { $sum: 1 },
-        amount: { $sum: '$pricing.amount' },
+      $match: {
+        createdAt: { $gte: start, $lte: end },
+        paymentProvider: { $in: MONEY_PROVIDERS },
       },
     },
-  ]);
-  const dayMap = {};
-  for (const row of chartAgg) {
-    const day = row._id.day;
-    if (!dayMap[day]) dayMap[day] = { count: 0, revenueXAF: 0 };
-    dayMap[day].count += row.count;
-    dayMap[day].revenueXAF += toXAF(row.amount, row._id.currency || 'XAF');
-  }
-  const chart = [];
-  for (let i = 0; i < 30; i++) {
-    const d = new Date(chartStart);
-    d.setDate(d.getDate() + i);
-    const key = d.toISOString().slice(0, 10);
-    chart.push({
-      date: key,
-      count: dayMap[key]?.count || 0,
-      revenueXAF: dayMap[key]?.revenueXAF || 0,
-    });
-  }
-
-  // ===== TOP PACKAGES DE LA PÉRIODE =====
-  const pkgAgg = await Subscription.aggregate([
-    { $match: { createdAt: { $gte: start, $lte: end } } },
     {
       $group: {
         _id: { pkg: '$package', currency: '$pricing.currency' },
@@ -165,6 +148,7 @@ exports.getDashboardStats = catchAsync(async (req, res) => {
   }
 
   // ===== UTILISATEURS =====
+  // `newInPeriod` = comptes créés pendant la période sélectionnée.
   const [totalUsers, newUsers, prevNewUsers, googleUsers] = await Promise.all([
     User.countDocuments(),
     User.countDocuments({ createdAt: { $gte: start, $lte: end } }),
@@ -199,11 +183,11 @@ exports.getDashboardStats = catchAsync(async (req, res) => {
       sales: {
         count: salesCount,
         revenueXAF: salesRevenueXAF,
+        adsCount,
         trend: {
           count: trend(salesCount, prevCount),
           revenueXAF: trend(salesRevenueXAF, prevRevenueXAF),
         },
-        byProvider: Object.values(providerMap),
         byCurrency: Object.values(currencyMap),
       },
       users: {
@@ -221,7 +205,6 @@ exports.getDashboardStats = catchAsync(async (req, res) => {
         pending: predCounts.pending,
         decided,
       },
-      chart,
       topPackages,
     },
   });

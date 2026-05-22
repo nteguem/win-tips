@@ -1,49 +1,45 @@
 const jwt = require('jsonwebtoken');
 const { AppError, ErrorCodes } = require('../../../utils/AppError');
-const Affiliate = require('../../models/affiliate/Affiliate');
 
 class AuthService {
   /**
-   * Générer les tokens JWT pour un utilisateur
+   * Générer les tokens JWT pour un utilisateur (admin ou user).
    */
   generateTokens(userId, type) {
     const durations = {
       admin: process.env.ADMIN_TOKEN_DURATION || '180m',
-      affiliate: process.env.AFFILIATE_TOKEN_DURATION || '1d',
       user: process.env.USER_TOKEN_DURATION || '120d'
     };
-    
+
     const secrets = {
       admin: process.env.JWT_ADMIN_SECRET,
-      affiliate: process.env.JWT_AFFILIATE_SECRET,
       user: process.env.JWT_USER_SECRET
     };
-    
+
     const accessToken = jwt.sign(
       { id: userId, type },
       secrets[type],
       { expiresIn: durations[type] }
     );
-    
+
     const refreshToken = jwt.sign(
       { id: userId, type },
       process.env.JWT_REFRESH_SECRET,
       { expiresIn: '180d' }
     );
-    
+
     return { accessToken, refreshToken };
   }
 
   /**
-   * Vérifier un token JWT
+   * Vérifier un token JWT.
    */
   verifyToken(token, type) {
     const secrets = {
       admin: process.env.JWT_ADMIN_SECRET,
-      affiliate: process.env.JWT_AFFILIATE_SECRET,
       user: process.env.JWT_USER_SECRET
     };
-    
+
     try {
       return jwt.verify(token, secrets[type]);
     } catch (error) {
@@ -52,7 +48,7 @@ class AuthService {
   }
 
   /**
-   * Vérifier un refresh token
+   * Vérifier un refresh token.
    */
   verifyRefreshToken(token) {
     try {
@@ -63,25 +59,7 @@ class AuthService {
   }
 
   /**
-   * Valider un code d'affiliation
-   */
-  async validateAffiliateCode(code) {
-    if (!code) return null;
-    
-    const affiliate = await Affiliate.findOne({ 
-      affiliateCode: code.toUpperCase(),
-      isActive: true 
-    });
-    
-    if (!affiliate) {
-      throw new AppError('Code d\'affiliation invalide', 400, ErrorCodes.VALIDATION_ERROR);
-    }
-    
-    return affiliate;
-  }
-
-  /**
-   * Formater la réponse d'authentification
+   * Formater la réponse d'authentification.
    */
   formatAuthResponse(user, tokens, message = 'Connexion réussie') {
     return {
@@ -94,9 +72,7 @@ class AuthService {
           email: user.email,
           pseudo: user?.pseudo,
           firstName: user.firstName,
-          lastName: user.lastName,
-          ...(user.affiliateCode && { affiliateCode: user.affiliateCode }),
-          ...(user.commissionRate && { commissionRate: user.commissionRate })
+          lastName: user.lastName
         },
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken
