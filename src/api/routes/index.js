@@ -27,7 +27,15 @@ const adminCommissionRoutes = require('./admin/commissionRoutes');
 const adminAffiliateTypeRoutes = require('./admin/affiliateTypeRoutes');
 const adminFormationRoutes = require('./admin/formationRoutes');
 const adminWheelRoutes = require('./admin/wheelAdminRoutes');
+const adminDashboardRoutes = require('./admin/dashboardRoutes');
+const adminSubscriptionRoutes = require('./admin/subscriptionRoutes');
+const adminUserRoutes = require('./admin/userRoutes');
+const adminHealthRoutes = require('./admin/healthRoutes');
 
+router.use('/admin/dashboard', adminDashboardRoutes);
+router.use('/admin/subscriptions', adminSubscriptionRoutes);
+router.use('/admin/users', adminUserRoutes);
+router.use('/admin/health', adminHealthRoutes);
 router.use('/admin/packages', adminPackageRoutes);
 router.use('/admin/categories', adminCategoryRoutes);
 router.use('/admin/tickets', adminTicketRoutes);
