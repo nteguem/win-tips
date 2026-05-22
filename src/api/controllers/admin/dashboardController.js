@@ -155,12 +155,18 @@ exports.getDashboardStats = catchAsync(async (req, res) => {
     User.countDocuments({ createdAt: { $gte: prev.start, $lt: prev.end } }),
     User.countDocuments({ authProvider: 'google' }),
   ]);
-  const vipUserIds = await Subscription.distinct('user', { status: 'active', endDate: { $gt: now } });
+  // VIP = utilisateurs ayant un abonnement PAYANT actif (déblocages par pub exclus).
+  const vipUserIds = await Subscription.distinct('user', {
+    status: 'active',
+    endDate: { $gt: now },
+    paymentProvider: { $in: MONEY_PROVIDERS },
+  });
 
-  // ===== ABONNEMENTS ACTIFS =====
+  // ===== ABONNEMENTS ACTIFS (payants uniquement) =====
   const activeSubscriptions = await Subscription.countDocuments({
     status: 'active',
     endDate: { $gt: now },
+    paymentProvider: { $in: MONEY_PROVIDERS },
   });
 
   // ===== PERFORMANCE DES PRONOSTICS (30 derniers jours) =====
