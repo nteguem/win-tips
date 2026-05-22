@@ -316,10 +316,10 @@ class CouponController {
       const couponWithCategory = {
         category: {
           id: ticket.category._id,
-          name: ticket.category.name,
+          name: Category.pickLang(ticket.category.name, lang),
           icon: ticket.category.icon,
           successRate: ticket.category.successRate,
-          description: ticket.category.description || null,
+          description: Category.pickLang(ticket.category.description, lang) || null,
           isVip: ticket.category.isVip,
           isActive: ticket.category.isActive
         },
@@ -504,10 +504,12 @@ class CouponController {
           const categoryId = ticket.category._id.toString();
 
           if (!categoriesMap.has(categoryId)) {
+            // Aplatir le nom/description bilingue ({fr,en}) en chaîne selon
+            // `lang` : l'app mobile attend des strings simples.
             categoriesMap.set(categoryId, {
               id: ticket.category._id,
-              name: ticket.category.name,
-              description: ticket.category.description || null,
+              name: Category.pickLang(ticket.category.name, lang),
+              description: Category.pickLang(ticket.category.description, lang) || null,
               icon: ticket.category.icon,
               successRate: ticket.category.successRate,
               isVip: ticket.category.isVip,
