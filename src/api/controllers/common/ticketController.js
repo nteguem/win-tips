@@ -1,6 +1,7 @@
 // controllers/ticketController.js
 const ticketService = require('../../services/common/ticketService');
 const categoryService = require('../../services/common/categoryService');
+const correctAndNotifyService = require('../../services/admin/correctAndNotifyService');
 const { formatSuccess, formatError } = require('../../../utils/responseFormatter');
 
 class TicketController {
@@ -141,6 +142,20 @@ class TicketController {
       });
     } catch (error) {
       formatError(res, error.message, 500);
+    }
+  }
+
+  // POST /tickets/:id/correct - Corriger un ticket (pronostics + résultat)
+  async correctTicket(req, res) {
+    try {
+      const { id } = req.params;
+      const result = await correctAndNotifyService.correctTicket(id);
+      formatSuccess(res, {
+        data: result,
+        message: `Ticket corrigé — résultat : ${result.result}`
+      });
+    } catch (error) {
+      formatError(res, error.message, error.statusCode || 500);
     }
   }
 }

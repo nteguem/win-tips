@@ -130,7 +130,16 @@ class PredictionCronService {
 
       const duration = Date.now() - startTime;
       logger.info(`Correction cycle completed in ${duration}ms: ${corrected} corrected, ${errors} errors`);
-      
+
+      // Cascade : recalculer le résultat des tickets après la correction des pronos.
+      try {
+        const ticketCorrectionService = require('./ticketCorrectionService');
+        const ticketStats = await ticketCorrectionService.correctTickets({ lookbackDays: 10 });
+        logger.info(`Ticket correction: ${ticketStats.updated} ticket(s) mis à jour`);
+      } catch (e) {
+        logger.error(`Erreur correction tickets: ${e.message}`);
+      }
+
     } catch (error) {
       logger.error(`Error in correction cycle: ${error.message}`);
     }

@@ -19,4 +19,8 @@ router.route('/:id')
   .get(ticketController.getTicketById)
   .put(ticketController.updateTicket)
   .delete(ticketController.deleteTicket);
+
+// Correction manuelle d'un ticket (corrige les pronostics + recalcule le résultat)
+router.post('/:id/correct', ticketController.correctTicket);
+
 module.exports = router;
