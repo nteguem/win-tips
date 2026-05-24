@@ -48,7 +48,7 @@ const startServer = async () => {
     googlePlaySyncJob.start();
 
     // Cron de correction des pronostics (et cascade sur les tickets).
-    // Heures fixes : 0, 3, 8, 11, 13, 15, 16, 18, 19, 20, 22 UTC.
+    // Tourne une seule fois par jour à 5h UTC.
     await predictionCronService.start();
   } catch (error) {
     logger.error(`Failed to start server: ${error.message}`);

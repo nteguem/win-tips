@@ -15,8 +15,10 @@ class PredictionCronService {
     this.isRunning = false;
     this.retryAttempts = 3;
     
-    // Heures de correction fixes (24h format)
-    this.correctionHours = [0, 3, 8, 11, 13, 15, 16, 18, 19, 20, 22];
+    // Heure unique de correction quotidienne (UTC, 24h format).
+    // Les matchs étant terminés en fin de soirée, un seul passage le matin
+    // suffit à clôturer la journée précédente sans surcharger l'API.
+    this.correctionHours = [5];
     
     // Statistiques
     this.stats = {
