@@ -14,6 +14,12 @@ const { connectDB } = require('./config/database');
 const smobilpayVerificationJob = require('./src/core/jobs/smobilpayVerificationJob');
 const korapayVerificationJob = require('./src/core/jobs/korapayVerificationJob');
 const googlePlaySyncJob = require('./src/jobs/googlePlaySyncJob');
+const PredictionCronService = require('./src/api/services/common/predictionCorrectionService');
+
+// Instance du cron de correction des pronostics. Chaque cycle corrige les
+// pronostics encore 'pending' puis recalcule en cascade le résultat consolidé
+// des tickets concernés (via ticketCorrectionService).
+const predictionCronService = new PredictionCronService();
 
 // Chargement des variables d'environnement
 dotenv.config();
@@ -40,6 +46,10 @@ const startServer = async () => {
     // expirés (Mobile Money + Google Play) et acknowledge d'urgence des achats
     // non confirmés (sinon Google rembourse automatiquement après 3 jours).
     googlePlaySyncJob.start();
+
+    // Cron de correction des pronostics (et cascade sur les tickets).
+    // Heures fixes : 0, 3, 8, 11, 13, 15, 16, 18, 19, 20, 22 UTC.
+    await predictionCronService.start();
   } catch (error) {
     logger.error(`Failed to start server: ${error.message}`);
     process.exit(1);
