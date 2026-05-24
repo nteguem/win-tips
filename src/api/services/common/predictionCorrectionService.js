@@ -79,16 +79,19 @@ class PredictionCronService {
     logger.info(`Starting correction cycle at ${triggerHour}:00 UTC`);
 
     try {
-      // Calculer les bornes de la journée en cours (UTC)
+      // Fenêtre : TOUTE la journée d'hier + aujourd'hui jusqu'à maintenant.
+      // Le cron tourne à 5h UTC, il doit donc couvrir les matchs joués hier
+      // (jusqu'à 23h59 UTC) qui sont restés en attente. Sans ça, un cron du
+      // matin ne corrigerait qu'une plage 00h-05h vide la plupart du temps.
       const now = new Date();
-      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const startOfYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
 
       const predictionsToProcess = await Prediction.find({
         status: 'pending',
-        // Match de la journée en cours ET déjà passé
-        'matchData.date': { 
-          $gte: startOfDay,   // Après le début de la journée (00:00 UTC)
-          $lt: now            // Mais avant maintenant (match passé)
+        // Matchs joués hier ou ce matin tôt, déjà passés.
+        'matchData.date': {
+          $gte: startOfYesterday,
+          $lt: now
         },
         $or: [
           { 'correctionMetadata.attempts': { $exists: false } },
