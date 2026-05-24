@@ -28,16 +28,21 @@ const { formatSuccess, formatError } = require('../../../utils/responseFormatter
 exports.createTicket = async (req, res) => {
   try {
     const { sourceAppId, sourceCategoryId, title, date, closingAt } = req.body;
+    // Rétrocompat : si `sourceSystem` n'est pas envoyé (clients historiques
+    // bigwin), on suppose `'bigwin'`. Les nouveaux clients (predictfoot…)
+    // doivent l'envoyer explicitement.
+    const sourceSystem = req.body.sourceSystem || 'bigwin';
     if (!sourceAppId || !sourceCategoryId || !title || !date) {
       return formatError(res, 'sourceAppId, sourceCategoryId, title, date sont requis', 400);
     }
 
-    // Resolution : trouver la categorie wintips qui declare cette source
+    // Résolution : trouver la catégorie wintips qui déclare ce triplet
+    // { sourceSystem, sourceAppId, sourceCategoryId } dans ses externalSources.
     const targetCat = await Category.findOne({
       isActive: true,
       'externalSources': {
         $elemMatch: {
-          system: 'bigwin',
+          system: sourceSystem,
           appId: sourceAppId,
           categoryId: String(sourceCategoryId),
         },

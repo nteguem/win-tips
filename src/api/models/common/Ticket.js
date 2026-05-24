@@ -46,6 +46,13 @@ const TicketSchema = new mongoose.Schema({
   resultUpdatedAt: {
     type: Date,
     default: null
+  },
+
+  // Clé d'idempotence pour la synchro sortante (cette app → WinTips).
+  // Quand un ticket est poussé à WinTips, on mémorise son ID distant pour
+  // éviter de recréer le ticket en boucle aux publications suivantes.
+  externalRefs: {
+    wintips: { type: String, default: null }
   }
 }, {
   timestamps: true

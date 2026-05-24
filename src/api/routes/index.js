@@ -42,10 +42,16 @@ router.use('/admin/events', adminEventRoutes);
 router.use('/admin/formations', adminFormationRoutes);
 router.use('/admin/wheel', adminWheelRoutes);
 
-// ===== ROUTES INTERNES (sync sortante depuis bigwin) =====
+// ===== ROUTES INTERNES (sync entrante depuis bigwin / predictfoot) =====
 // ⚠️ V1 : pas d'auth. Voir internalSyncController pour le plan V2.
 const internalSyncRoutes = require('./common/internalSyncRoutes');
 router.use('/internal/sync', internalSyncRoutes);
+
+// ===== CATALOGUE PUBLIC (lecture seule, sans auth) =====
+// Expose les catégories actives de cette app pour qu'un autre système (ex:
+// WinTips configurant ses sources externes) puisse les importer.
+const publicCatalogRoutes = require('./common/publicCatalogRoutes');
+router.use('/public/catalog', publicCatalogRoutes);
 
 // ===== ROUTES USER =====
 const userSubscriptionRoutes = require('./user/subscriptionRoutes');

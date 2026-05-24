@@ -2,6 +2,7 @@
 const ticketService = require('../../services/common/ticketService');
 const categoryService = require('../../services/common/categoryService');
 const correctAndNotifyService = require('../../services/admin/correctAndNotifyService');
+const syncOutgoingService = require('../../services/admin/syncOutgoingService');
 const Category = require('../../models/common/Category');
 const { formatSuccess, formatError } = require('../../../utils/responseFormatter');
 
@@ -134,6 +135,14 @@ class TicketController {
 
       if (!ticket) {
         return formatError(res, 'Ticket not found', 404);
+      }
+
+      // Synchro sortante fire-and-forget : si la cible (WinTips) est
+      // configurée via la variable d'env SYNC_TARGET_WINTIPS_URL, on lui
+      // pousse l'info à chaque publication. WinTips décide lui-même si la
+      // catégorie source est mappée chez lui.
+      if (updates.isVisible === true) {
+        syncOutgoingService.maybeSyncTicket(ticket).catch(() => {});
       }
 
       formatSuccess(res, {
