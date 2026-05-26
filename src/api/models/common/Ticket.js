@@ -323,10 +323,16 @@ TicketSchema.post('findOneAndUpdate', async function (doc) {
     
     if (wasVisibilityChanged && doc.isVisible) {
       try {
-        // Récupérer le nom de la catégorie
+        // Récupérer le nom de la catégorie.
+        // Depuis la migration i18n, name et description sont des objets
+        // { fr, en } — on doit aplatir avant tout traitement string. pickLang
+        // tolère aussi les anciennes valeurs sous forme de chaîne brute.
         const Category = mongoose.model('Category');
         const category = await Category.findById(doc.category);
-        const categoryName = category ? category.description : 'Catégorie inconnue';
+        const categoryName = (category && (
+          Category.pickLang(category.description, 'fr') ||
+          Category.pickLang(category.name, 'fr')
+        )) || 'Catégorie inconnue';
         
         // Vérifier si c'est un LIVE
         const isLive = categoryName.toUpperCase().includes('LIVE');
