@@ -33,7 +33,7 @@ countryCode: {
       required: [true, 'La devise est requise'],
       uppercase: true,
       trim: true,
-      enum: ['XAF', 'XOF', 'CDF', 'GNF', 'GMD', 'USD', 'EUR'],
+      enum: ['XAF', 'XOF', 'CDF', 'GNF', 'GMD', 'USD', 'EUR', 'NGN', 'KES', 'GHS', 'TZS', 'UGX', 'ZAR', 'ZMW', 'MWK', 'RWF', 'SLE', 'MZN', 'LSL'],
     },
     language: {
       type: String,
@@ -53,7 +53,7 @@ countryCode: {
       required: [true, 'Le fournisseur de paiement est requis'],
       lowercase: true,
       trim: true,
-      enum: ['cinetpay', 'afribapay', 'smobilpay', 'googlepay'],
+      enum: ['cinetpay', 'afribapay', 'smobilpay', 'korapay', 'pawapay', 'googlepay'],
       default: 'googlepay',
     },
     isActive: {

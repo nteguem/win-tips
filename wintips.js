@@ -13,6 +13,7 @@ const logger = require('./src/utils/logger');
 const { connectDB } = require('./config/database');
 const smobilpayVerificationJob = require('./src/core/jobs/smobilpayVerificationJob');
 const korapayVerificationJob = require('./src/core/jobs/korapayVerificationJob');
+const pawapayVerificationJob = require('./src/core/jobs/pawapayVerificationJob');
 const googlePlaySyncJob = require('./src/jobs/googlePlaySyncJob');
 const PredictionCronService = require('./src/api/services/common/predictionCorrectionService');
 
@@ -42,6 +43,7 @@ const startServer = async () => {
     // Démarrer les jobs de fond (après DB et HTTP prêts)
     smobilpayVerificationJob.start();
     korapayVerificationJob.start();
+    pawapayVerificationJob.start();
     // Jobs Google Play : synchro des abonnements, nettoyage des abonnements
     // expirés (Mobile Money + Google Play) et acknowledge d'urgence des achats
     // non confirmés (sinon Google rembourse automatiquement après 3 jours).

@@ -61,6 +61,7 @@ const smobilpayRoutes = require('./user/smobilpayRoutes');
 const cinetpayRoutes = require('./user/cinetpayRoutes');
 const afribaPayRoutes = require('./user/afribaPayRoutes');
 const korapayRoutes = require('./user/korapayRoutes');
+const pawapayRoutes = require('./user/pawapayRoutes');
 const userFormationRoutes = require('./user/formationRoutes');
 const googlePlayRoutes = require('./user/googlePlayRoutes');
 const googlePlayWebhook = require('./user/googlePlayWebhook');
@@ -104,6 +105,8 @@ router.use('/payments/cinetpay', cinetpayRoutes);
 router.use('/payments/afribapay', afribaPayRoutes);
 // Routes de paiement KoraPay (NG, GH, KE, ZA, EG, CI)
 router.use('/payments/korapay', korapayRoutes);
+// Routes de paiement pawaPay (mobile money multi-pays africains)
+router.use('/payments/pawapay', pawapayRoutes);
 
 /**
  * GET /api/

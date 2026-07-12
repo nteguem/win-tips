@@ -4,6 +4,7 @@ const googleAuthService = require('../../services/common/googleAuthService');
 const subscriptionService = require('../../services/user/subscriptionService');
 const smobilpayVerificationService = require('../../services/user/smobilpayVerificationService');
 const korapayVerificationService = require('../../services/user/korapayVerificationService');
+const pawapayVerificationService = require('../../services/user/pawapayVerificationService');
 const deviceService = require('../../services/common/deviceService');
 const { AppError, ErrorCodes } = require('../../../utils/AppError');
 const catchAsync = require('../../../utils/catchAsync');
@@ -326,7 +327,10 @@ exports.getMe = catchAsync(async (req, res, next) => {
       .catch(err => console.error('[getMe] Smobilpay verification failed:', err.message)),
     korapayVerificationService
       .verifyUserPendingTransactions(req.user._id)
-      .catch(err => console.error('[getMe] KoraPay verification failed:', err.message))
+      .catch(err => console.error('[getMe] KoraPay verification failed:', err.message)),
+    pawapayVerificationService
+      .verifyUserPendingTransactions(req.user._id)
+      .catch(err => console.error('[getMe] pawaPay verification failed:', err.message))
   ]);
 
   // Vérifier s'il a un abonnement actif
