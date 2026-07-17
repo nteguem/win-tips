@@ -31,8 +31,7 @@ class BaseballProvider extends SportProvider {
       const response = await this.httpClient.get(`${this.baseUrl}${this.endpoints.games}`, {
         params: { date },
         headers: {
-          'x-rapidapi-key': this.apiKey,
-          'x-rapidapi-host': this.host
+          'x-apisports-key': this.apiKey
         }
       });
       
