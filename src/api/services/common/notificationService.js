@@ -2,6 +2,38 @@
 const axios = require('axios');
 const logger = require('../../../utils/logger');
 const { AppError } = require('../../../utils/AppError');
+const pushService = require('../push/pushService');
+const legacyBridge = require('../push/legacyBridge');
+const { appId: appIdCourant } = require('../push/appContext');
+
+// ---------------------------------------------------------------------------
+// MIGRATION OneSignal -> FCM
+//
+// Le plan Free OneSignal passe a 1 000 MAU par ORGANISATION le 01/10/2026.
+// L'org « proxi dream » regroupe 7 apps pour 13 343 MAU : le push s'arrete a
+// cette date, wintips et predictfoot compris.
+//
+// Ce service devient une FACADE : il garde sa signature publique — les hooks
+// Mongoose de Ticket.js et paymentMiddleware l'appellent — et delegue a
+// pushService selon un interrupteur.
+//
+//   PUSH_ENGINE=onesignal  (defaut) -> comportement historique, inchange
+//   PUSH_ENGINE=fcm                 -> delegation a pushService
+//
+// PUSH_RAMP_PERCENT (0..100) pilote la montee en charge des devices dont le
+// token vient du pont d'export : a 0 ils restent sur OneSignal (meilleur rendu
+// tant que l'app n'est pas mise a jour), a 100 ils passent tous sur FCM.
+//
+// PUSH_ONESIGNAL_AVAILABLE=false le jour du depassement de quota : le routeur
+// cesse alors de proposer OneSignal comme filet.
+// ---------------------------------------------------------------------------
+const useFcm = () => process.env.PUSH_ENGINE === 'fcm';
+
+const pushPolicy = () => ({
+  oneSignalDisponible: process.env.PUSH_ONESIGNAL_AVAILABLE !== 'false',
+  rampPercent: Number(process.env.PUSH_RAMP_PERCENT || 0),
+});
+
 
 class NotificationService {
   constructor() {
@@ -29,6 +61,21 @@ class NotificationService {
    * Envoyer une notification à des utilisateurs spécifiques via playerIds
    */
   async sendToUsers(playerIds, notification) {
+    // --- Delegation FCM ---
+    // Les appelants passent des playerId OneSignal. On les resout en devices :
+    // ceux qui ont un token FCM partent en FCM, les autres gardent le filet.
+    // Aucun appelant n'a a changer.
+    if (useFcm()) {
+      const ids = Array.isArray(playerIds) ? playerIds : [playerIds];
+      const push = legacyBridge.toPushNotification(notification);
+      const stats = await pushService.send(appIdCourant(), push, {
+        targeting: { playerIds: ids },
+        policy: pushPolicy(),
+      });
+      logger.info(`Envoi cible via pushService (${ids.length} playerIds)`, stats);
+      return legacyBridge.toLegacyResponse(push.id, stats);
+    }
+
     this._init();
     
     try {
@@ -69,6 +116,16 @@ class NotificationService {
    * Envoyer une notification à tous les utilisateurs
    */
   async sendToAll(notification) {
+    // --- Delegation FCM ---
+    // included_segments:['All'] devient une audience resolue en base, donc
+    // comptable : on sait enfin combien de devices sont reellement vises.
+    if (useFcm()) {
+      const push = legacyBridge.toPushNotification(notification);
+      const stats = await pushService.send(appIdCourant(), push, { policy: pushPolicy() });
+      logger.info('Broadcast via pushService', stats);
+      return legacyBridge.toLegacyResponse(push.id, stats);
+    }
+
     this._init();
     
     try {
@@ -111,6 +168,22 @@ class NotificationService {
    * Envoyer une notification avec des filtres personnalisés
    */
   async sendWithFilters(filters, notification) {
+    // --- Delegation FCM ---
+    // Les filtres OneSignal (tags) n'ont pas d'equivalent direct : on traduit
+    // ce qu'on sait traduire (userType), le reste retombe sur l'audience large.
+    if (useFcm()) {
+      const push = legacyBridge.toPushNotification(notification);
+      const userTypes = (filters || [])
+        .filter((f) => f.field === 'tag' && f.key === 'userType' && f.value)
+        .map((f) => f.value);
+      const stats = await pushService.send(appIdCourant(), push, {
+        targeting: userTypes.length ? { userTypes } : {},
+        policy: pushPolicy(),
+      });
+      logger.info(`Envoi filtre via pushService (${userTypes.join(',') || 'audience large'})`, stats);
+      return legacyBridge.toLegacyResponse(push.id, stats);
+    }
+
     this._init();
     
     try {

@@ -16,6 +16,10 @@ const korapayVerificationJob = require('./src/core/jobs/korapayVerificationJob')
 const pawapayVerificationJob = require('./src/core/jobs/pawapayVerificationJob');
 const googlePlaySyncJob = require('./src/jobs/googlePlaySyncJob');
 const PredictionCronService = require('./src/api/services/common/predictionCorrectionService');
+// Migration FCM : purge les tokens que FCM ne signale jamais comme morts —
+// il renvoie un succes apparent sur une registration « stale », ce qui gonfle
+// artificiellement le taux de livraison.
+const fcmTokenHygieneJob = require('./src/jobs/fcmTokenHygieneJob');
 
 // Instance du cron de correction des pronostics. Chaque cycle corrige les
 // pronostics encore 'pending' puis recalcule en cascade le résultat consolidé
@@ -48,6 +52,7 @@ const startServer = async () => {
     // expirés (Mobile Money + Google Play) et acknowledge d'urgence des achats
     // non confirmés (sinon Google rembourse automatiquement après 3 jours).
     googlePlaySyncJob.start();
+    fcmTokenHygieneJob.start();
 
     // Cron de correction des pronostics (et cascade sur les tickets).
     // Tourne une seule fois par jour à 5h UTC.
