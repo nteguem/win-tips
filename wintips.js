@@ -7,6 +7,10 @@ const logger = require('./src/utils/logger');
 const { connectDB } = require('./config/database');
 const smobilpayVerificationJob = require('./src/core/jobs/smobilpayVerificationJob');
 const korapayVerificationJob = require('./src/core/jobs/korapayVerificationJob');
+// Migration FCM : purge les tokens que FCM ne signale jamais comme morts —
+// il renvoie un succes apparent sur une registration « stale », ce qui gonfle
+// artificiellement le taux de livraison.
+const fcmTokenHygieneJob = require('./src/jobs/fcmTokenHygieneJob');
 
 // Chargement des variables d'environnement
 dotenv.config();
@@ -29,6 +33,7 @@ const startServer = async () => {
     // Démarrer les jobs de fond (après DB et HTTP prêts)
     smobilpayVerificationJob.start();
     korapayVerificationJob.start();
+    fcmTokenHygieneJob.start();
   } catch (error) {
     logger.error(`Failed to start server: ${error.message}`);
     process.exit(1);

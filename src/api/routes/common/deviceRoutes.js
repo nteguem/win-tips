@@ -10,6 +10,10 @@ const router = express.Router();
 // Enregistrer un device (invité ou connecté)
 router.post('/register', deviceController.registerDevice);
 
+// Accuse de reception : publique, sans authentification. L'app l'appelle depuis
+// son handler d'arriere-plan, ou aucun token utilisateur n'est disponible.
+router.post('/ack', deviceController.ackNotification);
+
 /**
  * Routes protégées (authentification requise)
  */
