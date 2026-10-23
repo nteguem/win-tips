@@ -1,0 +1,56 @@
+OPTIONAL OFFLINE MARIAN -> QWEN CASCADE: PREPARATION ONLY
+
+This source package does not download/install models, create a service, modify
+the database, publish an edition or send a notification. Production activation
+requires the user's separate go after the real final preview is reviewed.
+
+1. Validate the staged Python worker and the dedicated MT transport tests.
+   The factory contract is:
+   create_translator_from_env(cache_dir, max_seconds,
+                              ensure_fallback_ready=None)
+   It returns the shared CascadeTranslator. There is only one guard/cache path.
+
+2. Reuse the existing approved model files; do not fetch a third-party mirror.
+   Baseline data root: /opt/journal-parieur-rdj-20261022
+   All six relative paths, sizes and SHA256 values are in:
+   editorial_worker/assets/mt/opus-mt-fr-en-20200226-int8.json
+   The factory checks every hash before native model loading. A missing,
+   modified or unverified runtime file fails closed.
+
+3. Existing preview runtime: CTranslate2 4.8.3, SentencePiece 0.2.2.
+   Existing private dependency directory:
+   /opt/journal-parieur-rdj-20261022/mt-deps
+   No global installation or upgrade is performed by this worker. If a future
+   dedicated environment is needed, prepare/review it separately before go.
+
+4. Explicit optional provider environment, not activated by this package:
+   WINTIPS_EDITORIAL_TRANSLATOR=marian
+   WINTIPS_EDITORIAL_MT_ROOT=/opt/journal-parieur-rdj-20261022
+   WINTIPS_EDITORIAL_MT_DEPS=/opt/journal-parieur-rdj-20261022/mt-deps
+   The data root may later change if the same verified relative layout is kept.
+   Otherwise the existing Ollama provider remains the runner default.
+
+5. Marian runs locally on CPU, one inference thread, beam size four, no source
+   truncation. The shared guard validates the result and revalidates every cache
+   read. Rejected phrases may use the configured Qwen7B fallback. The runner
+   owns the runtime lease and cleanup; Qwen starts lazily only if a real fallback
+   request is needed. A valid MT/Qwen cache does not start the Qwen daemon.
+
+6. Require a new bounded preview of the final cascade on all four exact public
+   RDJ items. Review every output for football/racing meaning as well as numeric
+   facts. Guard success alone is not proof of complete editorial quality.
+   A rejected phrase must never be silently published or labelled English.
+   French data, selection, odds, teams and timing remain structurally unchanged.
+   The raw MT preview was fast but was NOT acceptable as a standalone translator.
+
+7. Keep model/runtime attribution and licenses with the model source package.
+   The original Marian archive actually contains CC BY4.0; the HF card declares
+   Apache2.0. This implementation conservatively retains the actual original
+   archive license, source/author attribution and notice of INT8 conversion.
+   CTranslate2 uses MIT, SentencePiece Apache2.0. These permit commercial use
+   subject to their attribution/notices. No interface text is added to the app.
+
+8. Once approved, follow the user's source workflow: local reviewed changes,
+   commit/push through the approved main workflow, then server pull/deployment.
+   Do not copy ad-hoc source files into the running production API. Activate
+   the schedule/import/notifications only under the separate approved rollout.

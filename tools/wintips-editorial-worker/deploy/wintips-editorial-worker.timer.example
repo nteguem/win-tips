@@ -1,0 +1,12 @@
+# EXAMPLE ONLY: no installation or activation is performed by this package.
+[Unit]
+Description=Hourly WinTips RDJ check (unarmed example)
+
+[Timer]
+OnCalendar=*-*-* *:30:00 UTC
+RandomizedDelaySec=30
+Persistent=true
+Unit=wintips-editorial-worker.service
+
+[Install]
+WantedBy=timers.target

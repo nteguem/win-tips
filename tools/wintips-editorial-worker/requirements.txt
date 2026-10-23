@@ -1,0 +1,6 @@
+# Python 3.10+: collection-only previews and offline tests use the standard library.
+# Bilingual publication also needs an operator-provisioned local translator.
+# Marian mode requires existing CTranslate2 + SentencePiece and hash-verified weights.
+# Ollama/Qwen/TranslateGemma fallbacks need existing local models and shared-job locks.
+# This file installs no models, optional runtime packages or new dependencies.
+# See README.txt, deploy/environment.example and assets/mt model manifest.

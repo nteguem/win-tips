@@ -1,0 +1,54 @@
+{
+  "schema": 1,
+  "model": "Helsinki-NLP/opus-mt-fr-en",
+  "modelCard": "https://huggingface.co/Helsinki-NLP/opus-mt-fr-en",
+  "originalWeights": "https://object.pouta.csc.fi/OPUS-MT-models/fr-en/opus-2020-02-26.zip",
+  "originalArchiveSha256": "9bfe937fd2bf1467b6a31ab1730870d4057bd171bd2c5d8083af5528cadbe770",
+  "originalArchiveLicense": "CC-BY-4.0",
+  "modelCardMetadataLicense": "Apache-2.0 (different from LICENSE in original archive actually used)",
+  "conversion": "official CTranslate2 OpusMTConverter int8, existing supervised conversion2026-10-22",
+  "conversionEngineVersion": "4.8.3",
+  "modelDirectory": "mt-fr-en-int8",
+  "sourceSentencePiece": "mt-original/source.spm",
+  "targetSentencePiece": "mt-original/target.spm",
+  "files": [
+    {
+      "name": "mt-fr-en-int8/model.bin",
+      "bytes": 79860117,
+      "sha256": "341035b07843391ebd691dee81ac9dfcba1df10f4aa6110369e5183efe16dc9e"
+    },
+    {
+      "name": "mt-fr-en-int8/shared_vocabulary.json",
+      "bytes": 1052697,
+      "sha256": "a157eb51a42817dd1ae4bc46cecf66e591ab32641df936da292bd09f2728631b"
+    },
+    {
+      "name": "mt-fr-en-int8/config.json",
+      "bytes": 221,
+      "sha256": "152eb448f1020eb55f90971d7b95f61896abee8415d555ca51ae7897ac0a0e68"
+    },
+    {
+      "name": "mt-original/source.spm",
+      "bytes": 802397,
+      "sha256": "78d0e717c77053f1c4b856d8661d9cb87c64f083a35418c087b9146300e4f585"
+    },
+    {
+      "name": "mt-original/target.spm",
+      "bytes": 778395,
+      "sha256": "173e9f493a668fe396d599e28d414a201193094e6ffd7a4678e5aab0f6d3d838"
+    },
+    {
+      "name": "mt-original/LICENSE",
+      "bytes": 18652,
+      "sha256": "945fbcb37deca05bccd7c3ca0e261679f1f5373515504fdbad68f6f3cf6f49b9"
+    }
+  ],
+  "inference": {
+    "device": "cpu",
+    "computeType": "int8",
+    "interThreads": 1,
+    "intraThreads": 1,
+    "beamSize": 4
+  },
+  "attribution": "Helsinki-NLP OPUS-MT fr-en, original2020-02-26. Converted to CTranslate2 INT8; preserve original CC BY4.0 license and source."
+}

@@ -1,0 +1,9 @@
+Model: Helsinki-NLP OPUS-MT fr-en (2020-02-26)
+Source: https://huggingface.co/Helsinki-NLP/opus-mt-fr-en
+Original: https://object.pouta.csc.fi/OPUS-MT-models/fr-en/opus-2020-02-26.zip
+License actually included in original weights: CC BY 4.0
+https://creativecommons.org/licenses/by/4.0/
+Modification: converted to CTranslate2 INT8 by the official converter.
+The HF model-card Apache-2.0 metadata differs from the original archive license; this bundle retains the original CC BY4.0 notice.
+Runtime CTranslate2: MIT. SentencePiece: Apache-2.0.
+No model weight or runtime binaries are committed with this source.

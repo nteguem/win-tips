@@ -1,0 +1,18 @@
+{
+  "purpose": "IANA Europe/Paris fallback only when system zoneinfo is absent",
+  "project": "tzdata",
+  "version": "2026.5",
+  "metadataUrl": "https://pypi.org/pypi/tzdata/2026.5/json",
+  "wheelUrl": "https://files.pythonhosted.org/packages/94/21/1e5995a1c920cce14e4bffae20c665ec10e7ed03ab25e006cd741092b718/tzdata-2026.5-py2.py3-none-any.whl",
+  "wheelSha256": "b683bd1b6659ddcd810ff02ad09ba821d4bf1065072805063eb35c49617905ac",
+  "wheelBytes": 347996,
+  "member": "tzdata/zoneinfo/Europe/Paris",
+  "file": "Europe-Paris.tzif",
+  "sha256": "cd588e779c5737d70e4e47158dafab7945b026b2bb34454cc47741815459b068",
+  "bytes": 1105,
+  "licenseMembers": [
+    "tzdata-2026.5.dist-info/licenses/LICENSE",
+    "tzdata-2026.5.dist-info/licenses/licenses/LICENSE_APACHE"
+  ],
+  "retrievedAtUtc": "2026-10-23T06:23:21.393315+00:00"
+}

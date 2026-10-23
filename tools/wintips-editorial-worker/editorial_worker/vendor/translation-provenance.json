@@ -1,0 +1,24 @@
+{
+  "originRepository": "bigwin-api-v2",
+  "originCommit": "891de82290cc39f4f04ad79281e430496bfba002",
+  "upstreamPath": "tools/journal-parieur-worker/journal_worker/translate.py",
+  "upstreamSha256": "30d185c93744fe9fe489f5ab6c7f9e03e42fef97ae0fc8fab441faf6be2230fe",
+  "file": "rdj_translation.py",
+  "snapshotUnmodified": false,
+  "runtimeDependencyOnOriginalCheckout": false,
+  "adaptations": [
+    "French numerical words eleven to nineteen, including compound eighteen",
+    "Sentence-initial non-name terms excluded from proper-name discovery",
+    "Grouped integer formatting equivalence, without changing the numerical value",
+    "Explicit French h clock equivalence without timezone conversion",
+    "Same complete calendar date with day-month and month-day English formatting",
+    "Team-sport and horse-racing terminology scoped to the fixture sport",
+    "Unbeaten, numerical superiority and relegation play-off semantic protection",
+    "Negative concord, restrictive ne-que and factual past concession protection",
+    "Football promotion, home fixtures, recent form, sole wins and semi-final terminology",
+    "Horse-racing field, runners and unfolding of the race distinguished from results"
+  ],
+  "promptDocumentation": "https://ollama.com/library/translategemma",
+  "qwenChatDocumentation": "https://huggingface.co/Qwen/Qwen2.5-7B-Instruct",
+  "runtimeDocumentation": "https://docs.ollama.com/api/chat"
+}

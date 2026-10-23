@@ -1,0 +1,17 @@
+# Review the API origin before deployment. Real secrets stay outside Git.
+WINTIPS_EDITORIAL_API_BASE=https://api.wintips-expert.com
+WINTIPS_EDITORIAL_WORKER_TOKEN=
+# Existing read-only model/runtime; no downloads happen in the worker.
+WINTIPS_EDITORIAL_TRANSLATOR=marian
+WINTIPS_EDITORIAL_MT_ROOT=/opt/journal-parieur-rdj-20261022
+WINTIPS_EDITORIAL_MT_DEPS=/opt/journal-parieur-rdj-20261022/mt-deps
+WINTIPS_EDITORIAL_MODEL_ENDPOINT=http://127.0.0.1:11439/api/
+WINTIPS_EDITORIAL_MODEL=qwen2.5:7b-instruct-q4_K_M
+# Third model only after content rejection; an empty value disables this level.
+WINTIPS_EDITORIAL_FALLBACK_MODEL=translategemma:4b
+WINTIPS_EDITORIAL_MANAGE_MODEL=true
+# The following flags belong to the API environment, NOT this worker file:
+# WINTIPS_EDITORIAL_IMPORT_ENABLED=false until the publication GO
+# WINTIPS_EDITORIAL_NOTIFICATIONS_ENABLED=false until the notification GO
+# WINTIPS_EDITORIAL_REQUIRE_EN=true
+# WINTIPS_EDITORIAL_LEGACY_BRIDGE=true during the mobile transition

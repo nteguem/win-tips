@@ -1,0 +1,9 @@
+{
+  "endpoint": "http://127.0.0.1:11439/api/",
+  "model": "qwen2.5:7b-instruct-q4_K_M",
+  "fallback_model": "translategemma:4b",
+  "request_timeout": 120,
+  "max_seconds": 1200,
+  "max_segments": 240,
+  "num_threads": 2
+}

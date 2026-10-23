@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+/var/
+/tests/.fixture-http-cache/

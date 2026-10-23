@@ -1,0 +1,66 @@
+[
+  {
+    "file": "turf-2026-10-23.html",
+    "sourceUrl": "https://www.ruedesjoueurs.com/turf/pronostic-turf/course/23-10-2026/R1/C4/prix-orionis.html",
+    "retrievedAtUtc": "2026-10-23T05:59:33.968048+00:00",
+    "rawUtf8Sha256": "3bbf4bee005926008fc0a989c4ff062b861748180a527fbea970b7772a6b741a",
+    "fixtureSha256": "b2cfc8eda1c6165835e3ea9291afb7e96cf6196181980fbe6344b08d5d5196ef",
+    "note": "Reduced source DOM; source text retained; not a full source document."
+  },
+  {
+    "file": "football-2026-10-22.html",
+    "sourceUrl": "https://www.ruedesjoueurs.com/pronostic/lech-poznan-sunderland-6112320.html",
+    "retrievedAtUtc": "2026-10-23T05:59:39.060295+00:00",
+    "rawUtf8Sha256": "61dce40397290b292279ea356b16d8601c3919dfd526f54022aa42adb627a73e",
+    "fixtureSha256": "a0eb42fc1afa4d3a6ee6d2af369437cba5f03d403a498c7faaaee416c8bedfdf",
+    "note": "Reduced source DOM; source text retained; not a full source document."
+  },
+  {
+    "file": "football-lille-2026-10-21.html",
+    "sourceUrl": "https://www.ruedesjoueurs.com/pronostic/lille-galatasaray-6106312.html",
+    "retrievedAtUtc": "2026-10-23T05:59:48.258202+00:00",
+    "rawUtf8Sha256": "832a28b262b3f86af419d9295bbe89de7a1117b386e43c76beb97f6026a73c35",
+    "fixtureSha256": "2e91d5817db82ec21d4431fd58457f15b29cf5de58f30f1d153bda83c1d16b9a",
+    "note": "Reduced source DOM; source text retained; not a full source document."
+  },
+  {
+    "file": "football-como-2026-10-21.html",
+    "sourceUrl": "https://www.ruedesjoueurs.com/pronostic/como-manchester-united-6106410.html",
+    "retrievedAtUtc": "2026-10-23T05:59:52.679865+00:00",
+    "rawUtf8Sha256": "da19f30c951fa2e73c239974f07a8fe36497307d790e0167ee2f68a875a23856",
+    "fixtureSha256": "eec7cc9dcd51901ee899010ed7484710e7bc41aab39d4ada4195d5b2b6f62648",
+    "note": "Reduced source DOM; source text retained; not a full source document."
+  },
+  {
+    "file": "football-dinamo-2026-10-22.html",
+    "sourceUrl": "https://www.ruedesjoueurs.com/pronostic/dinamo-zagreb-nec-nimegue-6112293.html",
+    "retrievedAtUtc": "2026-10-23T05:59:55.060528+00:00",
+    "rawUtf8Sha256": "942984445896ff15842eb001d68eab7f1de2a8a1fdcd96e965b861cb77c086be",
+    "fixtureSha256": "72d86e3924c4630f2c207625ec32cccbef28cc900feca49b4ad747d0ed2f1762",
+    "note": "Reduced source DOM; source text retained; not a full source document."
+  },
+  {
+    "file": "combine-2026-10-21.html",
+    "sourceUrl": "https://www.ruedesjoueurs.com/actualites/paris-sportifs/74744-combine-21-10-2026.html",
+    "retrievedAtUtc": "2026-10-23T06:00:00.160028+00:00",
+    "rawUtf8Sha256": "9e8bc8f8c7eeb43b28f23ecb0b32c0b3dafe9de612804703fd1c398a6962e00b",
+    "fixtureSha256": "ade2f44000bbc70a83d16641c59b556239eb6ac17360105d486342c349851938",
+    "note": "Reduced source DOM; source text retained; not a full source document."
+  },
+  {
+    "file": "petit-index.html",
+    "sourceUrl": "https://www.ruedesjoueurs.com/paris-sportifs/le-petit-journal.html",
+    "retrievedAtUtc": "2026-10-23T06:00:01.819983+00:00",
+    "rawUtf8Sha256": "2c669dbe17f3ba0c2418066792781d854f282e7aa8bc6fdad10efde16820c2ad",
+    "fixtureSha256": "0fde2817a0b0daef6c10650dadeb7987c4a8db179ad843f4210ef1f84f0f2ba3",
+    "note": "Reduced source DOM; source text retained; not a full source document."
+  },
+  {
+    "file": "petit-journal-2026-10-22.html",
+    "sourceUrl": "https://www.ruedesjoueurs.com/paris-sportifs/le-petit-journal/74762-le-petit-journal-du-parieur-jeudi-22-octobre-2026.html",
+    "retrievedAtUtc": "2026-10-23T06:00:03.580261+00:00",
+    "rawUtf8Sha256": "dfa728165ea261d18a7d30a58fe013ac5f7aa0b4cc3bca5b0ba46732e9ae7cc2",
+    "fixtureSha256": "1fda31be8245d1ae2e9d2f4afbf5bbcc5e443c2377313b76563226eed56c6822",
+    "note": "Reduced source DOM; source text retained; not a full source document."
+  }
+]

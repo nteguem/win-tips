@@ -1,0 +1,18 @@
+{
+  "originRepository": "bigwin-api-v2",
+  "originCommit": "891de82290cc39f4f04ad79281e430496bfba002",
+  "snapshotUnmodified": true,
+  "runtimeDependencyOnOriginalCheckout": false,
+  "files": [
+    {
+      "file": "rdj_collector.py",
+      "upstreamPath": "tools/journal-parieur-worker/journal_worker/collector.py",
+      "sha256": "469c970c0702459d517a7b1b021d7518692ddb64151bf0571325f37d06c6d2de"
+    },
+    {
+      "file": "timing.py",
+      "upstreamPath": "tools/journal-parieur-worker/journal_worker/timing.py",
+      "sha256": "72efb679a352eb0caf41f687bb1ee59d71bbb7ceb847e107e8c75ab89afa484b"
+    }
+  ]
+}
