@@ -22,7 +22,7 @@ import urllib.request
 
 
 PROMPT_VERSION = "fr-en-anchors-v8-sports-name-guidance"
-GUARD_VERSION = "ordered-anchors-v40-wintips-sport-adverb-quarter-idiom"
+GUARD_VERSION = "ordered-anchors-v41-wintips-percentage-value-unit"
 TOKEN_RE = re.compile(r"ZXQ[A-Z]+QXZ")
 NUMBER_RE = re.compile(r"(?<!\w)[+-]?\s*\d+(?:[.,:]\d+)*(?:\s*[%€$])?(?!\w)")
 FRENCH_WORDS = re.compile(r"\b(?:avec|dans|leurs|leur|pour|cette|ces|étaient|était|mais|donc|ainsi|lors|depuis|toujours|également|notamment|cependant|aujourd'hui)\b", re.I)
@@ -846,6 +846,11 @@ def _protect(source: str, fixture: dict) -> tuple[str, list[dict]]:
         add(match.start(), match.end(), match.group(), "score_or_time", 4)
     for match in NUMBER_RE.finditer(source):
         add(match.start(), match.end(), match.group().strip(), "number", 3)
+    # NUMBER_RE predates the Unicode minus. Protect that sign with its whole
+    # percentage before the unsigned numeric candidate can discard it. Other
+    # number families retain their existing rules.
+    for match in re.finditer(r'(?<!\w)−\s*\d+(?:[.,]\d+)?\s*%(?!\w)', source):
+        add(match.start(), match.end(), match.group().replace('−', '-'), 'number', 4)
     for match in re.finditer(r"\b(\d+)(?:ers?|[èe]res?|[èe]mes?|es?)\b", source, re.I):
         value = int(match[1])
         suffix = "th" if 10 <= value % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(value % 10, "th")
@@ -1224,6 +1229,17 @@ def _number_equivalents(anchor: dict) -> tuple[str, list[str]] | None:
     return None
 
 
+def _percentage_value(value: str, *, french=False):
+    """Exact decimal percentage identity, including its explicit sign/unit."""
+    separator = '[.,]' if french else r'\.'
+    atom = re.fullmatch(r"([+\-−]?)\s*(\d+)(?:" + separator + r"(\d+))?\s*(?:%|percent|per\s+cent)", value, re.I)
+    if not atom:
+        return None
+    # Decimal strings avoid precision loss for long values. Only redundant
+    # zeroes/separators are typography; a fraction or another unit never enters.
+    return atom[1].replace('−', '-'), atom[2].lstrip('0') or '0', (atom[3] or '').rstrip('0')
+
+
 def _anchor_candidates(raw: str, anchor: dict, normalized_raw):
     # One candidate per raw span even when several permitted rules match it.
     candidates = {}
@@ -1335,14 +1351,21 @@ def _anchor_candidates(raw: str, anchor: dict, normalized_raw):
                         add(start,end,"equivalent","same_adjacent_result_directed_score",variant)
         return tuple(c for c in candidates.values() if not any(
             other[0]<=c[0] and other[1]>=c[1] and other[:2]!=c[:2] for other in candidates.values()))
-    if kind == "number" and re.fullmatch(r"[+-]?\s*\d+[.,]\d+\s*%",target):
-        # Decimal separator and percent whitespace are typography only. Keep
-        # every digit and sign, and require a percent unit in the translation.
-        atom=re.fullmatch(r"([+-]?)\s*(\d+)[.,](\d+)\s*%",target)
-        pattern=r"(?<![+\-−\w\d.,])"+re.escape(atom[1])+atom[2]+r"[.,]"+atom[3]+r"\s*%(?![\w\d])"
-        for match in re.finditer(pattern,raw):
-            if not re.search(r"[+\-−]\s*$",raw[:match.start()]):
-                add(match.start(),match.end(),"equivalent","same_decimal_percentage_typography",match.group())
+    if kind == 'number' and re.fullmatch(r'[+-]?\s*\d+(?:[.,]\d+)?\s*%', target):
+        # The whole source percentage is one value+unit atom. Neither bare
+        # 52, 52 points, 52/100 nor a second percentage can satisfy 52 %.
+        expected = _percentage_value(target, french=True)
+        # A comma can be a French decimal separator, but English 52,000%
+        # means fifty-two thousand percent. Never infer that as 52.000%.
+        pattern = r'(?<![+\-−\w.,/:])(?:[+\-−]\s*)?\d+(?:\.\d+)?\s*(?:%(?!\w)|percent\b|per\s+cent\b)'
+        for match in re.finditer(pattern, raw, re.I):
+            before, after = raw[:match.start()], raw[match.end():]
+            repeated_unit = (re.search(r'\b(?:percent|per\s+cent)\s*$', before, re.I) or
+                             re.match(r'\s*(?:%|percent\b|per\s+cent\b|(?:percentage\s+|basis\s+)?points?\b)', after, re.I))
+            signed_word = re.search(r'\b(?:minus|negative|plus|positive)\s*$', before, re.I)
+            if (_percentage_value(match.group()) == expected and not repeated_unit and not signed_word and
+                    _numeric_context_ok(raw, match.start(), match.end())):
+                add(match.start(), match.end(), 'equivalent', 'same_percentage_value_and_unit', match.group())
         return tuple(candidates.values())
     if kind == "quarter_periods":
         # A source-explicit basketball duration counts periods, never a
@@ -1470,6 +1493,11 @@ def _anchor_candidates(raw: str, anchor: dict, normalized_raw):
         if anchor.get('source', '').casefold() == 'faire tomber' and target.casefold() == 'beat':
             for start, end in _literal_spans(raw, 'beating', True):
                 add(start, end, 'equivalent', 'source_infinitive_gerund_of_beat', 'beating')
+        # An explicit infinitive can become a gerund in an English clause.
+        # Do not grant that form to a completed win or a count of victories.
+        if target.casefold() == 'win' and re.fullmatch(r"s['’]imposer", anchor.get('source', ''), re.I):
+            for start, end in _literal_spans(raw, 'winning', True):
+                add(start, end, 'equivalent', 'source_infinitive_gerund_of_win', 'winning')
         if anchor.get("winning_series_scope"):
             for start, end in _literal_spans(raw, "third consecutive match", True):
                 add(start, end, "equivalent", "scoped_winning_series_match", "third consecutive match")
