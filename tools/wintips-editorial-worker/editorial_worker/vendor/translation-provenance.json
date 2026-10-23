@@ -18,9 +18,11 @@
     "Football promotion, home fixtures, recent form, sole wins and semi-final terminology",
     "Football prendre le dessus sur preserves defeating an opponent, not just taking a lead",
     "Weekday-dernier references preserve the most recent past weekday and reject contradictory previous-calendar-week dates using the source Paris edition",
+    "Closed football-only restoration of verified Bologne-Bologna and Parme-Parma aliases; occurrence counts and original anchor order remain mandatory",
     "Horse-racing field, runners and unfolding of the race distinguished from results"
   ],
   "promptDocumentation": "https://ollama.com/library/translategemma",
   "qwenChatDocumentation": "https://huggingface.co/Qwen/Qwen2.5-7B-Instruct",
+  "canonicalClubAliasDocumentation": "https://fr.uefa.com/news-media/news/0210-0f88951d0b28-a4227b73851a-1000--parme-passe-bologne-dehors/",
   "runtimeDocumentation": "https://docs.ollama.com/api/chat"
 }

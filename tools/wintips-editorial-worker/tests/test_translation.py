@@ -116,6 +116,35 @@ class TranslationTest(unittest.TestCase):
         translator, _ = self.translator(["Brest won on Monday last week."])
         self.assertEqual(translator.sentence("Brest a gagné lundi dernier.", item), "Brest won on Monday last week.")
 
+    def test_verified_club_alias_restores_source_spelling_and_audits_identity(self):
+        for french, english, club_id in (("Bologne", "Bologna", "52969"), ("Parme", "Parma", "54262")):
+            translator, _ = self.translator(["Brest beat " + english + " (2-1)."])
+            self.assertEqual(translator.sentence("Brest a battu " + french + " (2-1).", fixture()["items"][0]), "Brest beat " + french + " (2-1).")
+            restored = translator.records[-1]["proof"]["canonicalNameRestorations"]
+            self.assertEqual(restored[0]["uefaClubId"], club_id)
+            self.assertEqual((restored[0]["from"], restored[0]["to"]), (english, french))
+
+    def test_mixed_verified_and_source_spellings_preserve_occurrence_counts(self):
+        source = "Brest a battu Bologne (2-1) puis Brest a battu Bologne (3-1)."
+        translator, _ = self.translator(["Brest beat Bologna (2-1) then Brest beat Bologne (3-1)."])
+        self.assertEqual(translator.sentence(source, fixture()["items"][0]), "Brest beat Bologne (2-1) then Brest beat Bologne (3-1).")
+
+    def test_verified_alias_cannot_hide_another_club_changed_score_or_duplicate(self):
+        for target in ("Brest beat Parma (2-1).", "Brest beat Bologna (3-1).", "Brest beat Bologna Bologna (2-1)."):
+            translator, _ = self.translator([target] * 2)
+            with self.assertRaises(TranslationRejected):
+                translator.sentence("Brest a battu Bologne (2-1).", fixture()["items"][0])
+
+    def test_verified_alias_does_not_change_opponent_order_or_winner(self):
+        translator, _ = self.translator(["Parma beat Bologna (2-1)."] * 2)
+        with self.assertRaises(TranslationRejected):
+            translator.sentence("Bologne a battu Parme (2-1).", fixture()["items"][0])
+
+    def test_club_alias_is_not_a_generic_city_or_horse_racing_rewrite(self):
+        translator, _ = self.translator(["Bologna won."] * 2)
+        with self.assertRaises(TranslationRejected):
+            translator.sentence("Bologne a gagné.", {"sport": {"key": "horse_racing"}})
+
     def test_expected_relegation_battle_is_not_expected_safety(self):
         source = "Attendu dans la lutte pour ne pas descendre, le promu fait belle impression."
         translator, _ = self.translator(["Expected to avoid relegation, the promoted team has made a good impression."] * 2)

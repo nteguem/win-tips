@@ -18,7 +18,9 @@ from urllib.request import Request, ProxyHandler, build_opener
 from .vendor import rdj_translation as guard
 from .calendar import edition_day
 
-VERSION = "wintips-bilingual-v2-qwen-system"
+VERSION = "wintips-bilingual-v3-canonical-club-names"
+CANONICAL_FOOTBALL_NAMES = (("Bologne", "Bologna", "52969"), ("Parme", "Parma", "54262"))
+CANONICAL_FOOTBALL_NAME_SOURCE = "https://fr.uefa.com/news-media/news/0210-0f88951d0b28-a4227b73851a-1000--parme-passe-bologne-dehors/"
 
 
 class TranslationRejected(RuntimeError):
@@ -178,6 +180,31 @@ class LocalTranslator:
                 validated_response = deepcopy(response)
                 validated_response["message"]["content"] = canonical
                 restorations = [{"rule": "verified_nice_nickname_same_actor", "from": m.group(), "to": "Aiglons"} for m in found]
+        if fixture.get("sport_key") == "football":
+            # A finite official equivalence table, never fuzzy name matching.
+            # Preserve the source spelling after validating total occurrences;
+            # the unchanged ordered-anchor guard still proves actor order.
+            canonical = str(validated_response.get("message", {}).get("content", ""))
+            for source_name, english_alias, club_id in CANONICAL_FOOTBALL_NAMES:
+                source_pattern = r"(?<!\w)" + re.escape(source_name) + r"(?!\w)"
+                alias_pattern = r"(?<!\w)" + re.escape(english_alias) + r"(?!\w)"
+                if not any(a["kind"] == "name" and re.search(source_pattern, a["source"]) for a in anchors):
+                    continue
+                # Both spellings in the original source would make a global
+                # restoration ambiguous; retain strict rejection in that case.
+                if re.search(alias_pattern, source):
+                    continue
+                expected = len(re.findall(source_pattern, source))
+                aliases = list(re.finditer(alias_pattern, canonical))
+                originals = len(re.findall(source_pattern, canonical))
+                if aliases and len(aliases) + originals == expected:
+                    canonical = re.sub(alias_pattern, source_name, canonical)
+                    restorations.extend({"rule": "verified_football_club_same_actor", "from": match.group(),
+                        "to": source_name, "uefaClubId": club_id, "source": CANONICAL_FOOTBALL_NAME_SOURCE,
+                        "sourceOccurrences": expected} for match in aliases)
+            if canonical != validated_response.get("message", {}).get("content", ""):
+                validated_response = deepcopy(validated_response)
+                validated_response["message"]["content"] = canonical
         target, proof = guard._validate(masked, anchors, validated_response)
         proof["canonicalNameRestorations"] = restorations
         proof["errors"].extend(_relative_weekday_errors(source, target, fixture.get("reference_date")))
