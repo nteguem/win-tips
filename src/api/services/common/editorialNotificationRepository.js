@@ -48,10 +48,10 @@ function createEditorialNotificationRepository({ Category, EditorialItem, Editor
       ...(['completed', 'no_audience', 'review_required'].includes(fields.status) ? { completedAt: now } : {}),
     } });
   },
-  deviceBatch: (afterDeviceId, limit) => Device.find({ isActive: true, notificationsEnabled: { $ne: false },
+  deviceBatch: (afterDeviceId, limit) => Device.find({ isActive: true, notificationsEnabled: { $ne: false }, editorialSchemaVersion: 1,
     pushProvider: { $ne: 'unreachable' }, ...(afterDeviceId ? { _id: { $gt: afterDeviceId } } : {}),
     $or: [{ fcmToken: { $type: 'string', $ne: '' } }, { playerId: { $type: 'string', $ne: '' } }],
-  }).select('_id deviceId user language deviceLanguage notificationsEnabled').sort({ _id: 1 }).limit(limit).lean(),
+  }).select('_id deviceId user language deviceLanguage notificationsEnabled editorialSchemaVersion').sort({ _id: 1 }).limit(limit).lean(),
   async entitledUsers(categoryId, userIds, now) {
     if (!userIds.length) return [];
     const active = await User.find({ _id: { $in: userIds }, isActive: true }).select('_id').lean();

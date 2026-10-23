@@ -14,6 +14,7 @@ const ticketService = require('../../services/common/ticketService');
 const predictionService = require('../../services/common/predictionService');
 const Category = require('../../models/common/Category');
 const Ticket = require('../../models/common/Ticket');
+const { pauseLegacyImports, applies: legacyBridgeApplies } = require('../../services/common/editorialLegacyBridge');
 const { formatSuccess, formatError } = require('../../../utils/responseFormatter');
 
 /**
@@ -58,7 +59,7 @@ exports.createTicket = async (req, res) => {
       });
     }
 
-    if (targetCat.editorialSource) {
+    if (pauseLegacyImports(targetCat)) {
       return formatSuccess(res, {
         data: { ignored: true, reason: 'editorial_source_selected' },
         message: 'Legacy imports paused for this editorial category',
@@ -97,8 +98,8 @@ exports.bulkPredictions = async (req, res) => {
     }
     const exists = await Ticket.findById(id).select('category').lean();
     if (!exists) return formatError(res, 'Ticket wintips introuvable', 404);
-    const targetCategory = await Category.findById(exists.category).select('editorialSource').lean();
-    if (targetCategory && targetCategory.editorialSource) {
+    const targetCategory = await Category.findById(exists.category).select('editorialSource externalSources').lean();
+    if (pauseLegacyImports(targetCategory)) {
       return formatSuccess(res, { data: { ignored: true, reason: 'editorial_source_selected' }, message: 'Legacy imports paused for this editorial category' });
     }
 
@@ -127,9 +128,17 @@ exports.publishTicket = async (req, res) => {
     const { id } = req.params;
     const existing = await Ticket.findById(id).select('category').lean();
     if (existing) {
-      const targetCategory = await Category.findById(existing.category).select('editorialSource').lean();
-      if (targetCategory && targetCategory.editorialSource) {
+      const targetCategory = await Category.findById(existing.category).select('editorialSource externalSources').lean();
+      if (pauseLegacyImports(targetCategory)) {
         return formatSuccess(res, { data: { ignored: true, reason: 'editorial_source_selected' }, message: 'Legacy imports paused for this editorial category' });
+      }
+      if (legacyBridgeApplies(targetCategory)) {
+        // Transitional legacy content stays fresh for old clients, silently.
+        // updateOne does not run Ticket's findOneAndUpdate broadcast hook.
+        await Ticket.updateOne({ _id: id }, { $set: { isVisible: true } });
+        const published = await Ticket.findById(id);
+        if (!published) return formatError(res, 'Ticket introuvable', 404);
+        return formatSuccess(res, { data: published, message: 'Legacy bridge ticket published without push' });
       }
     }
     const ticket = await ticketService.updateTicket(id, { isVisible: true });

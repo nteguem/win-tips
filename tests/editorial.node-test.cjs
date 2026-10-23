@@ -190,15 +190,16 @@ test('combined odds are publisher-supplied; missing leg odds stay null and old l
   assert.throws(() => validateBatch(batch([stale], 'rdj_football_combine'), clock()));
 });
 
-function loadSyncController(editorialSource) {
+function loadSyncController(editorialSource, externalSources = []) {
   let writes = 0;
-  const doc = { _id: 'ticket', category: 'category', editorialSource };
+  const doc = { _id: 'ticket', category: 'category', editorialSource, externalSources };
   const query = () => ({ select() { return this; }, lean: async () => doc });
   const mocks = {
     '../../services/common/ticketService': { createTicket: async () => { writes++; }, updateTicket: async () => { writes++; } },
     '../../services/common/predictionService': { addPredictionsToTicket: async () => { writes++; } },
     '../../models/common/Category': { findOne: () => ({ lean: async () => doc }), findById: query },
     '../../models/common/Ticket': { findById: query },
+    '../../services/common/editorialLegacyBridge': require('../src/api/services/common/editorialLegacyBridge'),
     '../../../utils/responseFormatter': { formatSuccess: (res, body) => res.json(body), formatError: () => { throw new Error('Unexpected sync error'); } },
   };
   const exports = {};

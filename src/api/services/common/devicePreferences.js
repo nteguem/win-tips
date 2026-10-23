@@ -18,6 +18,10 @@ function preferences(data) {
     if (typeof data.notificationsEnabled !== 'boolean') throw new AppError('Preference de notification invalide', 400, ErrorCodes.VALIDATION_ERROR);
     out.notificationsEnabled = data.notificationsEnabled;
   }
+  if (data.editorialSchemaVersion !== undefined) {
+    if (data.editorialSchemaVersion !== 1) throw new AppError('Capacite editoriale invalide', 400, ErrorCodes.VALIDATION_ERROR);
+    out.editorialSchemaVersion = 1;
+  }
   return out;
 }
 

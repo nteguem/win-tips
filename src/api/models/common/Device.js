@@ -93,6 +93,7 @@ const deviceSchema = new mongoose.Schema({
   language: { type: String, enum: ['fr', 'en'], default: undefined },
   deviceLanguage: { type: String, enum: ['fr', 'en'], default: undefined },
   notificationsEnabled: { type: Boolean, default: true },
+  editorialSchemaVersion: { type: Number, enum: [1], default: undefined },
   
   isActive: {
     type: Boolean,

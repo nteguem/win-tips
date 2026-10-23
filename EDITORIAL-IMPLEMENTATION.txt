@@ -33,6 +33,16 @@ current/history/detail responses. Clearing the selection restores their
 existing behavior. New source writes and changes to an editorial category
 require admin authentication; legacy permissions are otherwise unchanged.
 The normal category API is still the back-office configuration authority.
+Transitional coexistence is explicit and disabled by default:
+  WINTIPS_EDITORIAL_LEGACY_BRIDGE=true resumes real legacy imports only for
+  editorial categories that retain externalSources. Readers without the new
+  x-wintips-editorial:1 header retain those real legacy coupons/history/detail;
+  capable readers still hide them and use RDJ. Existing VIP and rewarded-gate
+  checks remain in effect; bridged VIP list/history require authenticated
+  isVip=true. Silent sync publication uses Ticket.updateOne so the old global
+  findOneAndUpdate notification hook is not triggered for bridged tickets.
+  No RDJ item is projected into an invented legacy sports fixture. New RDJ-only
+  categories without legacy mappings do not gain legacy imports through this flag.
 
 VIP feed requires authentication. A logged-in reader without the relevant
 category entitlement can receive locked card metadata, never analysis or
@@ -111,8 +121,13 @@ Notification delivery
   Devices store selected language and OS language separately; appLanguage
   alias takes precedence over language, then deviceLanguage, then old FR.
   Missing registration fields preserve user association, token and preferences.
+  editorialSchemaVersion must be the number 1 if supplied; omission preserves it.
+  Only devices explicitly advertising editorialSchemaVersion=1 receive the new
+  editorial deep links (checked by DAL, service and final gateway audience).
+  Capability controls routing compatibility only and never grants subscription
+  rights. Old clients keep bridged coupons fresh on opening without the new push.
   notificationsEnabled=false excludes the device; old clients default true.
-  Free announcements target active reachable opted-in devices. VIP announcements
+  Free announcements target active reachable opted-in capable devices. VIP announcements
   additionally require current real category entitlement, not a userType tag.
   Each language group reuses the same stable notificationId and existing push
   router. No selection, odds or protected analysis is included in a push.
@@ -137,3 +152,4 @@ Factories for isolated local integration
   editorialNotifications.createEditorialNotificationService({repository,push,clock,
     appId,enabled,importEnabled,globallyDisabled,requireEnglish,budgetMs,maxBatches})
   No application startup, .env load or scheduler is required by these factories.
+  The local suite now has 52 backend cases; integration also has 4 transport cases.

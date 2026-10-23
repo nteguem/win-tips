@@ -49,7 +49,7 @@ function createEditorialNotificationService({ repository, push, clock = () => ne
   enabled = () => false, importEnabled = () => false, globallyDisabled = () => false, requireEnglish = () => true, budgetMs = 90000, maxBatches = 100 }) {
   const activated = () => appId() === 'wintips' && enabled() && importEnabled() && !globallyDisabled();
   async function recipients(category, devices) {
-    let eligible = devices.filter(device => device.notificationsEnabled !== false);
+    let eligible = devices.filter(device => device.notificationsEnabled !== false && device.editorialSchemaVersion === 1);
     if (category.isVip) {
       const users = [...new Set(eligible.filter(device => device.user).map(device => id(device.user)))];
       const allowed = new Set((await repository.entitledUsers(id(category), users, clock())).map(id));
@@ -101,7 +101,8 @@ function createEditorialNotificationService({ repository, push, clock = () => ne
               const deviceIds = targets.filter(device => preferredLanguage(device) === language).map(device => device.deviceId);
               if (!deviceIds.length) continue;
               if (!activated()) throw failure('Notifications desactivees', 409);
-              const stats = await push(appId(), message(appId(), group, language), { targeting: { deviceIds }, retryFailures: true, respectNotificationPreferences: true });
+              const stats = await push(appId(), message(appId(), group, language), { targeting: { deviceIds }, retryFailures: true,
+                respectNotificationPreferences: true, respectEditorialSchemaVersion: true });
               result.languages[language] += deviceIds.length;
               report.sent += (stats.fcm || 0) + (stats.onesignal || 0);
             }

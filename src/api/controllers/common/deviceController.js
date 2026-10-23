@@ -25,7 +25,7 @@ class DeviceController {
     // fcmToken et manufacturer sont optionnels : une app non mise a jour
     // continue de n'envoyer que playerId, le contrat reste retrocompatible.
     const { deviceId, playerId, platform, deviceInfo, fcmToken, manufacturer,
-      language, appLanguage, deviceLanguage, notificationsEnabled } = req.body;
+      language, appLanguage, deviceLanguage, notificationsEnabled, editorialSchemaVersion } = req.body;
     const userId = req.user ? req.user.id : null;
 
     const device = await deviceService.registerDevice({
@@ -39,6 +39,7 @@ class DeviceController {
       appLanguage,
       deviceLanguage,
       notificationsEnabled,
+      editorialSchemaVersion,
       user: userId
     });
     

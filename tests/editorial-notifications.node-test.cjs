@@ -18,7 +18,7 @@ function item() { return { sourceId: '12345', sourceUrl: 'https://www.ruedesjoue
 const batch = (value = item()) => ({ source: 'rdj_petit_journal', editionDate: date, items: [value] });
 function group(vip = false) { return { category: { _id: catId, isVip: vip }, source: vip ? 'rdj_football_analysis' : 'rdj_petit_journal', editionDate: date,
   items: [{ _id: 'b'.repeat(24), payload: item() }] }; }
-const device = (n, extras = {}) => ({ _id: String(n).padStart(24, '0'), deviceId: 'device-' + n, ...extras });
+const device = (n, extras = {}) => ({ _id: String(n).padStart(24, '0'), deviceId: 'device-' + n, editorialSchemaVersion: 1, ...extras });
 function harness({ devices = [device(1, { language: 'fr' }), device(2, { language: 'en' })], vip = false, enabled = true, appId = 'wintips', globalOff = false, maxBatches = 100, summary } = {}) {
   const state = { devices, ledger: null, claims: 0, checkpoints: 0, finishes: 0, calls: [], delivered: new Set(), groups: [group(vip)], allowed: ['entitled'] };
   const repository = {
@@ -52,19 +52,22 @@ test('registration preferences normalize app first, validate consent and retain 
   assert.deepEqual(preferences({}), {});
   assert.deepEqual(preferences({ appLanguage: 'en-GB', language: 'fr', deviceLanguage: 'fr_FR', notificationsEnabled: false }), { language: 'en', deviceLanguage: 'fr', notificationsEnabled: false });
   for (const input of [{ language: '<script>' }, { notificationsEnabled: 'false' }, { appLanguage: [] }]) assert.throws(() => preferences(input));
+  assert.equal(preferences({ editorialSchemaVersion: 1 }).editorialSchemaVersion, 1);
+  for (const version of [0, 2, '1', null]) assert.throws(() => preferences({ editorialSchemaVersion: version }));
   assert.equal(preferredLanguage({ language: 'en', deviceLanguage: 'fr' }), 'en');
   assert.equal(preferredLanguage({ deviceLanguage: 'en' }), 'en');
   assert.equal(preferredLanguage({ language: 'legacy unsupported' }), 'fr');
 });
 test('locale-only register preserves user, token and existing preference on omission; invalid data writes nothing', async () => {
   let lookups = 0, saves = 0;
-  const saved = { user: 'existing-user', language: 'en', notificationsEnabled: false, fcmToken: 'same', deviceInfo: {}, save: async function () { saves++; return this; } };
+  const saved = { user: 'existing-user', language: 'en', editorialSchemaVersion: 1, notificationsEnabled: false, fcmToken: 'same', deviceInfo: {}, save: async function () { saves++; return this; } };
   const service = load('src/api/services/common/deviceService.js', {
     '../../models/common/Device': { findOne: async () => { lookups++; return saved; } },
     '../../../utils/AppError': require('../src/utils/AppError'), './devicePreferences': { preferences },
   });
   await service.registerDevice({ deviceId: 'one', platform: 'android' });
   assert.equal(saved.user, 'existing-user'); assert.equal(saved.fcmToken, 'same'); assert.equal(saved.language, 'en'); assert.equal(saved.notificationsEnabled, false);
+  assert.equal(saved.editorialSchemaVersion, 1);
   await service.registerDevice({ deviceId: 'one', platform: 'android', appLanguage: 'fr', notificationsEnabled: true });
   assert.equal(saved.language, 'fr'); assert.equal(saved.notificationsEnabled, true); assert.equal(saved.user, 'existing-user');
   await service.registerDevice({ deviceId: 'one', platform: 'android', fcmToken: 'same' });
@@ -176,6 +179,7 @@ test('shared push reclaim is opt-in and uses atomic failed/safe/unacked/unaccept
   assert.equal(filters[0].status, 'failed'); assert.equal(filters[0].retrySafe, true); assert.equal(filters[0].ackAt, null); assert.equal(filters[0].sentAt, null); assert.equal(filters[0].appId, 'wintips');
   assert.equal(filters[0].attempts.$lt, 5); assert.ok(Number.isFinite(filters[0].nextRetryAt.$lte.getTime()));
   assert.equal(service.audienceFilter({ deviceIds: ['one'], respectNotificationPreferences: true }).notificationsEnabled.$ne, false);
+  assert.equal(service.audienceFilter({ deviceIds: ['one'], respectEditorialSchemaVersion: true }).editorialSchemaVersion, 1);
 });
 
 test('notification DAL requires both durable identity and gateway delivery unique indexes without DDL', async () => {
@@ -201,4 +205,16 @@ test('VIP audience DAL uses active users, active unexpired subscriptions and cur
   assert.deepEqual(await repo.entitledUsers(catId, ['allowed-user', 'disabled-user'], clock()), ['allowed-user']);
   assert.equal(userFilter.isActive, true); assert.deepEqual(subscriptionFilter.user.$in, ['allowed-user']);
   assert.equal(subscriptionFilter.status, 'active'); assert.equal(subscriptionFilter.endDate.$gt.toISOString(), clock().toISOString());
+});
+
+test('old devices without editorial capability never receive the new deep links', async () => {
+  const pair = harness({ devices: [device(1), device(2, { editorialSchemaVersion: undefined }), device(3, { editorialSchemaVersion: 2 })] });
+  const result = await pair.service.drain({ dryRun: false }); assert.equal(result.sent, 1);
+  assert.deepEqual(pair.state.calls[0].options.targeting.deviceIds, ['device-1']);
+  assert.equal(pair.state.calls[0].options.respectEditorialSchemaVersion, true);
+  const { createEditorialNotificationRepository } = require('../src/api/services/common/editorialNotificationRepository');
+  let filter;
+  const chain = { select() { return this; }, sort() { return this; }, limit() { return this; }, lean: async () => [] };
+  const repo = createEditorialNotificationRepository({ Device: { find: input => { filter = input; return chain; } } });
+  await repo.deviceBatch(null, 250); assert.equal(filter.editorialSchemaVersion, 1); assert.equal(filter.notificationsEnabled.$ne, false);
 });

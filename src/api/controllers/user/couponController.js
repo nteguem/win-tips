@@ -3,6 +3,7 @@ const subscriptionService = require('../../services/user/subscriptionService');
 const accessGateService = require('../../services/common/accessGateService');
 const UserAccessUnlock = require('../../models/common/UserAccessUnlock');
 const Category = require('../../models/common/Category');
+const { showLegacyTicket } = require('../../services/common/editorialLegacyBridge');
 
 class CouponController {
   
@@ -30,7 +31,7 @@ class CouponController {
       });
 
       // Filtrer selon l'accès de l'utilisateur
-      let filteredData = result.data.filter(ticket => !ticket.category.editorialSource);
+      let filteredData = result.data.filter(ticket => showLegacyTicket(ticket.category, req));
 
       if (isVip === 'true') {
         // OPTIMISATION : Une seule requête pour récupérer toutes les catégories VIP accessibles
@@ -294,7 +295,7 @@ class CouponController {
       }
 
       // Vérifier si le ticket est visible
-      if (!ticket.isVisible || ticket.category.editorialSource) {
+      if (!ticket.isVisible || !showLegacyTicket(ticket.category, req, { detail: true })) {
         return res.status(404).json({
           success: false,
           message: 'Coupon non disponible'
@@ -441,7 +442,7 @@ class CouponController {
       console.log('📦 Tickets récupérés (60 derniers jours):', allTickets.length);
 
       // ===== ÉTAPE 3 : Filtrer selon isVip =====
-      let filteredTickets = allTickets.filter(ticket => !ticket.category.editorialSource);
+      let filteredTickets = allTickets.filter(ticket => showLegacyTicket(ticket.category, req));
 
       if (isVip === 'true') {
         // Pour VIP : récupérer les catégories accessibles par l'utilisateur

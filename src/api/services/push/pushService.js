@@ -109,12 +109,13 @@ async function claimMany(appId, notificationId, items, { retryFailures = false }
  * les filters par tag : l'audience devient comptable et mesurable.
  * @param {Object} targeting { appId, audience: 'all'|'vip'|'free', countryCodes }
  */
-function audienceFilter({ appId, audience = 'all', userTypes, playerIds, deviceIds, userIds, respectNotificationPreferences = false } = {}) {
+function audienceFilter({ appId, audience = 'all', userTypes, playerIds, deviceIds, userIds, respectNotificationPreferences = false, respectEditorialSchemaVersion = false } = {}) {
   // Pas de filtre sur appId : ce backend est mono-tenant, chaque base ne
   // contient que ses propres devices et la collection n'a pas ce champ.
   // Le porter ici ne remonterait jamais personne.
   const f = { isActive: true, pushProvider: { $ne: 'unreachable' } };
   if (respectNotificationPreferences) f.notificationsEnabled = { $ne: false };
+  if (respectEditorialSchemaVersion) f.editorialSchemaVersion = 1;
 
   // Ciblage EXPLICITE : l'appelant nomme ses destinataires (confirmation de
   // paiement, expiration d'abonnement…). On ne lui applique pas le filtre de
@@ -254,7 +255,8 @@ async function send(appId, notification, options = {}) {
   };
 
   const stats = { fcm: 0, onesignal: 0, skipped: 0, unreachable: 0, failed: 0 };
-  const cursor = Device.find(audienceFilter({ appId, ...targeting, respectNotificationPreferences: options.respectNotificationPreferences === true }))
+  const cursor = Device.find(audienceFilter({ appId, ...targeting, respectNotificationPreferences: options.respectNotificationPreferences === true,
+    respectEditorialSchemaVersion: options.respectEditorialSchemaVersion === true }))
     .select('deviceId playerId fcmToken fcmTokenSource fcmTokenUpdatedAt pushProvider')
     .lean()
     .cursor();
