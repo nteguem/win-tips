@@ -314,7 +314,7 @@ class LocalTranslator:
             if canonical != validated_response.get("message", {}).get("content", ""):
                 validated_response = deepcopy(validated_response)
                 validated_response["message"]["content"] = canonical
-        target, proof = guard._validate(masked, anchors, validated_response)
+        target, proof = guard._validate(masked, anchors, validated_response,fixture=fixture)
         proof["canonicalNameRestorations"] = restorations
         proof["errors"].extend(_relative_weekday_errors(source, target, fixture.get("reference_date")))
         if fixture.get("sport_key") in {"football", "basketball"} and re.search(r"\bformation\b", source, re.I) and re.search(r"\btraining\b", target, re.I) and not re.search(r"\bentra[iî]nement\b", source, re.I):

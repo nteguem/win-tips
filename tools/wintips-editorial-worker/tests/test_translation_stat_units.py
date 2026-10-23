@@ -170,6 +170,69 @@ class StatisticGrammarTests(unittest.TestCase):
         self.assertFalse(profile and any(r['id']=='ordinary_standing_return' for r in profile['entries']))
         self.check('Il a joué pas moins de 1 match.','He played at least one game.',sport='football')
 
+    def test_named_team_noun_atom_preserves_identity_role_and_outer_order(self):
+        source='Cette formation de Stuttgart joue vendredi contre Dortmund.'
+        item=self.item('football');item['teams']={'home':{'name':'Stuttgart'},'away':{'name':'Dortmund'}}
+        masked,anchors=guard._protect(source,_fixture(item));prompt=_prompt(masked,anchors)
+        groups=guard._named_team_groups(masked,anchors,_fixture(item))
+        self.assertEqual(len(groups),1)
+        self.assertEqual(next(iter(groups.values()))['source_group'],'formation de Stuttgart')
+        self.assertEqual(prompt.rpartition('\n\n\n')[2],source)
+        for target in ['This team from Stuttgart plays Friday against Dortmund.',
+                       'This Stuttgart team plays Friday against Dortmund.']:
+            _,good=validate_english_sentence(source,target,item)
+            self.assertTrue(good['passed'],good)
+        for changed in ['This team from Dortmund plays Friday against Stuttgart.',
+                        'This Dortmund team plays Friday against Stuttgart.',
+                        'This Stuttgart team plays Friday against Dortmund and Stuttgart.',
+                        'This Stuttgart team from Stuttgart plays Friday against Dortmund.',
+                        'This team from Lyon alongside Stuttgart plays Friday against Dortmund.',
+                        'This team from Lyon and Stuttgart plays Friday against Dortmund.',
+                        'Stuttgart plays Friday against the Dortmund team.',
+                        'Dortmund plays Friday against this Stuttgart team.']:
+            _,bad=validate_english_sentence(source,changed,item)
+            self.assertFalse(bad['passed'],bad)
+        tokens={a['target']:a['token'] for a in anchors}
+        token_english='This '+tokens['team']+' from '+tokens['Stuttgart']+' plays '+tokens['Friday']+' '+tokens['against']+' '+tokens['Dortmund']+'.'
+        self.assertTrue(guard._validate(masked,anchors,{'done':True,'message':{'content':token_english}},fixture=_fixture(item))[1]['passed'])
+        for ordinary in ['Stuttgart est une formation solide.','Cette formation de joueurs est solide.',
+                         'Cette formation de Lyon joue vendredi contre Dortmund.']:
+            ordinary_masked,ordinary_anchors=guard._protect(ordinary,_fixture(item))
+            self.assertFalse(guard._named_team_groups(ordinary_masked,ordinary_anchors,_fixture(item)))
+        repeated='Cette équipe de Stuttgart joue contre Dortmund puis Stuttgart.'
+        _,valid=validate_english_sentence(repeated,'This Stuttgart team plays against Dortmund then Stuttgart.',item)
+        self.assertTrue(valid['passed'],valid)
+        _,bad=validate_english_sentence(repeated,'This Stuttgart team plays against Dortmund then Stuttgart and Stuttgart.',item)
+        self.assertFalse(bad['passed'],bad)
+
+    def test_named_team_unit_uses_only_existing_finite_fixture_aliases_and_exact_roles(self):
+        source='Cette formation de Stuttgart joue vendredi contre le Borussia Mönchengladbach.'
+        item=self.item('football');item['teams']={'home':{'name':'VfB Stuttgart'},'away':{'name':'M Gladbach'}}
+        target='This Stuttgart team plays Friday against the Borussia Mönchengladbach team.'
+        _,good=validate_english_sentence(source,target,item)
+        self.assertTrue(good['passed'],good)
+        self.assertEqual(good['remasking_proof']['scoped_named_team_nouns'][0]['name'],'Stuttgart')
+        for bad in [target+' Stuttgart.',target.replace('Stuttgart team','Stuttgart national team'),
+                    target.replace('Stuttgart team','Dortmund team'),
+                    target.replace('Borussia Mönchengladbach team','Borussia Mönchengladbach teams')]:
+            _,record=validate_english_sentence(source,bad,item)
+            self.assertFalse(record['passed'],record)
+        ambiguous=dict(item,teams={'home':{'name':'VfB Stuttgart'},'away':{'name':'Stuttgat'}})
+        masked,anchors=guard._protect(source,_fixture(ambiguous))
+        self.assertFalse(guard._named_team_groups(masked,anchors,_fixture(ambiguous)))
+
+    def test_named_equipe_role_does_not_change_ordinary_team_text_or_unrelated_names(self):
+        item=self.item('football');item['teams']={'home':{'name':'Stuttgart'},'away':{'name':'Dortmund'}}
+        source='Cette équipe de Stuttgart joue vendredi contre Dortmund.'
+        for target in ['This Stuttgart team plays Friday against Dortmund.','This team from Stuttgart plays Friday against Dortmund.']:
+            _,record=validate_english_sentence(source,target,item)
+            self.assertTrue(record['passed'],record)
+        _,bad=validate_english_sentence(source,'Stuttgart plays Friday against Dortmund.',item)
+        self.assertFalse(bad['passed'],bad)
+        ordinary='Cette équipe joue vendredi contre Dortmund.'
+        masked,anchors=guard._protect(ordinary,_fixture(item))
+        self.assertFalse(guard._named_team_groups(masked,anchors,_fixture(item)))
+
     def test_season_opener_cannot_become_a_general_statement_this_season(self):
         source='Le Magic a manqué son entrée en matière cette saison.'
         self.check(source,'The Magic failed in their season opener.')

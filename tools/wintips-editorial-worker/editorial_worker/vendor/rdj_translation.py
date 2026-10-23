@@ -22,7 +22,7 @@ import urllib.request
 
 
 PROMPT_VERSION = "fr-en-anchors-v8-sports-name-guidance"
-GUARD_VERSION = "ordered-anchors-v38-wintips-minimum-fixture-unit"
+GUARD_VERSION = "ordered-anchors-v39-wintips-named-team-noun"
 TOKEN_RE = re.compile(r"ZXQ[A-Z]+QXZ")
 NUMBER_RE = re.compile(r"(?<!\w)[+-]?\s*\d+(?:[.,:]\d+)*(?:\s*[%€$])?(?!\w)")
 FRENCH_WORDS = re.compile(r"\b(?:avec|dans|leurs|leur|pour|cette|ces|étaient|était|mais|donc|ainsi|lors|depuis|toujours|également|notamment|cependant|aujourd'hui)\b", re.I)
@@ -843,6 +843,14 @@ def _protect(source: str, fixture: dict) -> tuple[str, list[dict]]:
     # Un/une is numeric only before a bounded, explicit statistic noun.
     for match in re.finditer(r"\b(?:un|une)\b(?=\s+(?:(?:petit(?:e)?|seul(?:e)?|unique)\s+){0,2}(?:points?|buts?|victoires?|défaites?|matchs?|matches?|saisons?|années?)\b)", source, re.I):
         add(match.start(), match.end(), "one", "number_word", 3)
+    # Équipe is otherwise ordinary grammatical text. Protect its team role
+    # only in this explicit named-club construction, with the same finite
+    # fixture identity proof used by the validator below.
+    for _,_,start,_,target,kind in tuple(candidates):
+        if kind=='name' and _is_fixture_team_name(target,fixture):
+            role=re.search(r"\béquipe(?=\s+(?:de\s+|d['’])$)",source[:start],re.I)
+            if role:
+                add(role.start(),role.end(),'team','semantic',6)
     chosen = []
     for priority, size, start, end, target, kind in sorted(candidates, key=lambda c: (-c[0], -c[1], c[2])):
         if not any(start < old[1] and end > old[0] for old in chosen):
@@ -1441,7 +1449,45 @@ def _anchor_candidates(raw: str, anchor: dict, normalized_raw):
 
 
 
-def _remask_exact(raw: str, anchors: list[dict]) -> tuple[str, dict]:
+def _is_fixture_team_name(name: str, fixture: dict | None) -> bool:
+    fixture=fixture or {}
+    sport=fixture.get('sport_key')
+    if sport not in {'football','basketball','foot','soccer','basket'}:
+        return False
+    if sport in {'football','foot','soccer'}:
+        # Reuse only the finite aliases already verified for official kickoff
+        # matching, never substrings, surnames or fuzzy name similarity.
+        from .timing import _provider_name
+        canonical=lambda value:_provider_name(value,football=True)
+    else:
+        canonical=lambda value:value.casefold() if isinstance(value,str) else ''
+    wanted=canonical(name)
+    return bool(wanted) and sum(canonical(fixture.get(side))==wanted for side in ('home','away'))==1
+
+
+def _named_team_groups(masked: str, anchors: list[dict], fixture: dict | None) -> dict:
+    """Bind adjacent team-role/name facts without changing model/cache input."""
+    fixture=fixture or {}
+    if fixture.get('sport_key') not in {'football','basketball','foot','soccer','basket'}:
+        return {}
+    token_spans={match.group():match.span() for match in TOKEN_RE.finditer(masked)}
+    original=TOKEN_RE.sub(lambda match:next((a['source'] for a in anchors if a['token']==match.group()),match.group()),masked)
+    groups={}
+    for index,(role,name) in enumerate(zip(anchors,anchors[1:])):
+        if (role['kind']!='semantic' or role['source'].casefold() not in {'formation','équipe'} or
+                role['target'].casefold()!='team' or name['kind']!='name' or not _is_fixture_team_name(name['target'],fixture)):
+            continue
+        role_span,name_span=token_spans[role['token']],token_spans[name['token']]
+        gap=masked[role_span[1]:name_span[0]]
+        if not re.fullmatch(r"\s+(?:de\s+|d['’])",gap,re.I):
+            continue
+        groups[index]={'rule':'adjacent_fixture_team_role_and_name','role_token':role['token'],'name_token':name['token'],
+            'name':name['target'],'source_group':role['source']+gap+name['source'],
+            'source_name_occurrences':sum(1 for _ in _literal_spans(original,name['target'],True))}
+    return groups
+
+
+def _remask_exact(raw: str, anchors: list[dict], *, named_team_groups: dict | None = None, fixture_team_names: tuple = ()) -> tuple[str, dict]:
     """Recover one ordered cover of exact or explicitly equivalent anchor values.
 
     Offsets are Unicode codepoint offsets into the unmodified response content.
@@ -1450,10 +1496,29 @@ def _remask_exact(raw: str, anchors: list[dict]) -> tuple[str, dict]:
     """
     normalized_raw = _name_normalized(raw) if any(anchor["kind"] == "name" for anchor in anchors) else None
     options = [_anchor_candidates(raw, anchor, normalized_raw) for anchor in anchors]
+    grouped_name_indices={index+1 for index in (named_team_groups or {})}
+    plural_fixture_team=False
+    for index,anchor in enumerate(anchors):
+        if anchor['kind']=='name' and anchor['target'] in fixture_team_names:
+            plural_fixture_team=plural_fixture_team or any(re.match(r'\s+teams\b',raw[candidate[1]:],re.I) for candidate in options[index])
+            if index in grouped_name_indices:
+                continue
+            expanded=[]
+            for candidate in options[index]:
+                classifier=re.match(r'\s+team\b',raw[candidate[1]:],re.I)
+                if classifier:
+                    end=candidate[1]+classifier.end()
+                    expanded.append((candidate[0],end,'equivalent','verified_fixture_name_with_team_classifier',raw[candidate[0]:end]))
+                else:
+                    expanded.append(candidate)
+            options[index]=tuple(expanded)
     proof = {"passed": False, "guard_version": GUARD_VERSION, "offset_unit": "Unicode codepoints", "spans": [],
              "source_token_order": [anchor["token"] for anchor in anchors], "scoped_score_time_swaps": [], "scoped_loss_scores": [],
-             "scoped_winning_series": [], "scoped_venues": [], "scoped_elimination_years": [],
+             "scoped_winning_series": [], "scoped_venues": [], "scoped_elimination_years": [], "scoped_named_team_nouns": [],
              "candidate_counts": [len(items) for items in options], "errors": []}
+    if plural_fixture_team:
+        proof['errors'].append('single_fixture_team_changed_to_plural_teams')
+        return raw,proof
     if len(anchors) > 256 or sum(map(len, options)) > 4096:
         proof["errors"].append("exact_literal_recovery_bound_exceeded")
         return raw, proof
@@ -1463,10 +1528,29 @@ def _remask_exact(raw: str, anchors: list[dict]) -> tuple[str, dict]:
             return 1, ()
         count, unique = 0, ()
         def steps():
-            for candidate in options[index]:
-                if candidate[0] >= previous_end:
-                    yield index + 1, candidate[1], (candidate,)
+            if index in (named_team_groups or {}):
+                for role_candidate in options[index]:
+                    if role_candidate[0]<previous_end:
+                        continue
+                    for name_candidate in options[index+1]:
+                        if name_candidate[0]>=role_candidate[1] and re.fullmatch(r'\s+(?:from|of)\s+',raw[role_candidate[1]:name_candidate[0]],re.I):
+                            # The forward form is the same closed noun group;
+                            # no third actor or intervening fact may enter it.
+                            yield index+2,name_candidate[1],(role_candidate,name_candidate)
+            else:
+                for candidate in options[index]:
+                    if candidate[0] >= previous_end:
+                        yield index + 1, candidate[1], (candidate,)
             if index + 1 < len(anchors):
+                if index in (named_team_groups or {}):
+                    for name_candidate in options[index+1]:
+                        if name_candidate[0]<previous_end:
+                            continue
+                        for role_candidate in options[index]:
+                            if role_candidate[0]>=name_candidate[1] and raw[name_candidate[1]:role_candidate[0]].isspace():
+                                # NAME + team is one source-explicit adjacent
+                                # noun group, never a swap across other facts.
+                                yield index+2,role_candidate[1],(role_candidate,name_candidate)
                 year_scope=anchors[index].get('elimination_year_scope',{})
                 if year_scope.get('actor_token')==anchors[index+1]['token']:
                     for actor_candidate in options[index+1]:
@@ -1508,12 +1592,21 @@ def _remask_exact(raw: str, anchors: list[dict]) -> tuple[str, dict]:
     if count != 1:
         proof["errors"].append("exact_literals_missing_or_ambiguous" if not count else "exact_literals_ambiguous_or_duplicated")
         return raw, proof
-    if any(not any(start >= used[0] and end <= used[1] for used in selected)
+    selected_cover=list(selected)
+    for index in (named_team_groups or {}):
+        role,name=selected[index],selected[index+1]
+        if name[0]<role[0]:
+            selected_cover.append((name[0],role[1]))
+    if any(not any(start >= used[0] and end <= used[1] for used in selected_cover)
            for items in options for start, end, *_ in items):
         proof["errors"].append("extra_uncovered_anchor_literal_or_token")
         return raw, proof
     source_selected = list(zip(anchors, selected))
     by_token = {anchor["token"]: candidate for anchor, candidate in source_selected}
+    for scope in (named_team_groups or {}).values():
+        role,name=by_token[scope['role_token']],by_token[scope['name_token']]
+        proof['scoped_named_team_nouns'].append({**scope,'reordered':name[0]<role[0],
+            'raw_role_span':[role[0],role[1]],'raw_name_span':[name[0],name[1]]})
     for anchor,year in source_selected:
         scope=anchor.get('elimination_year_scope')
         if scope:
@@ -1629,9 +1722,11 @@ def _remask_exact(raw: str, anchors: list[dict]) -> tuple[str, dict]:
     return remasked, proof
 
 
-def _validate(masked: str, anchors: list[dict], response: dict) -> tuple[str, dict]:
+def _validate(masked: str, anchors: list[dict], response: dict, *, fixture: dict | None = None) -> tuple[str, dict]:
     raw_content = str(response.get("message", {}).get("content", ""))
-    raw, remasking = _remask_exact(raw_content, anchors)
+    named_groups=_named_team_groups(masked,anchors,fixture)
+    team_names=tuple(a['target'] for a in anchors if a['kind']=='name' and _is_fixture_team_name(a['target'],fixture))
+    raw, remasking = _remask_exact(raw_content, anchors,named_team_groups=named_groups,fixture_team_names=team_names)
     raw = raw.strip()
     expected = [anchor["token"] for anchor in anchors]
     found = TOKEN_RE.findall(raw)
@@ -1639,6 +1734,11 @@ def _validate(masked: str, anchors: list[dict], response: dict) -> tuple[str, di
     if not raw or response.get("done_reason") == "length" or response.get("done") is False:
         errors.append("empty_or_truncated_translation")
     accepted_order = expected.copy()
+    for group in remasking['scoped_named_team_nouns']:
+        if group['reordered']:
+            role_index,name_index=accepted_order.index(group['role_token']),accepted_order.index(group['name_token'])
+            if name_index==role_index+1:
+                accepted_order[role_index:name_index+1]=reversed(accepted_order[role_index:name_index+1])
     for swap in remasking["scoped_score_time_swaps"]:
         score_index, time_index = accepted_order.index(swap["score_token"]), accepted_order.index(swap["time_token"])
         if abs(score_index - time_index) == 1:
@@ -1654,6 +1754,13 @@ def _validate(masked: str, anchors: list[dict], response: dict) -> tuple[str, di
     source_rest, target_rest = TOKEN_RE.sub("", masked), TOKEN_RE.sub("", raw)
     original_sources = {anchor["token"]: anchor.get("source", anchor["token"]) for anchor in anchors}
     original = TOKEN_RE.sub(lambda match: original_sources.get(match.group(), match.group()), masked)
+    # A local noun-group permutation cannot hide an extra standalone name.
+    # Count on the full restored target, including exact protection tokens.
+    targets={anchor['token']:anchor['target'] for anchor in anchors}
+    named_target=TOKEN_RE.sub(lambda match:targets.get(match.group(),match.group()),raw)
+    for group in named_groups.values():
+        if sum(1 for _ in _literal_spans(named_target,group['name'],True))!=group['source_name_occurrences']:
+            errors.append('protected_named_team_occurrence_count_changed')
     if re.search(r"\bmatchs?\s+sans victoire\b", original, re.I) and re.search(r"\blosing (?:streak|run)\b|\bconsecutive (?:losses|defeats)\b", raw_content, re.I):
         errors.append("winless_run_changed_to_losing_streak")
     if re.search(r"\bles Néerlandais ont paraphé trois partages des points\b", original, re.I) and re.search(r"\bthe Dutch teams\b", raw_content, re.I):
