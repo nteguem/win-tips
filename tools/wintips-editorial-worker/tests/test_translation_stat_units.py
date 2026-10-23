@@ -56,10 +56,17 @@ class StatisticGrammarTests(unittest.TestCase):
         self.check('Léger avantage Raptors face aux Bulls.','Slight advantage Raptors against Bulls.')
         self.check('Léger avantage Raptors face aux Bulls.','Léger advantage Raptors against Bulls.',False)
         self.check('Léger avantage Raptors face aux Bulls.','Huge advantage Raptors against Bulls.',False)
+        for adjective in ['Petit','Léger','Faible']:
+            self.check(adjective+' avantage Clermont sur la forme.','Slight advantage Clermont on form.',sport='football')
+            self.check(adjective+' avantage Clermont sur la forme.',adjective+' advantage Clermont on form.',False,sport='football')
         named=self.item();named['teams']['home']['name']='Léger'
         _,proof=validate_english_sentence('Léger a gagné.','Léger won.',named)
         self.assertTrue(proof['passed'],proof)
         self.assertTrue(any(a['kind']=='name' and a['source']=='Léger' for a in proof['anchors']))
+        named['teams']['home']['name']='Petit'
+        _,proof=validate_english_sentence('Petit a gagné.','Petit won.',named)
+        self.assertTrue(proof['passed'],proof)
+        self.assertTrue(any(a['kind']=='name' and a['source']=='Petit' for a in proof['anchors']))
 
     def test_sporting_appearance_and_player_turnover_are_not_literal_release_or_march(self):
         self.check('Cette première sortie compte.','This first outing counts.')
@@ -95,6 +102,32 @@ class StatisticGrammarTests(unittest.TestCase):
         for target in ['He returned to Toronto six years earlier.','He returned to Toronto seven years later.','He returned to Boston six years later.','He returned to Toronto six months later.']:
             self.check(source,target,False)
         self.check('Clippers avant un retour 6 ans plus tard à Toronto.','Toronto before a return to Clippers six years later.',False)
+
+    def test_individual_nationality_cannot_assign_player_points_to_a_national_team(self):
+        source='Avec 12 points au compteur, le Français n’a clairement pas été à la hauteur.'
+        good='With 12 points on the board, the French player clearly has not been up to the mark.'
+        self.check(source,good)
+        self.check(source,good.replace('the French player','the Frenchman'))
+        self.check(source,good.replace('the French player','the French team'),False)
+        self.check('La Française a gagné.','The Frenchwoman won.')
+        self.check('La Française a gagné.','The Frenchman won.',False)
+        _,anchors=guard._protect('Ils apprennent le français.',_fixture(self.item()))
+        self.assertFalse(any(a['target'] in {'the Frenchman','the Frenchwoman'} for a in anchors))
+
+    def test_bottom_position_and_gap_to_first_safe_team_are_signed_facts(self):
+        source='Gladbach ferme la marche au classement avec déjà 5 unités de débours sur le premier non relégable.'
+        good='Gladbach is bottom of the table, already 5 points behind the first team outside the relegation zone.'
+        self.check(source,good,sport='football')
+        for bad in [good.replace('is bottom of the table','leads the table'),good.replace('5 points behind','5 points ahead of'),
+                    good.replace('first team','team'),good.replace('outside the relegation zone','not at risk of relegation'),good.replace('5 points','6 points')]:
+            self.check(source,bad,False,sport='football')
+
+    def test_season_opener_cannot_become_a_general_statement_this_season(self):
+        source='Le Magic a manqué son entrée en matière cette saison.'
+        self.check(source,'The Magic failed in their season opener.')
+        self.check(source,'The Magic botched their season opener.')
+        self.check(source,'The Magic had a successful season opener.',False)
+        self.check(source,'The Magic failed to make a statement this season.',False)
 
     def test_nearest_participial_champion_actor_requires_attached_relative(self):
         source=('Champions de la conférence Ouest en titre en battant OKC, les San Antonio Spurs étaient les grands favoris '
@@ -172,6 +205,8 @@ class StatisticGrammarTests(unittest.TestCase):
         self.check('Les Houston Rockets ont 0 défaite.','The Houston Rockets have 1 defeat.',False)
 
     def test_relegation_zone_is_not_the_relegation_playoff(self):
+        self.check('Cette formation est dans la zone rouge.','This team is in the relegation zone.',sport='football')
+        self.check('Cette formation est dans la zone rouge.','This team is in the relegation play-off spot.',False,sport='football')
         self.check('Cette formation est dans la zone de relégation.','This team is in the relegation zone.',sport='football')
         self.check('Cette formation est dans la zone de relégation.','This team is in the relegation play-off spot.',False,sport='football')
 

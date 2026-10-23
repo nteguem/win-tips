@@ -120,8 +120,8 @@ class PrimaryRoutingTests(unittest.TestCase):
         with self.assertRaises(TranslationRejected) as rejected:
             translator.sentence(SOURCE, ITEM)
         self.assertEqual(rejected.exception.code, "translation_models_exhausted")
-        self.assertEqual(calls, [translator.config.model, translator.config.fallback_model])
-        self.assertEqual(releases, [translator.config.model])
+        self.assertEqual(calls, [translator.config.model, translator.config.fallback_model, translator.config.model])
+        self.assertEqual(releases, [translator.config.model,translator.config.fallback_model])
         self.assertEqual(translator.records, [])
 
     def test_factory_requires_qwen_primary_without_loading_any_transport(self):

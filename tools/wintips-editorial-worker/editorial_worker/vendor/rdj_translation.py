@@ -22,7 +22,7 @@ import urllib.request
 
 
 PROMPT_VERSION = "fr-en-anchors-v8-sports-name-guidance"
-GUARD_VERSION = "ordered-anchors-v34-wintips-closed-chronology"
+GUARD_VERSION = "ordered-anchors-v35-wintips-individual-nationality"
 TOKEN_RE = re.compile(r"ZXQ[A-Z]+QXZ")
 NUMBER_RE = re.compile(r"(?<!\w)[+-]?\s*\d+(?:[.,:]\d+)*(?:\s*[%€$])?(?!\w)")
 FRENCH_WORDS = re.compile(r"\b(?:avec|dans|leurs|leur|pour|cette|ces|étaient|était|mais|donc|ainsi|lors|depuis|toujours|également|notamment|cependant|aujourd'hui)\b", re.I)
@@ -542,7 +542,13 @@ SEMANTIC_EQUIVALENTS += (('fixture', 'match', 'matchup'),
     ('this first outing', 'this first appearance', 'this first game', 'this opening game'),
     ('has seen a succession of players', 'has seen players come and go', 'has seen a stream of players'),
     ('follow up', 'followed up', 'managed to follow up', 'were able to follow up', 'build on their momentum', 'built on their momentum', 'proceeded to'),
+    ('the Frenchman', 'the French player'), ('the Frenchwoman', 'the French female player', 'the French player'),
     ('at the start of', 'at the beginning of'))
+SEMANTIC_EQUIVALENTS += (
+    ('is bottom of the table','are bottom of the table','is at the bottom of the table','are at the bottom of the table','sits bottom of the table','is last in the standings','are last in the standings'),
+    ('first team outside the relegation zone','first team not in the relegation zone','first side outside the relegation zone'),
+    ('season opener','opening game of the season','opening match of the season'),
+    ('botched their season opener','failed in their season opener','had a poor season opener','had a disappointing season opener'))
 BASKETBALL_LEXICON = {'Ouest': 'West', 'Est': 'East', 'Play-offs': 'playoffs', 'Game': 'game'}
 TERMINOLOGY_RULES += (("lost_composure", r"\bperdre\s+(?:(?:totalement|complètement)\s+)?les pédales\b",
     "Perdre les pédales is losing composure/control in sport, never losing physical pedals."),)
@@ -650,6 +656,13 @@ def _protect(source: str, fixture: dict) -> tuple[str, list[dict]]:
     # An explicit two-sided quantity can be expressed with "both" in English.
     # This does not make "two goals" or any other bare quantity optional.
     if sport in {'football', 'basketball', 'foot', 'soccer', 'basket'}:
+        for degree in re.finditer(r'\b(?:petit|léger|faible)\s+avantage\b',source,re.I):
+            add(degree.start(),degree.end(),'slight advantage','semantic',6)
+        # The capitalised singular nationality denotes an individual athlete
+        # in this sporting context, not the national team or the language.
+        for pattern,target in ((r'\b(?:le|Le)\s+Français\b','the Frenchman'),(r'\b(?:la|La)\s+Française\b','the Frenchwoman')):
+            for individual in re.finditer(pattern,source):
+                add(individual.start(),individual.end(),target,'semantic',6)
         # One explicitly attached delay and destination may use English
         # destination-before-delay order. This cannot move a separate actor,
         # invert later/earlier, change years or omit the destination.
@@ -692,7 +705,6 @@ def _protect(source: str, fixture: dict) -> tuple[str, list[dict]]:
             'non seulement':'not only','sans démériter':'without disgracing themselves',
             'passer un nouveau cap':'take another step forward',
             'a fait revenir un ancien':'brought back a former player',
-            'léger avantage':'slight advantage',
             'cette première sortie':'this first outing',
             'a vu défiler les joueurs':'has seen a succession of players',
             'su enchaîner':'follow up',
@@ -700,6 +712,11 @@ def _protect(source: str, fixture: dict) -> tuple[str, list[dict]]:
             "d'être battus":"losing", "d’être battus":"losing",'sur la pelouse du':'away to',
             'un nul à domicile':'a draw at home',"à l'heure de jeu":"on the hour mark","à l’heure de jeu":"on the hour mark"})
     if sport in {'football','foot','soccer'}:
+        semantic_glossary['zone rouge']='relegation zone'
+        semantic_glossary.update({'ferme la marche au classement':'is bottom of the table',
+            'premier non relégable':'first team outside the relegation zone','premier non-relégable':'first team outside the relegation zone'})
+        for deficit in re.finditer(r'\b(\d{1,3})\s+unités?\s+de\s+débours\s+sur\b',source,re.I):
+            add(deficit.start(),deficit.end(),deficit[1]+(' point' if int(deficit[1])==1 else ' points')+' behind','standing_gap',6)
         # Club-owned primary source identifies its players as ruthénois.
         # Keep this football-only demonym bound to Rodez, never an invented
         # translated club such as Rethoise. Provenance records the exact URL.
@@ -708,6 +725,9 @@ def _protect(source: str, fixture: dict) -> tuple[str, list[dict]]:
         # single protected proper name in football (En Avant Guingamp).
         semantic_glossary.pop('En Avant',None)
     if sport in {'basketball','basket'}:
+        semantic_glossary['entrée en matière cette saison']='season opener'
+        for opener in re.finditer(r'\b(?:a manqué son|ont manqué leur)\s+entrée en matière cette saison\b',source,re.I):
+            add(opener.start(),opener.end(),'botched their season opener','semantic',6)
         semantic_glossary.update({'recevaient':'were hosting', 'privés de':'without', 'privées de':'without',
             'éliminés':'eliminated','éliminées':'eliminated',
             'demi-finale de la conférence Ouest':'Western Conference semi-final',
@@ -935,6 +955,8 @@ def _grammar_hint(anchor: dict) -> str:
         return "one attached result and exact directed score; preserve the winner"
     if kind == 'delay_destination':
         return 'same elapsed years later and same destination; never earlier or another team'
+    if kind == 'standing_gap':
+        return 'same point deficit behind the stated opponent; never points ahead'
     if kind == "quarter_periods":
         return "explicit count of basketball periods, never a mathematical fraction"
     if kind == "name":
@@ -972,7 +994,7 @@ def _prompt(masked: str, anchors: list[dict] | None = None) -> str:
     # never protection tokens or substituted English source prose.
     names = {anchor['source']: anchor['target'] for anchor in anchors if anchor['kind'] == 'name'}
     terms = {anchor['source']: anchor['target'] for anchor in anchors if anchor['kind'] in {
-        'semantic','both_sides','result_score','result_score_final','delay_destination','basket_team_possessor','basket_three_point_count','basket_three_point_made','basket_three_point_neutral','weekday_night','zero_defeats','score_margin','named_away_venue','table_gap','linked_defeat_count'}}
+        'semantic','both_sides','result_score','result_score_final','delay_destination','standing_gap','basket_team_possessor','basket_three_point_count','basket_three_point_made','basket_three_point_neutral','weekday_night','zero_defeats','score_margin','named_away_venue','table_gap','linked_defeat_count'}}
     if names:
         guidance += 'Keep these proper names and club nicknames exactly in their canonical spellings: ' + json.dumps(names, ensure_ascii=False) + '.\n'
     if terms:
@@ -1228,6 +1250,13 @@ def _anchor_candidates(raw: str, anchor: dict, normalized_raw):
             for variant in (count+' '+unit+' later to '+destination,'to '+destination+' '+count+' '+unit+' later'):
                 for start,end in _literal_spans(raw,variant,True):
                     add(start,end,'equivalent','same_explicit_delay_and_destination',raw[start:end])
+        return tuple(candidates.values())
+    if kind == 'standing_gap':
+        value=int(target.split()[0]);unit='point' if value==1 else 'points'
+        for count in (str(value),_cardinal_word(value)):
+            for variant in (count+' '+unit+' behind',count+' '+unit+' adrift of',count+'-point deficit to'):
+                for start,end in _literal_spans(raw,variant,True):
+                    add(start,end,'equivalent','same_explicit_standings_point_deficit',raw[start:end])
         return tuple(candidates.values())
     if kind in {"result_score", "result_score_final"}:
         match=re.fullmatch(r"(a )?(\d{1,3})-(\d{1,3}) (win|defeat)(?: in the final)?",target,re.I)

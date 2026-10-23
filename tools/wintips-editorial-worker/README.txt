@@ -109,6 +109,16 @@ si aucun candidat n'est validé. Les erreurs techniques et budgets ne deviennent
 pas des demandes de réparation. Le plafond de segments compte chaque phrase
 source une fois, tandis que le temps global borne toute la cascade.
 
+Dans le mode primaire, si Qwen puis Gemma ont tous deux réellement échoué sur
+le contenu, un seul ultime essai Qwen reçoit le FR original entier, les faits
+attendus du garde et la véritable réponse refusée, explicitement non fiable.
+Ce candidat n'est jamais une vérité à recopier. Le prompt et ce feedback ont
+une clé distincte ; les mêmes gardes restent obligatoires. Il n'y a pas de
+quatrième appel de réparation. Erreurs réseau, JSON, cache, déchargement ou
+budget ne déclenchent pas cet ultime essai. La route complète des caches est
+relue avant tout transport, y compris ce dernier cache réparé : un résultat
+natif déjà valide peut donc être repris sans démarrer un modèle.
+
 WINTIPS_EDITORIAL_MT_ROOT désigne les poids existants ; WINTIPS_EDITORIAL_MT_DEPS
 leur installation CTranslate2/SentencePiece. WINTIPS_EDITORIAL_MODEL_ENDPOINT et
 WINTIPS_EDITORIAL_MODEL désignent Qwen ; WINTIPS_EDITORIAL_FALLBACK_MODEL désigne
