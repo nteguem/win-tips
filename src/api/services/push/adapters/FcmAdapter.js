@@ -79,7 +79,7 @@ async function send(appDoc, notification, targets, { dryRun = false } = {}) {
       // Par défaut on retente plutôt que de purger : purger à tort perd
       // définitivement un destinataire, retenter à tort ne coûte qu'un appel.
       const action = DEAD.has(code) ? 'drop_token' : RETRY.has(code) ? 'retry' : 'retry';
-      out.push({ deviceId: t.deviceId, ok: false, code, action });
+      out.push({ deviceId: t.deviceId, ok: false, code, action, retrySafe: RETRY.has(code) });
     });
   }
 

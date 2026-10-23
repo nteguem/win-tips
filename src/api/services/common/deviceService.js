@@ -1,5 +1,6 @@
 const Device = require('../../models/common/Device');
 const { AppError, ErrorCodes } = require('../../../utils/AppError');
+const { preferences } = require('./devicePreferences');
 
 
 /**
@@ -34,6 +35,7 @@ class DeviceService {
   }
 
   async registerDevice(deviceData) {
+    const savedPreferences = preferences(deviceData); // Validate before any write.
     const { deviceId, playerId, platform, deviceInfo, user = null,
             fcmToken = null, manufacturer = null } = deviceData;
 
@@ -48,6 +50,7 @@ class DeviceService {
       device.deviceInfo = deviceInfo || device.deviceInfo;
       device.isActive = true;
       device.lastActiveAt = new Date();
+      Object.assign(device, savedPreferences);
       if (manufacturer) device.manufacturer = manufacturer;
 
       if (fcmToken && fcmToken !== device.fcmToken) {
@@ -59,6 +62,12 @@ class DeviceService {
           { $unset: { fcmToken: '', fcmTokenSource: '' } }
         );
         device.fcmToken = fcmToken;
+        device.fcmTokenSource = 'sdk';
+        device.fcmTokenUpdatedAt = new Date();
+      }
+      if (fcmToken) {
+        // A successful SDK registration is also a heartbeat when the token did
+        // not rotate; omitting it preserves the previous token and timestamp.
         device.fcmTokenSource = 'sdk';
         device.fcmTokenUpdatedAt = new Date();
       }
@@ -78,6 +87,7 @@ class DeviceService {
       playerId: playerId || null,
       platform,
       deviceInfo,
+      ...savedPreferences,
       manufacturer,
       user,
       userType: user ? 'registered' : 'guest',

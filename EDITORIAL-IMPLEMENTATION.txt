@@ -1,0 +1,139 @@
+WinTips editorial feature - local review build
+
+Nothing in this local implementation deploys, schedules a worker, changes
+production categories or sends real notifications. WinTips editorial pushes
+are implemented but remain explicitly disabled until deployment approval.
+The existing BigWin-family journal delivery is outside this feature.
+
+Routes (API prefix /api):
+  GET  /admin/editorial/sources       existing authenticated admin session
+  GET  /editorial/feed                optional user session, defaults free
+  GET  /editorial/items/:id/analysis   server-side category/subscription/gate check
+  GET  /internal/editorial/config     configured worker Bearer token
+  POST /internal/editorial/import     token plus explicit import enable flag
+  POST /internal/editorial/notifications/drain  same worker token; default dryRun
+
+Worker configuration:
+  WINTIPS_EDITORIAL_WORKER_TOKEN: minimum 32 characters, never logged.
+  WINTIPS_EDITORIAL_IMPORT_ENABLED: only the exact value true enables writes.
+  Unset token => 503; wrong token => 401; disabled import => 403.
+  Worker config lists only sources selected by active compatible categories.
+  WINTIPS_EDITORIAL_REQUIRE_EN: true by default; only false permits FR-only.
+  Every new item/combined leg requires translated title/summary/selection and
+  matching FR/EN analysis section/paragraph counts and numeric facts.
+  WINTIPS_EDITORIAL_NOTIFICATIONS_ENABLED: only true enables editorial pushes.
+  Sending also requires import enabled, appContext APP_ID=wintips (default
+  wintips) and DISABLE_PUSH_NOTIFICATIONS different from true.
+  No environment value was changed and no real push was sent during testing.
+
+Category.editorialSource is null by default. Null retains all legacy source
+mappings. Selecting RDJ preserves externalSources but pauses legacy incoming
+ticket create/predictions/publish and excludes those old coupons from mobile
+current/history/detail responses. Clearing the selection restores their
+existing behavior. New source writes and changes to an editorial category
+require admin authentication; legacy permissions are otherwise unchanged.
+The normal category API is still the back-office configuration authority.
+
+VIP feed requires authentication. A logged-in reader without the relevant
+category entitlement can receive locked card metadata, never analysis or
+picks. Every analysis request checks current category/source/access again.
+Existing free rewarded gates and active-subscriber bypass are reused.
+Feed summaries always omit analysis and selection; locked summaries also
+omit descriptive body text. Race cards omit runner odds/selections until
+detail access is authorized. FR content remains explicitly FR when no EN
+analysis is available; original maps and contentLanguage are returned.
+
+Imports validate the complete batch before any DAL write: selected known
+source, canonical HTTPS RDJ URLs, same-day Europe/Paris edition, coherent verified
+timestamps when known, publisher/race identities, ordered runner numbers,
+finite explicit odds, match/combine/horse shapes and bounded content size.
+No sports-provider fixture ID or combined/individual odds are invented.
+Every new single match, race and combine leg must have a verified start
+at least 30 minutes ahead, with status upcoming. Unknown starts are not
+published. The combine parent's start may remain null when every leg is
+verified. No article publication time is used as a kickoff.
+Edition dates follow Europe/Paris, including DST and midnight boundaries;
+startsAtUtc remains a UTC timestamp. Explicit dates in Petit Journal URLs
+must agree with the requested edition.
+The collector also verifies the dated publisher page. A numeric publisher
+ID alone does not encode a date or replace a verified kickoff.
+
+Idempotence identity: categoryId + source + editionDate + sourceId.
+Reimport replaces the complete normalized item payload and preserves its
+explicit notification state (initially not_requested). No old tickets,
+historical rows or legacy mappings are deleted.
+
+Deployment prerequisite, after separate approval:
+  EditorialItem has autoCreate=false and autoIndex=false, so reads and module
+  registration never create a collection/index. Explicitly provision the
+  schema's unique index named editorial_identity_unique, with ordered keys
+  {categoryId:1,source:1,editionDate:1,sourceId:1}, before enabling imports.
+  DAL refuses all import writes with 503 if that exact unique index is absent.
+  Review all five declared indexes at the same deployment step: two for
+  editorialitems, two for editorialnotifications, and the existing unique
+  msgId_1 delivery key for pushdeliveries. A conflicting existing name/key
+  stops provisioning; it is never dropped or replaced.
+  Reviewed CLI, run from the deployed API directory after deployment approval:
+    node tools/editorial-indexes.cjs --check
+  Default/--check only reads index metadata; exit 2 means setup is needed.
+  Explicit provisioning, only after operator approval:
+    node tools/editorial-indexes.cjs --apply --confirm-editorial-indexes
+  This prepares only those three collections and five required indexes. Existing
+  conflicting indexes stop the operation; no index/data is dropped. No CLI
+  command was run against a real database during local implementation.
+
+Local verification, without dependency installation or a database:
+  node --test tests/editorial.node-test.cjs tests/editorial-notifications.node-test.cjs
+  node --check for every staged .js/.cjs file
+Tests inject a DAL and VM dependency stubs; they do not launch the API,
+connect to MongoDB, create indexes, run jobs or send push notifications.
+Actual database persistence/integration and physical-device behavior remain
+separate deployment/device checks.
+
+New editorial HTTP failures use {success:false,error:{code,message}}, matching
+the mobile interceptor. Anonymous access uses AUTH_TOKEN_MISSING, denied VIP
+detail uses SUBSCRIPTION_REQUIRED, and a locked free rewarded gate uses
+RESOURCE_LOCKED. Server failures expose only a generic editorial message.
+
+Notification delivery
+  Import calls the drain only AFTER the complete batch persists successfully.
+  A notification failure does not roll back editorial content. The worker
+  must also call POST /api/internal/editorial/notifications/drain with
+  {dryRun:false} on each hourly publication run, even if no source is new.
+  The same endpoint with omitted dryRun or {dryRun:true} is a read-only preview:
+  no delivery claim, provider SDK call or state mutation. Body allowlist is
+  source and dryRun; no injected tenant, recipients, date or custom message.
+  Runtime drain budget is 90 seconds; HTTP client timeout should allow150s.
+  One lease-protected EditorialNotification per app/category/source/Parisday
+  survives the existing per-device PushDelivery TTL. A saved device cursor
+  resumes large audiences. Imported item-level notificationState is legacy;
+  the durable category/day ledger is authoritative for actual delivery state.
+  Devices store selected language and OS language separately; appLanguage
+  alias takes precedence over language, then deviceLanguage, then old FR.
+  Missing registration fields preserve user association, token and preferences.
+  notificationsEnabled=false excludes the device; old clients default true.
+  Free announcements target active reachable opted-in devices. VIP announcements
+  additionally require current real category entitlement, not a userType tag.
+  Each language group reuses the same stable notificationId and existing push
+  router. No selection, odds or protected analysis is included in a push.
+  Deep links: action=view_editorial with itemId for a single item, otherwise
+  action=view_editorial_feed; both include categoryId,isVip,editionDate.
+  Existing clients retain route=/home fallback. The new mobile handles action
+  before legacy route and checks entitlement again on detail access.
+  Only confirmed negative per-recipient FCM replies and confirmed OneSignal
+  HTTP429 can be retried atomically; at most five device attempts. Accepted,
+  ACKed, queued or ambiguous transport results are never forcefully resent.
+  retry_pending retries after15min; hourly runs pick it up. review_required
+  records uncertain/definitive failures for operator review without duplicate
+  replay. sent counts provider acceptance, never guaranteed device display.
+  Stop the worker and disable the notification flag to stop new sends.
+
+Factories for isolated local integration
+  editorialController.createEditorialController(serviceOrGetter)
+  editorialRepository.createEditorialRepository({Category,EditorialItem,
+    subscriptionService,accessGateService})
+  editorialNotificationRepository.createEditorialNotificationRepository({Category,
+    EditorialItem,EditorialNotification,Device,PushDelivery,Subscription,User})
+  editorialNotifications.createEditorialNotificationService({repository,push,clock,
+    appId,enabled,importEnabled,globallyDisabled,requireEnglish,budgetMs,maxBatches})
+  No application startup, .env load or scheduler is required by these factories.

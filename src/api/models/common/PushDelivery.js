@@ -25,6 +25,11 @@ const pushDeliverySchema = new mongoose.Schema({
 
   // Code d'erreur du provider (messaging/registration-token-not-registered…)
   code: String,
+  // Only explicit negative per-recipient responses may be retried. A network
+  // timeout or a queued/accepted message is never forcefully sent again.
+  retrySafe: { type: Boolean, default: false },
+  attempts: { type: Number, default: 1 },
+  nextRetryAt: Date,
 
   sentAt: Date,
   // Renseigné par l'accusé de réception envoyé par l'app : c'est ce qui permet

@@ -87,6 +87,12 @@ const deviceSchema = new mongoose.Schema({
     osVersion: String,
     appVersion: String
   },
+
+  // Optional for old clients. The selected app language takes precedence over
+  // the OS language; an omitted registration field never resets preferences.
+  language: { type: String, enum: ['fr', 'en'], default: undefined },
+  deviceLanguage: { type: String, enum: ['fr', 'en'], default: undefined },
+  notificationsEnabled: { type: Boolean, default: true },
   
   isActive: {
     type: Boolean,

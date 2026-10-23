@@ -30,7 +30,7 @@ class CouponController {
       });
 
       // Filtrer selon l'accès de l'utilisateur
-      let filteredData = result.data;
+      let filteredData = result.data.filter(ticket => !ticket.category.editorialSource);
 
       if (isVip === 'true') {
         // OPTIMISATION : Une seule requête pour récupérer toutes les catégories VIP accessibles
@@ -38,14 +38,14 @@ class CouponController {
         const accessibleVipCategoryIds = new Set(userVipCategories.map(cat => cat._id.toString()));
 
         // Filtrer les tickets selon les catégories VIP accessibles
-        filteredData = result.data.filter(ticket => {
+        filteredData = filteredData.filter(ticket => {
           const categoryId = ticket.category._id.toString();
           return ticket.category.isVip && accessibleVipCategoryIds.has(categoryId);
         });
 
       } else if (isVip === 'false') {
         // Pour les coupons gratuits : seulement les catégories non-VIP
-        filteredData = result.data.filter(ticket => !ticket.category.isVip);
+        filteredData = filteredData.filter(ticket => !ticket.category.isVip);
       }
       // Si isVip === null, on garde tous les tickets (comportement par défaut)
 
@@ -109,6 +109,7 @@ class CouponController {
             successRate: ticket.category.successRate,
             description: Category.pickLang(ticket.category.description, lang) || null,
             isVip: ticket.category.isVip,
+            editorialSource: ticket.category.editorialSource || null,
             isActive: ticket.category.isActive,
             totalCoupons: 0,
             coupons: []
@@ -293,7 +294,7 @@ class CouponController {
       }
 
       // Vérifier si le ticket est visible
-      if (!ticket.isVisible) {
+      if (!ticket.isVisible || ticket.category.editorialSource) {
         return res.status(404).json({
           success: false,
           message: 'Coupon non disponible'
@@ -321,6 +322,7 @@ class CouponController {
           successRate: ticket.category.successRate,
           description: Category.pickLang(ticket.category.description, lang) || null,
           isVip: ticket.category.isVip,
+          editorialSource: ticket.category.editorialSource || null,
           isActive: ticket.category.isActive
         },
         coupon: {
@@ -439,7 +441,7 @@ class CouponController {
       console.log('📦 Tickets récupérés (60 derniers jours):', allTickets.length);
 
       // ===== ÉTAPE 3 : Filtrer selon isVip =====
-      let filteredTickets = allTickets;
+      let filteredTickets = allTickets.filter(ticket => !ticket.category.editorialSource);
 
       if (isVip === 'true') {
         // Pour VIP : récupérer les catégories accessibles par l'utilisateur
@@ -449,7 +451,7 @@ class CouponController {
         console.log('🔑 Catégories VIP accessibles:', Array.from(accessibleVipCategoryIds));
 
         // Filtrer uniquement les tickets VIP accessibles
-        filteredTickets = allTickets.filter(ticket => {
+        filteredTickets = filteredTickets.filter(ticket => {
           const categoryId = ticket.category._id.toString();
           const isVipCategory = ticket.category.isVip === true;
           const hasAccess = accessibleVipCategoryIds.has(categoryId);
@@ -461,7 +463,7 @@ class CouponController {
 
       } else if (isVip === 'false') {
         // Pour FREE : uniquement les catégories non-VIP
-        filteredTickets = allTickets.filter(ticket => ticket.category.isVip === false);
+        filteredTickets = filteredTickets.filter(ticket => ticket.category.isVip === false);
         
         console.log('🆓 Tickets FREE filtrés:', filteredTickets.length);
       }
@@ -513,6 +515,7 @@ class CouponController {
               icon: ticket.category.icon,
               successRate: ticket.category.successRate,
               isVip: ticket.category.isVip,
+              editorialSource: ticket.category.editorialSource || null,
               isActive: ticket.category.isActive,
               tickets: []
             });

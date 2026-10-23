@@ -58,6 +58,13 @@ exports.createTicket = async (req, res) => {
       });
     }
 
+    if (targetCat.editorialSource) {
+      return formatSuccess(res, {
+        data: { ignored: true, reason: 'editorial_source_selected' },
+        message: 'Legacy imports paused for this editorial category',
+      });
+    }
+
     const ticket = await ticketService.createTicket({
       title,
       date: new Date(date),
@@ -88,8 +95,12 @@ exports.bulkPredictions = async (req, res) => {
     if (!Array.isArray(predictions) || predictions.length === 0) {
       return formatError(res, 'predictions doit etre un array non vide', 400);
     }
-    const exists = await Ticket.exists({ _id: id });
+    const exists = await Ticket.findById(id).select('category').lean();
     if (!exists) return formatError(res, 'Ticket wintips introuvable', 404);
+    const targetCategory = await Category.findById(exists.category).select('editorialSource').lean();
+    if (targetCategory && targetCategory.editorialSource) {
+      return formatSuccess(res, { data: { ignored: true, reason: 'editorial_source_selected' }, message: 'Legacy imports paused for this editorial category' });
+    }
 
     // Force star=5 si non fourni ou à 0 (synchronisations bigwin → wintips).
     const normalized = predictions.map((p) => ({
@@ -114,6 +125,13 @@ exports.bulkPredictions = async (req, res) => {
 exports.publishTicket = async (req, res) => {
   try {
     const { id } = req.params;
+    const existing = await Ticket.findById(id).select('category').lean();
+    if (existing) {
+      const targetCategory = await Category.findById(existing.category).select('editorialSource').lean();
+      if (targetCategory && targetCategory.editorialSource) {
+        return formatSuccess(res, { data: { ignored: true, reason: 'editorial_source_selected' }, message: 'Legacy imports paused for this editorial category' });
+      }
+    }
     const ticket = await ticketService.updateTicket(id, { isVisible: true });
     if (!ticket) return formatError(res, 'Ticket introuvable', 404);
     return formatSuccess(res, { data: ticket, message: 'Ticket published' });

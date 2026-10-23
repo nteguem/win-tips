@@ -61,7 +61,7 @@ async function claim(appId, notificationId, deviceId, provider) {
  * @param {Array<{deviceId, provider}>} items
  * @returns {Promise<Map<string,string>>} deviceId -> msgId, pour les seules réclamées
  */
-async function claimMany(appId, notificationId, items) {
+async function claimMany(appId, notificationId, items, { retryFailures = false } = {}) {
   if (!items.length) return new Map();
 
   const docs = items.map((it) => ({
@@ -88,6 +88,19 @@ async function claimMany(appId, notificationId, items) {
 
   const out = new Map();
   docs.forEach((d, i) => { if (!refuses.has(i)) out.set(d.deviceId, d.msgId); });
+  if (retryFailures) {
+    // Opt-in for the editorial drain only. The compare-and-set prevents two
+    // drains from reclaiming the same confirmed rejection concurrently.
+    for (const i of refuses) {
+      const d = docs[i];
+      const reclaimed = await PushDelivery.findOneAndUpdate({
+        msgId: d.msgId, appId, notificationId, status: 'failed', retrySafe: true,
+        nextRetryAt: { $lte: new Date() }, attempts: { $lt: 5 },
+        ackAt: null, sentAt: null,
+      }, { $set: { status: 'queued', retrySafe: false }, $inc: { attempts: 1 } }, { new: true });
+      if (reclaimed) out.set(d.deviceId, d.msgId);
+    }
+  }
   return out;
 }
 
@@ -96,11 +109,12 @@ async function claimMany(appId, notificationId, items) {
  * les filters par tag : l'audience devient comptable et mesurable.
  * @param {Object} targeting { appId, audience: 'all'|'vip'|'free', countryCodes }
  */
-function audienceFilter({ appId, audience = 'all', userTypes, playerIds, deviceIds, userIds } = {}) {
+function audienceFilter({ appId, audience = 'all', userTypes, playerIds, deviceIds, userIds, respectNotificationPreferences = false } = {}) {
   // Pas de filtre sur appId : ce backend est mono-tenant, chaque base ne
   // contient que ses propres devices et la collection n'a pas ce champ.
   // Le porter ici ne remonterait jamais personne.
   const f = { isActive: true, pushProvider: { $ne: 'unreachable' } };
+  if (respectNotificationPreferences) f.notificationsEnabled = { $ne: false };
 
   // Ciblage EXPLICITE : l'appelant nomme ses destinataires (confirmation de
   // paiement, expiration d'abonnement…). On ne lui applique pas le filtre de
@@ -195,6 +209,8 @@ async function applyResults(appId, results) {
         $set: {
           status: r.ok ? 'sent' : 'failed',
           code: r.code,
+          retrySafe: !r.ok && r.retrySafe === true,
+          nextRetryAt: !r.ok && r.retrySafe === true ? new Date(Date.now() + 15 * 60000) : null,
           sentAt: r.ok ? new Date() : undefined,
         },
       },
@@ -238,7 +254,7 @@ async function send(appId, notification, options = {}) {
   };
 
   const stats = { fcm: 0, onesignal: 0, skipped: 0, unreachable: 0, failed: 0 };
-  const cursor = Device.find(audienceFilter({ appId, ...targeting }))
+  const cursor = Device.find(audienceFilter({ appId, ...targeting, respectNotificationPreferences: options.respectNotificationPreferences === true }))
     .select('deviceId playerId fcmToken fcmTokenSource fcmTokenUpdatedAt pushProvider')
     .lean()
     .cursor();
@@ -253,7 +269,7 @@ async function send(appId, notification, options = {}) {
     const lot = buf;
     buf = [];
 
-    const claimed = await claimMany(appId, notificationId, lot);
+    const claimed = await claimMany(appId, notificationId, lot, { retryFailures: options.retryFailures === true });
     stats.skipped += lot.length - claimed.size;
 
     const cibles = lot

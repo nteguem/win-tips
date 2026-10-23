@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { SOURCES } = require('../../services/common/editorialSources');
 
 /**
  * Une offre de déblocage : visionner `adsRequired` pubs récompensées donne
@@ -66,6 +67,14 @@ const CategorySchema = new mongoose.Schema({
   isActive: {
     type: Boolean,
     default: true
+  },
+
+  // Null retains existing BigWin/PredictFoot mappings. Selecting RDJ pauses
+  // their incoming clones without deleting externalSources or old tickets.
+  editorialSource: {
+    type: String,
+    enum: [null, ...SOURCES.map(source => source.key)],
+    default: null,
   },
 
   // Porte de déblocage par pub appliquée à TOUS les coupons de cette catégorie.

@@ -6,6 +6,11 @@ const express = require('express');
 
 const router = express.Router();
 
+// Editorial routes have their own explicit admin/worker/user access checks.
+router.use('/admin/editorial', require('./admin/editorialRoutes'));
+router.use('/internal/editorial', require('./common/editorialWorkerRoutes'));
+router.use('/editorial', require('./common/editorialRoutes'));
+
 // ===== ROUTES D'AUTHENTIFICATION =====
 const adminAuthRoutes = require('./admin/authRoutes');
 const userAuthRoutes = require('./user/authRoutes');

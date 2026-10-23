@@ -83,6 +83,7 @@ async function send(appDoc, notification, targets) {
         ok: false,
         code: `onesignal_http_${status || 'error'}`,
         action: 'retry',
+        retrySafe: status === 429,
       })));
     }
   }

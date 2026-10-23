@@ -1,6 +1,7 @@
 // controllers/categoryController.js
 const categoryService = require('../../services/common/categoryService');
 const { formatSuccess, formatError } = require('../../../utils/responseFormatter');
+const { validateCategorySource, containsEditorialField } = require('../../services/common/editorialSources');
 
 /**
  * Normalise un champ i18n en { fr, en }.
@@ -74,7 +75,10 @@ class CategoryController {
   // POST /categories - Créer une nouvelle catégorie
   async createCategory(req, res) {
     try {
-      const { name, description, icon, successRate, isVip, isActive, accessGate, externalSources } = req.body;
+      const { name, description, icon, successRate, isVip, isActive, accessGate, externalSources, editorialSource } = req.body;
+      let selectedEditorialSource;
+      try { selectedEditorialSource = validateCategorySource(editorialSource, isVip); }
+      catch (error) { return res.status(400).json({ success: false, error: error.message }); }
 
       // Le nom doit être bilingue : { fr, en }. On tolère une string brute
       // (anciens clients) en la dupliquant sur les 2 langues.
@@ -95,7 +99,8 @@ class CategoryController {
         icon,
         successRate,
         isActive,
-        isVip: isVip
+        isVip: isVip,
+        editorialSource: selectedEditorialSource,
       };
       // Porte de déblocage par pub : pertinente uniquement pour les free.
       // Pour la retirer côté update, envoyer `accessGate: null`.
@@ -133,6 +138,20 @@ class CategoryController {
     try {
       const { id } = req.params;
       const updates = { ...req.body };
+      const current = await categoryService.getCategoryById(id);
+      if (!current) return res.status(404).json({ success: false, error: 'Category not found' });
+      // Only direct JSON fields configure editorial sources; no Mongo operators.
+      if ((current.editorialSource || containsEditorialField(updates)) && Object.keys(updates).some(key => key.startsWith('$') || key.includes('.'))) {
+        return res.status(400).json({ success: false, error: 'Mise a jour editoriale invalide' });
+      }
+      if (updates.editorialSource !== undefined || current.editorialSource) {
+        try {
+          updates.editorialSource = validateCategorySource(
+            updates.editorialSource !== undefined ? updates.editorialSource : current.editorialSource,
+            updates.isVip !== undefined ? updates.isVip : current.isVip,
+          );
+        } catch (error) { return res.status(400).json({ success: false, error: error.message }); }
+      }
 
       // Validation du successRate si présent dans les updates
       if (updates.successRate !== undefined && (updates.successRate < 0 || updates.successRate > 100)) {
