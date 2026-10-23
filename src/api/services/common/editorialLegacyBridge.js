@@ -6,7 +6,8 @@ const hasLegacyMapping = category => !!(category && Array.isArray(category.exter
 const applies = category => !!(category && category.editorialSource && enabled() && hasLegacyMapping(category));
 const pauseLegacyImports = category => !!(category && category.editorialSource && !applies(category));
 
-function showLegacyTicket(category, req, { detail = false } = {}) {
+function showLegacyTicket(category, req, { detail = false, history = false } = {}) {
+  if (category?.catalogueArchived && capable(req) && !detail && !history) return false;
   if (!category || !category.editorialSource) return true;
   if (!applies(category) || capable(req)) return false;
   // The existing legacy endpoint has an old isVip-omitted case. Do not widen

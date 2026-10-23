@@ -322,8 +322,8 @@ test('index CLI defaults to read-only, requires explicit intent and never drops 
   await assert.rejects(provision(db, { apply: true }), { code: 'INTENT_REQUIRED' }); assert.equal(mutations, 0);
   current = { editorialitems: [{ name: SPECS[0].name, key: { wrong: 1 } }] };
   await assert.rejects(provision(db, { apply: true, intent: true }), { code: 'INDEX_CONFLICT' }); assert.equal(mutations, 0);
-  current = {}; const applied = await provision(db, { apply: true, intent: true }); assert.equal(applied.ready, true); assert.equal(mutations, 8);
-  const repeat = await provision(db, { apply: true, intent: true }); assert.equal(repeat.readOnly, true); assert.equal(mutations, 8);
+  current = {}; const applied = await provision(db, { apply: true, intent: true }); assert.equal(applied.ready, true); assert.equal(mutations, 9);
+  const repeat = await provision(db, { apply: true, intent: true }); assert.equal(repeat.readOnly, true); assert.equal(mutations, 9);
 });
 
 test('late/started/unknown single and race imports fail before writes; every combine leg has a 30 minute lead', async () => {

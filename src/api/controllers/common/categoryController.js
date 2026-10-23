@@ -1,7 +1,7 @@
 // controllers/categoryController.js
 const categoryService = require('../../services/common/categoryService');
 const { formatSuccess, formatError } = require('../../../utils/responseFormatter');
-const { validateCategorySource, containsEditorialField } = require('../../services/common/editorialSources');
+const { validateCategoryAssignment, containsEditorialField } = require('../../services/common/editorialSources');
 
 /**
  * Normalise un champ i18n en { fr, en }.
@@ -77,7 +77,7 @@ class CategoryController {
     try {
       const { name, description, icon, successRate, isVip, isActive, accessGate, externalSources, editorialSource } = req.body;
       let selectedEditorialSource;
-      try { selectedEditorialSource = validateCategorySource(editorialSource, isVip); }
+      try { selectedEditorialSource = validateCategoryAssignment(editorialSource, isVip); }
       catch (error) { return res.status(400).json({ success: false, error: error.message }); }
 
       // Le nom doit être bilingue : { fr, en }. On tolère une string brute
@@ -104,7 +104,8 @@ class CategoryController {
       };
       // Porte de déblocage par pub : pertinente uniquement pour les free.
       // Pour la retirer côté update, envoyer `accessGate: null`.
-      if (accessGate && !isVip) categoryData.accessGate = accessGate;
+      if (selectedEditorialSource && !isVip) categoryData.accessGate = null;
+      else if (accessGate && !isVip) categoryData.accessGate = accessGate;
       // Sources externes (sync sortante bigwin -> wintips) : array filtre
       if (Array.isArray(externalSources)) {
         categoryData.externalSources = externalSources
@@ -146,9 +147,10 @@ class CategoryController {
       }
       if (updates.editorialSource !== undefined || current.editorialSource) {
         try {
-          updates.editorialSource = validateCategorySource(
+          updates.editorialSource = validateCategoryAssignment(
             updates.editorialSource !== undefined ? updates.editorialSource : current.editorialSource,
             updates.isVip !== undefined ? updates.isVip : current.isVip,
+            current.editorialSource,
           );
         } catch (error) { return res.status(400).json({ success: false, error: error.message }); }
       }
@@ -172,6 +174,7 @@ class CategoryController {
 
       // Si la catégorie passe en VIP, on retire automatiquement la porte.
       if (updates.isVip === true) updates.accessGate = null;
+      if (updates.editorialSource && (updates.isVip !== undefined ? updates.isVip : current.isVip) === false) updates.accessGate = null;
 
       // Sources externes (sync sortante) : normalise et filtre les entrees invalides.
       if (Array.isArray(updates.externalSources)) {

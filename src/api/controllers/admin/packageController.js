@@ -3,6 +3,7 @@ const Formation = require('../../models/common/Formation');
 const Category = require('../../models/common/Category');
 const { AppError, ErrorCodes } = require('../../../utils/AppError');
 const catchAsync = require('../../../utils/catchAsync');
+const { validateExplicitPricing } = require('../../services/common/packagePricing');
 
 /**
  * Obtenir tous les packages (admin)
@@ -14,6 +15,11 @@ exports.getAllPackages = catchAsync(async (req, res, next) => {
   const packages = await Package.find()
     .populate('categories', 'name description isVip')
     .populate('formationId');
+
+  if (req.query.raw === 'true') {
+    const rawPackages = packages.map(pkg => pkg.toJSON());
+    return res.status(200).json({ success: true, data: { packages: rawPackages, count: rawPackages.length } });
+  }
 
   // Séparation par mode de paiement.
   // - Les packs 'ads' n'ont PAS de pricing → on les garde toujours (pas de
@@ -76,7 +82,7 @@ exports.getPackage = catchAsync(async (req, res, next) => {
     return next(new AppError('Package non trouvé', 404, ErrorCodes.NOT_FOUND));
   }
 
-  const formattedPackage = package.formatForLanguage(lang);
+  const formattedPackage = req.query.raw === 'true' ? package.toJSON() : package.formatForLanguage(lang);
 
   res.status(200).json({
     success: true,
@@ -96,14 +102,15 @@ exports.createPackage = catchAsync(async (req, res, next) => {
   } = req.body;
 
   // Validation : la nature des champs requis dépend du mode de paiement.
-  //   money (défaut) : pricing.XAF requis
+  //   money (défaut) : au moins un prix explicite positif, sans conversion
   //   ads            : adsRequired >= 1 requis ; pricing peut être absent
   const mode = paymentMode || 'money';
   if (!name?.fr || !name?.en || !duration) {
     return next(new AppError('Nom (FR/EN) et durée sont requis', 400, ErrorCodes.VALIDATION_ERROR));
   }
-  if (mode === 'money' && !pricing?.XAF) {
-    return next(new AppError('Prix en XAF requis pour un pack en mode argent', 400, ErrorCodes.VALIDATION_ERROR));
+  if (mode === 'money') {
+    try { validateExplicitPricing(pricing); }
+    catch (error) { return next(new AppError(error.message, 400, ErrorCodes.VALIDATION_ERROR)); }
   }
   if (mode === 'ads' && (!adsRequired || adsRequired < 1)) {
     return next(new AppError('adsRequired >= 1 requis pour un pack en mode pubs', 400, ErrorCodes.VALIDATION_ERROR));
@@ -164,6 +171,10 @@ exports.updatePackage = catchAsync(async (req, res, next) => {
   let package = await Package.findById(req.params.id);
   if (!package) {
     return next(new AppError('Package non trouvé', 404, ErrorCodes.NOT_FOUND));
+  }
+  if ((paymentMode || package.paymentMode || 'money') === 'money' && pricing !== undefined) {
+    try { validateExplicitPricing(pricing); }
+    catch (error) { return next(new AppError(error.message, 400, ErrorCodes.VALIDATION_ERROR)); }
   }
 
   // Vérifier les catégories si fournies

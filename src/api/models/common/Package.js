@@ -1,6 +1,10 @@
 const mongoose = require('mongoose');
 
 const packageSchema = new mongoose.Schema({
+  catalogueKey: { type: String, maxlength: 120, default: undefined },
+  // Informational provenance of explicit prices. Never used for conversion
+  // or to change the amount charged by a payment provider.
+  pricingProvenance: { type: mongoose.Schema.Types.Mixed, default: undefined },
   name: {
     fr: {
       type: String,
@@ -379,6 +383,10 @@ packageSchema.methods.toJSON = function() {
 
 // Pre-save hook : validation devises + mutex paymentMode
 packageSchema.pre('save', function(next) {
+  if (this.paymentMode === 'money' && this.pricing?.size) {
+    try { require('../../services/common/packagePricing').validateExplicitPricing(Object.fromEntries(this.pricing)); }
+    catch (error) { return next(error); }
+  }
   // Validation 1 : codes devises (3 lettres majuscules)
   if (this.pricing) {
     for (let currency of this.pricing.keys()) {

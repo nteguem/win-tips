@@ -48,6 +48,7 @@ exports.validatePurchase = catchAsync(async (req, res, next) => {
 // ===== NOUVEAU : Valider un PRODUIT PONCTUEL depuis Flutter =====
 exports.validateOneTimePurchase = catchAsync(async (req, res, next) => {
   const { purchaseToken, productId, packageId } = req.body;
+  const currency = req.body.currency || req.query?.currency;
   const userId = req.user._id;
 
   // Validation des données
@@ -65,13 +66,16 @@ exports.validateOneTimePurchase = catchAsync(async (req, res, next) => {
   if (!packageItem.isGooglePlayOneTimeProduct()) {
     return next(new AppError('Ce package n\'est pas un produit ponctuel Google Play', 400));
   }
+  try { require('../../services/common/packagePricing').managedGooglePrice(packageItem, productId, currency); }
+  catch (error) { return next(new AppError(error.message, 400)); }
 
   // Valider l'achat
   const result = await googlePlayService.validateOneTimePurchase(
     purchaseToken,
     productId,
     userId,
-    packageId
+    packageId,
+    currency
   );
 
   if (!result.success) {

@@ -2,6 +2,8 @@ const { google } = require('googleapis');
 const GooglePlayTransaction = require('../../models/user/GooglePlayTransaction');
 const Subscription = require('../../models/common/Subscription');
 const Package = require('../../models/common/Package');
+const { managedGooglePrice } = require('../common/packagePricing');
+const { createManagedGoogleActivation, assertBinding } = require('../common/managedGoogleActivation');
 
 class GooglePlayService {
   constructor() {
@@ -23,8 +25,12 @@ class GooglePlayService {
   }
 
   // ===== NOUVEAU : Valider un PRODUIT PONCTUEL depuis Flutter =====
-  async validateOneTimePurchase(purchaseToken, productId, userId, packageId) {
+  async validateOneTimePurchase(purchaseToken, productId, userId, packageId, requestedCurrency) {
     try {
+      const packageItem = await Package.findById(packageId);
+      if (!packageItem) throw new Error('Package non trouvé');
+      if (packageItem.googleProductId !== productId) throw new Error('Produit Google Play incompatible avec ce forfait');
+      const configuredPrice = managedGooglePrice(packageItem, productId, requestedCurrency);
       console.log('[GooglePlay ONE-TIME] Début validation:', { purchaseToken, productId, packageId });
       
       // 1. Vérifier avec l'API Google (API products v1, pas v2)
@@ -37,13 +43,28 @@ class GooglePlayService {
       if (!data) {
         throw new Error('Réponse invalide de Google Play');
       }
+      if (configuredPrice && (data.purchaseState !== 0 || (data.productId && data.productId !== productId))) throw new Error('Achat Google non confirme pour ce produit');
+
+      if (configuredPrice) {
+        const subscription = await createManagedGoogleActivation({ GooglePlayTransaction, Subscription })({
+          purchaseToken, productId, userId, packageId, pkg: packageItem, price: configuredPrice, data,
+          appPackageName: process.env.GOOGLE_PLAY_PACKAGE_NAME,
+        });
+        // Failure here cannot orphan the entitlement; the exact token can be
+        // retried without a second subscription or a second entitlement grant.
+        if (data.acknowledgementState !== 1) await this.acknowledgeAndConsumeOneTimePurchase(purchaseToken, productId);
+        else await this.consumeOneTimePurchase(purchaseToken, productId);
+        return { success: true, data: { subscription, message: 'Produit active avec succes' } };
+      }
 
       // 2. Vérifier si déjà traité
       const existingTx = await GooglePlayTransaction.findOne({ purchaseToken });
       if (existingTx) {
+        assertBinding(existingTx, { userId, packageId, productId });
         console.log('[GooglePlay ONE-TIME] Transaction déjà traitée:', existingTx._id);
         const subscription = await Subscription.findById(existingTx.subscription)
           .populate('package');
+        if (!subscription || String(subscription.user) !== String(userId) || String(subscription.package?._id || subscription.package) !== String(packageId)) throw new Error('Activation incomplete; verification necessaire');
         
         return { 
           success: true, 
@@ -77,10 +98,6 @@ class GooglePlayService {
       }
 
       // 4. Récupérer le package
-      const packageItem = await Package.findById(packageId);
-      if (!packageItem) {
-        throw new Error('Package non trouvé: ' + packageId);
-      }
 
       // 5. Parser les dates
       let startDate = new Date();

@@ -33,6 +33,12 @@ const AccessGateSchema = new mongoose.Schema({
 }, { _id: false });
 
 const CategorySchema = new mongoose.Schema({
+  // Optional stable ownership marker for the explicit catalogue migration.
+  // Identity remains the existing ObjectId when a category is adopted.
+  catalogueKey: { type: String, maxlength: 120, default: undefined },
+  // Hide an explicitly retired category from the new storefront without
+  // revoking existing subscriptions or destroying coupon/history access.
+  catalogueArchived: { type: Boolean, default: false },
   // Nom bilingue. Pattern aligné sur bigwin v2 : chaque document stocke
   // toutes les langues, et `formatForLanguage(lang)` aplatit avant l'envoi
   // au client. Plus de `unique` (impossible proprement sur un sous-objet).

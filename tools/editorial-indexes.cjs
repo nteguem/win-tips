@@ -3,6 +3,7 @@
 const COLLECTION = 'editorialitems';
 const SPECS = [
   { key: { categoryId: 1, source: 1, editionDate: 1, sourceId: 1 }, name: 'editorial_identity_unique', unique: true },
+  { key: { categoryId: 1, source: 1, editionDate: 1 }, name: 'editorial_duo_one_per_day', unique: true, partialFilterExpression: { source: 'rdj_football_duo' } },
   { key: { editionDate: -1, categoryId: 1, isPublished: 1, startsAtUtc: 1 }, name: 'editorial_feed_by_date' },
 ];
 const COLLECTIONS = {
@@ -24,7 +25,7 @@ async function inspectCollection(db, collection, specs) {
   const missing = [], conflicts = [];
   for (const spec of specs) {
     const named = current.find(index => index.name === spec.name);
-    if (named && (!sameKey(named.key, spec.key) || !!named.unique !== !!spec.unique)) conflicts.push(spec.name);
+    if (named && (!sameKey(named.key, spec.key) || !!named.unique !== !!spec.unique || JSON.stringify(named.partialFilterExpression || null) !== JSON.stringify(spec.partialFilterExpression || null))) conflicts.push(spec.name);
     else if (!named) {
       if (current.some(index => sameKey(index.key, spec.key))) conflicts.push(spec.name);
       else missing.push(spec.name);

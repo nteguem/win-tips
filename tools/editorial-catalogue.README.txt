@@ -1,0 +1,83 @@
+CATALOGUE WINTIPS — PRÉPARATION LOCALE, AUCUNE ACTIVATION AUTOMATIQUE
+
+Le Petit Journal et Le Quinté du Jour sont gratuits (accessGate:null).
+Les quatre sources VIP sont Sélection Expert, Le Duo du Jour, Combiné Buts,
+Expert Multisports. L'ancienne source rdj_football_combine reste lisible pour
+les affectations existantes, mais n'est plus un choix pour une nouvelle affectation.
+
+Essentiel : 7 jours, Sélection Expert + Duo ; 3500 XAF/XOF.
+Premium : 14 jours, les quatre catégories VIP ; 7000 XAF/XOF.
+Prix EUR/USD locaux proposés pour approbation : 5.34/6.00 et 10.67/11.99.
+Le JSON conserve la provenance et la date des références. Aucun taux de change
+n'est consulté ni appliqué au paiement. GMD/CDF/GNF et autres devises nécessitent
+des prix explicites du BO. Un prix absent n'est jamais remplacé par zéro/XAF.
+EUR/USD restent non achetables tant qu'un vrai produit Google Play n'est pas
+configuré ; le seed ne crée ni SKU, ni canal de paiement, ni compte marchand.
+
+AVANT APPLICATION
+1. Copier editorial-catalogue.example.json dans un fichier de configuration à relire.
+2. Renseigner adoptCategoryIds (source -> ObjectId actuel) pour réutiliser les
+   catégories existantes et conserver leurs droits, identités et externalSources.
+   Si une source active existe déjà, l'outil refuse de créer son doublon : adoption
+   explicite nécessaire. Aucune ancienne catégorie n'est supprimée/désactivée.
+3. Renseigner retirePackageIds avec les anciens forfaits à retirer de la vente.
+   L'outil ne modifie alors que isActive:false, sans toucher leurs prix/durée/
+   catégories ni les abonnements. Les utilisateurs gardent les droits achetés
+   jusqu'à leur échéance selon le service d'accès existant. Les avertissements
+   LEGACY_OFFERS_REMAIN / LEGACY_CATEGORIES_PRESERVED exigent une revue humaine.
+   archiveCategoryIds permet un archivage de vitrine explicite : isActive reste
+   inchangé, les coupons/mappings/abonnements sont conservés. La liste des nouveaux
+   clients (capability1) masque ces rubriques, leur historique/détail reste lisible.
+   Sans cette liste ou une adoption complète, l'outil ne prétend pas qu'il n'existe
+   plus que six rubriques visibles. Le mapping actuel doit être approuvé avant GO.
+4. Fournir WINTIPS_CATALOGUE_MONGO_URI dans l'environnement de la commande.
+   Aucun .env n'est lu automatiquement et aucune URI n'est affichée.
+
+PLAN (défaut, lecture seule)
+node tools/editorial-catalogue.cjs --plan --config catalogue-reviewed.json --out catalogue-plan.json
+
+APPLIQUER APRÈS GO DU PROPRIÉTAIRE SEULEMENT
+node tools/editorial-catalogue.cjs --apply --plan-file catalogue-plan.json --confirm-sha256 <planHash> --confirm-catalogue-mutation --out catalogue-receipt.json
+
+Toutes les écritures catégories/forfaits sont dans une transaction MongoDB.
+Replica set ou mongos obligatoire ; aucun repli non transactionnel.
+L'application recontrôle les documents contre les snapshots du plan (CAS).
+Un plan devenu ancien ou un forfait acheté à réécrire est refusé sans écriture.
+La réexécution du même plan ne modifie pas les documents déjà conformes.
+Les fichiers de sortie existants ne sont pas écrasés.
+La sortie est réservée exclusivement AVANT toute connexion/écriture : un chemin
+déjà pris fait échouer la commande sans mutation. Un arrêt brutal peut laisser
+un fichier « pending ». Conserver alors le plan original, lire l'état puis le
+réappliquer avec un NOUVEAU chemin de reçu : les opérations déjà conformes sont
+reconnues et le reçu récupéré conserve tous les snapshots before/after du plan,
+pas seulement les écritures de la dernière tentative.
+
+DROITS ET GOOGLE PLAY
+Tout nouvel achat d'un forfait managed capture ses catégories dans l'abonnement
+(categorySnapshot immutable). Les contrôles API et audiences de notification
+lisent ces droits achetés jusqu'à échéance, même si les catégories du forfait
+de vente changent ensuite. Les abonnements historiques sans snapshot gardent
+leur contrat de résolution antérieur ; aucune migration implicite n'est faite.
+Les activations Google des nouveaux forfaits créent transaction + abonnement +
+liaison dans UNE transaction Mongo. Un échec intermédiaire annule tout ; le même
+token peut être repris sans doublon. User/package/SKU sont liés au token.
+Les centimes EUR/USD sont conservés. L'API Google ProductPurchase v1 n'expose
+pas le montant payé : pricing.source= configured_catalogue_reference signale
+un montant de catalogue, jamais une preuve de montant réellement facturé.
+Provisionner explicitement l'index editorial_duo_one_per_day avec les autres
+index avant l'import du Duo : un seul ticket par rubrique/édition, même après
+redémarrage. Une autre identité de ticket ce jour-là est refusée (409).
+
+RETOUR ARRIÈRE AVANT PUBLICATION / ACHAT
+Arrêter le worker d'abord, après autorisation. Puis :
+node tools/editorial-catalogue.cjs --rollback --receipt-file catalogue-receipt.json --confirm-sha256 <receiptHash> --confirm-catalogue-mutation --out catalogue-rollback.json
+
+Les catégories/forfaits adoptés retrouvent leurs champs précédents. Les nouvelles
+entrées sont désactivées, jamais supprimées. Si des contenus éditoriaux ou des
+achats liés aux nouveaux forfaits existent, le rollback automatique refuse :
+une revue des droits est nécessaire, aucune donnée n'est retirée silencieusement.
+Un document modifié depuis l'application fait aussi refuser le rollback.
+
+Ce CLI ne démarre pas l'API, les jobs, le modèle IA, les imports ou les push.
+Il ne modifie aucune préférence, aucun appareil, utilisateur ou abonnement.
+Les flags import/notification restent indépendants et désactivés tant que non armés.

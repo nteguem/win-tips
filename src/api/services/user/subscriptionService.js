@@ -4,6 +4,7 @@ const User = require('../../models/user/User');
 const Category = require('../../models/common/Category');
 const GooglePlayTransaction = require('../../models/user/GooglePlayTransaction');
 const { AppError, ErrorCodes } = require('../../../utils/AppError');
+const { categoryRights, snapshotForPackage } = require('../common/subscriptionEntitlements');
 
 class SubscriptionService {
   /**
@@ -36,6 +37,7 @@ class SubscriptionService {
     const subscription = await Subscription.create({
       user: userId,
       package: packageId,
+      ...snapshotForPackage(packageNew),
       startDate,
       endDate,
       pricing: {
@@ -69,6 +71,7 @@ class SubscriptionService {
     const subscription = await Subscription.create({
       user: userId,
       package: packageId,
+      ...snapshotForPackage(packageNew),
       startDate: purchaseData.startDate,
       endDate: purchaseData.endDate,
       pricing: {
@@ -116,7 +119,7 @@ class SubscriptionService {
         amount: subscription.pricing.amount,
         currency: subscription.pricing.currency
       },
-      categories: subscription.package.categories || [],
+      categories: categoryRights(subscription),
       subscriptionId: subscription._id,
       paymentProvider: subscription.paymentProvider,
       autoRenewing: subscription.autoRenewing || false
@@ -161,6 +164,10 @@ class SubscriptionService {
     const activeSubscriptions = await this.getActiveSubscriptions(userId);
     
     for (const subscription of activeSubscriptions) {
+      if (Array.isArray(subscription.categorySnapshot)) {
+        if (categoryRights(subscription).some(value => String(value) === String(categoryId))) return true;
+        continue;
+      }
       // Récupérer le package ACTUEL avec ses catégories ACTUELLES
       // Protection : sub.package peut être null (package supprimé) ou un
       // ObjectId brut (non populé). On extrait l'id de façon sûre.
@@ -194,6 +201,7 @@ class SubscriptionService {
     // Récupérer les catégories ACTUELLES de chaque package
     const categoryIds = [];
     for (const subscription of activeSubscriptions) {
+      if (Array.isArray(subscription.categorySnapshot)) { categoryIds.push(...categoryRights(subscription)); continue; }
       // Récupérer le package ACTUEL (pas celui stocké dans l'abonnement)
       // Protection : sub.package peut être null (package supprimé) ou un
       // ObjectId brut (non populé). On extrait l'id de façon sûre.
@@ -239,6 +247,7 @@ class SubscriptionService {
     // Récupérer les catégories ACTUELLES de chaque package
     const categoryIds = [];
     for (const subscription of activeSubscriptions) {
+      if (Array.isArray(subscription.categorySnapshot)) { categoryIds.push(...categoryRights(subscription)); continue; }
       // Récupérer le package ACTUEL (pas celui stocké dans l'abonnement)
       // Protection : sub.package peut être null (package supprimé) ou un
       // ObjectId brut (non populé). On extrait l'id de façon sûre.

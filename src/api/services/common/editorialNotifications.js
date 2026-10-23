@@ -28,6 +28,9 @@ function message(appId, group, language) {
     rdj_petit_journal: { fr: `Le Petit Journal du ${date} est disponible`, en: `The ${date} Daily Journal is available` },
     rdj_turf_quinte: { fr: `Le Quinté du ${date} est disponible`, en: `The ${date} horse racing analysis is available` },
     rdj_football_analysis: { fr: `Les analyses foot du ${date} sont disponibles`, en: `The ${date} football analysis is available` },
+    rdj_football_duo: { fr: `Le Duo du ${date} est disponible`, en: `The ${date} Daily Duo is available` },
+    rdj_football_goals: { fr: `Le Combiné Buts du ${date} est disponible`, en: `The ${date} Goals Accumulator is available` },
+    rdj_multisport_analysis: { fr: `Expert Multisports du ${date} est disponible`, en: `The ${date} Multisport Analysis is available` },
     rdj_football_combine: { fr: `Le combiné du ${date} est disponible`, en: `The ${date} accumulator is available` },
   };
   const names = group.items.flatMap(row => {

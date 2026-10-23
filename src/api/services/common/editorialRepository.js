@@ -2,7 +2,7 @@ const { failure } = require('./editorialSources');
 
 function createEditorialRepository({ Category, EditorialItem, subscriptionService, accessGateService }) {
   return {
-  categories: () => Category.find({ isActive: true, editorialSource: { $in: require('./editorialSources').SOURCES.map(s => s.key) } }).lean(),
+  categories: () => Category.find({ isActive: true, catalogueArchived: { $ne: true }, editorialSource: { $in: require('./editorialSources').SOURCES.map(s => s.key) } }).lean(),
   category: id => Category.findById(id).lean(),
   items: (ids, date) => EditorialItem.find({ categoryId: { $in: ids }, editionDate: date, isPublished: true }).sort({ startsAtUtc: 1, sourceId: 1 }).lean(),
   item: id => EditorialItem.findOne({ _id: id, isPublished: true }).lean(),
@@ -19,7 +19,14 @@ function createEditorialRepository({ Category, EditorialItem, subscriptionServic
     if (!indexes.some(index => index.name === 'editorial_identity_unique' && index.unique === true && JSON.stringify(index.key) === JSON.stringify(keys))) {
       throw failure('Index editorial de deduplication non initialise', 503);
     }
-    return EditorialItem.bulkWrite(operations, { ordered: true });
+    const hasDuo = operations.some(op => op.updateOne.filter.source === 'rdj_football_duo');
+    if (hasDuo && !indexes.some(index => index.name === 'editorial_duo_one_per_day' && index.unique === true &&
+      JSON.stringify(index.key) === JSON.stringify({ categoryId: 1, source: 1, editionDate: 1 }) && index.partialFilterExpression?.source === 'rdj_football_duo')) throw failure('Index du Duo unique par jour non initialise', 503);
+    try { return await EditorialItem.bulkWrite(operations, { ordered: true }); }
+    catch (error) {
+      if (hasDuo && error.code === 11000) throw failure('Le Duo du Jour de cette edition est deja choisi; son identite doit etre conservee', 409);
+      throw error;
+    }
   },
 };
 }

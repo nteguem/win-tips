@@ -442,7 +442,7 @@ class CouponController {
       console.log('📦 Tickets récupérés (60 derniers jours):', allTickets.length);
 
       // ===== ÉTAPE 3 : Filtrer selon isVip =====
-      let filteredTickets = allTickets.filter(ticket => showLegacyTicket(ticket.category, req));
+      let filteredTickets = allTickets.filter(ticket => showLegacyTicket(ticket.category, req, { history: true }));
 
       if (isVip === 'true') {
         // Pour VIP : récupérer les catégories accessibles par l'utilisateur

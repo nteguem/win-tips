@@ -41,6 +41,7 @@ const googlePlayTransactionSchema = new mongoose.Schema({
   // Paiement
   priceAmountMicros: Number,
   priceCurrencyCode: String,
+  priceEvidence: { type: String, enum: ['configured_catalogue_reference'], default: undefined },
   
   // Flags
   autoRenewing: {

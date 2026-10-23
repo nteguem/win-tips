@@ -18,13 +18,13 @@ function createEditorialNotificationRepository({ Category, EditorialItem, Editor
     } catch (_) { throw failure('Index de notification non initialise', 503); }
   },
   async groups({ source, editionDate }) {
-    const categories = (await Category.find({ isActive: true, editorialSource: source || { $ne: null } }).lean()).filter(sourceMatchesCategory);
+    const categories = (await Category.find({ isActive: true, catalogueArchived: { $ne: true }, editorialSource: source || { $ne: null } }).lean()).filter(sourceMatchesCategory);
     const items = await EditorialItem.find({ categoryId: { $in: categories.map(category => category._id) }, editionDate, isPublished: true }).sort({ startsAtUtc: 1, sourceId: 1 }).lean();
     return categories.map(category => ({ category, source: category.editorialSource, editionDate,
       items: items.filter(item => id(item.categoryId) === id(category) && item.source === category.editorialSource) }));
   },
   async categoryStillMatches(key, isVip) {
-    return !!await Category.exists({ _id: key.categoryId, isActive: true, editorialSource: key.source, isVip });
+    return !!await Category.exists({ _id: key.categoryId, isActive: true, catalogueArchived: { $ne: true }, editorialSource: key.source, isVip });
   },
   async claim(key, notificationId, now) {
     try {
@@ -60,8 +60,9 @@ function createEditorialNotificationRepository({ Category, EditorialItem, Editor
     // current active subscriptions, current package category membership,
     // without requiring that a formerly purchased package is still on sale.
     const subscriptions = await Subscription.find({ user: { $in: active.map(user => user._id) }, status: 'active', endDate: { $gt: now } })
-      .select('user package').populate({ path: 'package', select: 'categories' }).lean();
-    return [...new Set(subscriptions.filter(sub => sub.package && sub.package.categories.some(cat => id(cat) === categoryId)).map(sub => id(sub.user)))];
+      .select('user package categorySnapshot').populate({ path: 'package', select: 'categories' }).lean();
+    const { categoryRights } = require('./subscriptionEntitlements');
+    return [...new Set(subscriptions.filter(sub => categoryRights(sub).some(cat => id(cat) === categoryId)).map(sub => id(sub.user)))];
   },
   async deliverySummary(appId, notificationId) {
     const groups = await PushDelivery.aggregate([

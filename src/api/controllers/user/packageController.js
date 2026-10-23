@@ -2,6 +2,7 @@ const Package = require('../../models/common/Package');
 const subscriptionService = require('../../services/user/subscriptionService');
 const { AppError, ErrorCodes } = require('../../../utils/AppError');
 const catchAsync = require('../../../utils/catchAsync');
+const { currencyCode, priceFor, canPurchaseInCurrency } = require('../../services/common/packagePricing');
 
 // Marqueur visible au boot pour vérifier que ce fichier est chargé par Node
 // après un redémarrage pm2. Si tu ne vois pas cette ligne dans `pm2 logs`
@@ -21,7 +22,8 @@ console.log('🟢 [packageController.js] chargé', new Date().toISOString());
  *       'all'   → les deux types (le client filtrera lui-même)
  */
 exports.getAvailablePackages = catchAsync(async (req, res, next) => {
-  const { currency, lang = 'fr', paymentMode = 'money' } = req.query;
+  const { lang = 'fr', paymentMode = 'money' } = req.query;
+  const currency = currencyCode(req.query.currency);
 
   // Filtre Mongoose
   const filter = { isActive: true };
@@ -52,8 +54,8 @@ exports.getAvailablePackages = catchAsync(async (req, res, next) => {
     if ((a.paymentMode || 'money') === 'ads' && (b.paymentMode || 'money') === 'ads') {
       return (a.adsRequired || 0) - (b.adsRequired || 0);
     }
-    const priceA = a.getPricing(currency || 'XAF') || 0;
-    const priceB = b.getPricing(currency || 'XAF') || 0;
+    const priceA = priceFor(a, currency || 'XAF') ?? Infinity;
+    const priceB = priceFor(b, currency || 'XAF') ?? Infinity;
     return priceA - priceB;
   });
 
@@ -70,16 +72,8 @@ exports.getAvailablePackages = catchAsync(async (req, res, next) => {
     // intégrateurs mobile money (AfribaPay/Smobilpay/CinetPay/KoraPay) ne
     // couvrent que XAF/XOF/CDF. On ne propose donc, en USD, que les packs
     // money réellement achetables sur Google Play.
-    const usdGooglePlayOnly = String(currency).toUpperCase() === 'USD';
     result = result
-      .filter(pkg => {
-        if ((pkg.paymentMode || 'money') === 'ads') return true; // bypass filtre devise
-        if (!(pkg.pricing && pkg.pricing[currency] !== undefined)) return false;
-        if (usdGooglePlayOnly && !(pkg.availableOnGooglePlay && pkg.googleProductId)) {
-          return false;
-        }
-        return true;
-      })
+      .filter(pkg => canPurchaseInCurrency(pkg, currency))
       .map(pkg => {
         if ((pkg.paymentMode || 'money') === 'ads') {
           // Packs ads : aplatir aussi (mais à 0) pour que Flutter parse pareil
@@ -89,7 +83,8 @@ exports.getAvailablePackages = catchAsync(async (req, res, next) => {
           return adsData;
         }
         const packageData = { ...pkg };
-        packageData.pricing = pkg.pricing[currency];
+        packageData.pricing = priceFor(pkg, currency);
+        packageData.currency = currency;
         packageData.economy = pkg.economy && pkg.economy[currency] != null
           ? pkg.economy[currency]
           : null;
@@ -112,7 +107,8 @@ exports.getAvailablePackages = catchAsync(async (req, res, next) => {
  * Obtenir un package spécifique
  */
 exports.getPackage = catchAsync(async (req, res, next) => {
-  const { currency, lang = 'fr' } = req.query;
+  const { lang = 'fr' } = req.query;
+  const currency = currencyCode(req.query.currency);
   
   const package = await Package.findOne({ 
     _id: req.params.id, 
@@ -138,11 +134,12 @@ exports.getPackage = catchAsync(async (req, res, next) => {
   
   if (currency) {
     // Si le package n'a pas la devise demandée, retourner une erreur
-    if (!processedPackage.pricing || !processedPackage.pricing[currency]) {
+    if (!canPurchaseInCurrency(processedPackage, currency)) {
       return next(new AppError(`Package non disponible dans la devise ${currency}`, 404, ErrorCodes.NOT_FOUND));
     }
     
-    processedPackage.pricing = { [currency]: processedPackage.pricing[currency] };
+    processedPackage.pricing = (processedPackage.paymentMode || 'money') === 'ads' ? 0 : { [currency]: priceFor(processedPackage, currency) };
+    processedPackage.currency = currency;
     processedPackage.economy = processedPackage.economy ? { [currency]: processedPackage.economy[currency] } : null;
   }
 
@@ -161,7 +158,8 @@ exports.getPackage = catchAsync(async (req, res, next) => {
  */
 exports.getPackagesByCategory = catchAsync(async (req, res, next) => {
   const { categoryId } = req.params;
-  const { currency, lang = 'fr' } = req.query;
+  const { lang = 'fr' } = req.query;
+  const currency = currencyCode(req.query.currency);
 
   const packages = await Package.find({ 
     isActive: true,
@@ -171,8 +169,8 @@ exports.getPackagesByCategory = catchAsync(async (req, res, next) => {
 
   // Trier manuellement par prix dans la devise demandée
   const sortedPackages = packages.sort((a, b) => {
-    const priceA = a.getPricing(currency || 'XAF') || 0;
-    const priceB = b.getPricing(currency || 'XAF') || 0;
+    const priceA = priceFor(a, currency || 'XAF') ?? Infinity;
+    const priceB = priceFor(b, currency || 'XAF') ?? Infinity;
     return priceA - priceB;
   });
 
@@ -181,10 +179,11 @@ exports.getPackagesByCategory = catchAsync(async (req, res, next) => {
   
   if (currency) {
     processedPackages = processedPackages
-      .filter(pkg => pkg.pricing && pkg.pricing[currency]) // Filtrer seulement les packages qui ont la devise
+      .filter(pkg => canPurchaseInCurrency(pkg, currency))
       .map(pkg => {
         const packageData = { ...pkg };
-        packageData.pricing = { [currency]: pkg.pricing[currency] };
+        packageData.pricing = (pkg.paymentMode || 'money') === 'ads' ? 0 : { [currency]: priceFor(pkg, currency) };
+        packageData.currency = currency;
         packageData.economy = pkg.economy ? { [currency]: pkg.economy[currency] } : null;
         return packageData;
       });

@@ -1,0 +1,187 @@
+{
+  "version": "wintips-rdj-catalogue-v1",
+  "appId": "wintips",
+  "adoptCategoryIds": {},
+  "retirePackageIds": [],
+  "archiveCategoryIds": [],
+  "categories": [
+    {
+      "source": "rdj_petit_journal",
+      "name": {
+        "fr": "Le Petit Journal",
+        "en": "The Daily Journal"
+      },
+      "description": {
+        "fr": "Les matchs et analyses du jour",
+        "en": "The day’s matches and analyses"
+      },
+      "icon": "📰"
+    },
+    {
+      "source": "rdj_turf_quinte",
+      "name": {
+        "fr": "Le Quinté du Jour",
+        "en": "The Daily Quinté"
+      },
+      "description": {
+        "fr": "La course, les partants et l’analyse du Quinté du jour.",
+        "en": "The daily Quinté race, runners and analysis."
+      },
+      "icon": "🏇"
+    },
+    {
+      "source": "rdj_football_analysis",
+      "name": {
+        "fr": "Sélection Expert",
+        "en": "Expert Selection"
+      },
+      "description": {
+        "fr": "Des paris simples football, accompagnés de leur analyse.",
+        "en": "Single football bets, each with its analysis."
+      },
+      "icon": "⚽"
+    },
+    {
+      "source": "rdj_football_duo",
+      "name": {
+        "fr": "Le Duo du Jour",
+        "en": "The Daily Duo"
+      },
+      "description": {
+        "fr": "Deux matchs distincts dans un coupon, avec une cote totale visée entre 2 et 4, selon les sélections disponibles.",
+        "en": "Two distinct matches in one bet, targeting total odds from 2 to 4 when suitable selections are available."
+      },
+      "icon": "🎯"
+    },
+    {
+      "source": "rdj_football_goals",
+      "name": {
+        "fr": "Combiné Buts",
+        "en": "Goals Accumulator"
+      },
+      "description": {
+        "fr": "Deux à trois sélections sur les buts, avec une analyse pour chaque rencontre.",
+        "en": "Two to three goals selections, with an analysis for each match."
+      },
+      "icon": "🥅"
+    },
+    {
+      "source": "rdj_multisport_analysis",
+      "name": {
+        "fr": "Expert Multisports",
+        "en": "Multisports Expert"
+      },
+      "description": {
+        "fr": "Des paris simples basket et volley, selon les rencontres et analyses disponibles.",
+        "en": "Single basketball and volleyball bets, when matches and analyses are available."
+      },
+      "icon": "🏀"
+    }
+  ],
+  "packages": [
+    {
+      "key": "essentiel_7d",
+      "name": {
+        "fr": "Essentiel",
+        "en": "Essential"
+      },
+      "description": {
+        "fr": "Sélection Expert et Le Duo du Jour pendant 7 jours.",
+        "en": "Expert Selection and The Daily Duo for 7 days."
+      },
+      "duration": 7,
+      "sources": [
+        "rdj_football_analysis",
+        "rdj_football_duo"
+      ],
+      "pricing": {
+        "XAF": 3500,
+        "XOF": 3500,
+        "EUR": 5.34,
+        "USD": 6.0
+      },
+      "pricingProvenance": {
+        "approval": "Local proposal; production activation requires the owner's GO",
+        "XAF": {
+          "kind": "owner_explicit",
+          "amount": 3500
+        },
+        "XOF": {
+          "kind": "owner_explicit",
+          "amount": 3500
+        },
+        "EUR": {
+          "kind": "fixed_peg_reference",
+          "cfaPerUnit": 655.957,
+          "rounding": "nearest_cent",
+          "source": "https://www.bceao.int/",
+          "asOf": "2026-10-23",
+          "checkoutConversion": false
+        },
+        "USD": {
+          "kind": "indicative_reference",
+          "cfaPerUnit": 583.75,
+          "referenceBuy": 580.25,
+          "referenceSell": 587.25,
+          "rounding": "nearest_cent",
+          "source": "https://www.bceao.int/index.php/fr",
+          "asOf": "2026-10-22",
+          "checkoutConversion": false
+        }
+      }
+    },
+    {
+      "key": "premium_14d",
+      "name": {
+        "fr": "Premium",
+        "en": "Premium"
+      },
+      "description": {
+        "fr": "Sélection Expert, Le Duo du Jour, Combiné Buts et Expert Multisports pendant 14 jours.",
+        "en": "Expert Selection, The Daily Duo, Goals Accumulator and Multisports Expert for 14 days."
+      },
+      "duration": 14,
+      "sources": [
+        "rdj_football_analysis",
+        "rdj_football_duo",
+        "rdj_football_goals",
+        "rdj_multisport_analysis"
+      ],
+      "pricing": {
+        "XAF": 7000,
+        "XOF": 7000,
+        "EUR": 10.67,
+        "USD": 11.99
+      },
+      "pricingProvenance": {
+        "approval": "Local proposal; production activation requires the owner's GO",
+        "XAF": {
+          "kind": "owner_explicit",
+          "amount": 7000
+        },
+        "XOF": {
+          "kind": "owner_explicit",
+          "amount": 7000
+        },
+        "EUR": {
+          "kind": "fixed_peg_reference",
+          "cfaPerUnit": 655.957,
+          "rounding": "nearest_cent",
+          "source": "https://www.bceao.int/",
+          "asOf": "2026-10-23",
+          "checkoutConversion": false
+        },
+        "USD": {
+          "kind": "indicative_reference",
+          "cfaPerUnit": 583.75,
+          "referenceBuy": 580.25,
+          "referenceSell": 587.25,
+          "rounding": "nearest_cent",
+          "source": "https://www.bceao.int/index.php/fr",
+          "asOf": "2026-10-22",
+          "checkoutConversion": false
+        }
+      }
+    }
+  ]
+}
