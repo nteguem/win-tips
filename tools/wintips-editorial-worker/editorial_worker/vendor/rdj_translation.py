@@ -22,7 +22,7 @@ import urllib.request
 
 
 PROMPT_VERSION = "fr-en-anchors-v8-sports-name-guidance"
-GUARD_VERSION = "ordered-anchors-v35-wintips-individual-nationality"
+GUARD_VERSION = "ordered-anchors-v36-wintips-signed-point-gaps"
 TOKEN_RE = re.compile(r"ZXQ[A-Z]+QXZ")
 NUMBER_RE = re.compile(r"(?<!\w)[+-]?\s*\d+(?:[.,:]\d+)*(?:\s*[%€$])?(?!\w)")
 FRENCH_WORDS = re.compile(r"\b(?:avec|dans|leurs|leur|pour|cette|ces|étaient|était|mais|donc|ainsi|lors|depuis|toujours|également|notamment|cependant|aujourd'hui)\b", re.I)
@@ -552,6 +552,11 @@ SEMANTIC_EQUIVALENTS += (
 BASKETBALL_LEXICON = {'Ouest': 'West', 'Est': 'East', 'Play-offs': 'playoffs', 'Game': 'game'}
 TERMINOLOGY_RULES += (("lost_composure", r"\bperdre\s+(?:(?:totalement|complètement)\s+)?les pédales\b",
     "Perdre les pédales is losing composure/control in sport, never losing physical pedals."),)
+TERMINOLOGY_RULES += (("fronted_participial_capability",r"^(?:D['’]abord\s+)?capables?\s+de\b",
+    "The first comma-delimited source clause is an initial participial capability clause. Keep it as an initial English "
+    "participial clause (Initially able to ...), before introducing the main team/player subject after the comma. "
+    "Do not promote that later main subject to the beginning. Preserve the initial opponents, scores and time expressions "
+    "before the main subject, exactly in the French fact order."),)
 # These are French function words, discourse adverbs and inflected descriptive
 # adjectives, not entities merely because sentence position capitalizes them.
 # Explicit fixture/horse/player names are protected earlier at higher priority;
@@ -656,6 +661,8 @@ def _protect(source: str, fixture: dict) -> tuple[str, list[dict]]:
     # An explicit two-sided quantity can be expressed with "both" in English.
     # This does not make "two goals" or any other bare quantity optional.
     if sport in {'football', 'basketball', 'foot', 'soccer', 'basket'}:
+        for lead in re.finditer(r"\b(\d{1,3})\s+points?\s+d['’]avance\s+sur\b",source,re.I):
+            add(lead.start(),lead.end(),lead[1]+(' point' if int(lead[1])==1 else ' points')+' ahead','standing_gap',6)
         for degree in re.finditer(r'\b(?:petit|léger|faible)\s+avantage\b',source,re.I):
             add(degree.start(),degree.end(),'slight advantage','semantic',6)
         # The capitalised singular nationality denotes an individual athlete
@@ -956,7 +963,7 @@ def _grammar_hint(anchor: dict) -> str:
     if kind == 'delay_destination':
         return 'same elapsed years later and same destination; never earlier or another team'
     if kind == 'standing_gap':
-        return 'same point deficit behind the stated opponent; never points ahead'
+        return 'same signed point gap relative to the stated opponent; ahead and behind cannot interchange'
     if kind == "quarter_periods":
         return "explicit count of basketball periods, never a mathematical fraction"
     if kind == "name":
@@ -1254,9 +1261,12 @@ def _anchor_candidates(raw: str, anchor: dict, normalized_raw):
     if kind == 'standing_gap':
         value=int(target.split()[0]);unit='point' if value==1 else 'points'
         for count in (str(value),_cardinal_word(value)):
-            for variant in (count+' '+unit+' behind',count+' '+unit+' adrift of',count+'-point deficit to'):
+            variants=((count+' '+unit+' behind',count+' '+unit+' adrift of',count+'-point deficit to')
+                if target.endswith(' behind') else
+                (count+' '+unit+' ahead of',count+'-point lead over',count+'-point advantage over'))
+            for variant in variants:
                 for start,end in _literal_spans(raw,variant,True):
-                    add(start,end,'equivalent','same_explicit_standings_point_deficit',raw[start:end])
+                    add(start,end,'equivalent','same_explicit_signed_standings_point_gap',raw[start:end])
         return tuple(candidates.values())
     if kind in {"result_score", "result_score_final"}:
         match=re.fullmatch(r"(a )?(\d{1,3})-(\d{1,3}) (win|defeat)(?: in the final)?",target,re.I)

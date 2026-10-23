@@ -122,6 +122,24 @@ class StatisticGrammarTests(unittest.TestCase):
                     good.replace('first team','team'),good.replace('outside the relegation zone','not at risk of relegation'),good.replace('5 points','6 points')]:
             self.check(source,bad,False,sport='football')
 
+    def test_standings_point_lead_is_not_numerical_player_superiority(self):
+        source='Ils ont 3 points d’avance sur la zone rouge.'
+        for good in ['They are 3 points ahead of the relegation zone.','They have a 3-point lead over the relegation zone.']:
+            self.check(source,good,sport='football')
+        for bad in ['They have 3 points of numerical superiority over the relegation zone.',
+                    'They are 3 points behind the relegation zone.','They are 4 points ahead of the relegation zone.']:
+            self.check(source,bad,False,sport='football')
+
+    def test_initial_participial_capability_prompt_keeps_source_and_main_subject_position(self):
+        source="D'abord capables de faire tomber Rodez (3-4), les joueurs de l'ASNL ont ensuite gagné."
+        fixture=_fixture(self.item('football'));masked,anchors=guard._protect(source,fixture)
+        prompt=_prompt(masked,anchors)
+        self.assertIn('initial participial capability clause',prompt)
+        self.assertIn('Do not promote that later main subject',prompt)
+        self.assertEqual(prompt.rpartition('\n\n\n')[2],source)
+        profile=guard._terminology_profile('Les joueurs sont capables de gagner.')
+        self.assertFalse(profile and any(r['id']=='fronted_participial_capability' for r in profile['entries']))
+
     def test_season_opener_cannot_become_a_general_statement_this_season(self):
         source='Le Magic a manqué son entrée en matière cette saison.'
         self.check(source,'The Magic failed in their season opener.')
