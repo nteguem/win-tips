@@ -3,6 +3,11 @@ const GooglePlayTransaction = require('../api/models/user/GooglePlayTransaction'
 const Subscription = require('../api/models/common/Subscription');
 const googlePlayService = require('../api/services/user/GooglePlayService');
 
+function googleErrorSummary(error) {
+  const status = Number(error?.response?.status || error?.status || error?.code);
+  return { status: Number.isInteger(status) && status >= 100 && status <= 599 ? status : null };
+}
+
 // Job pour synchroniser les abonnements Google Play actifs
 // S'exécute toutes les 6 heures
 const syncGooglePlaySubscriptions = cron.schedule('0 */6 * * *', async () => {
@@ -12,7 +17,10 @@ const syncGooglePlaySubscriptions = cron.schedule('0 */6 * * *', async () => {
     // Récupérer toutes les transactions Google Play actives
     const activeTransactions = await GooglePlayTransaction.find({
       status: { $in: ['ACTIVE', 'CANCELED'] },
-      expiryTime: { $gt: new Date() }
+      expiryTime: { $gt: new Date() },
+      // Missing type is the historical subscription representation. Explicit
+      // one-time purchases must never be sent to subscriptionsv2.get.
+      $or: [{ purchaseType: 'SUBSCRIPTION' }, { purchaseType: { $exists: false } }]
     });
 
     console.log(`[CRON] ${activeTransactions.length} transactions à synchroniser`);
@@ -25,7 +33,7 @@ const syncGooglePlaySubscriptions = cron.schedule('0 */6 * * *', async () => {
         await googlePlayService.syncSubscription(transaction.purchaseToken);
         successCount++;
       } catch (error) {
-        console.error(`[CRON] Erreur sync ${transaction.purchaseToken}:`, error.message);
+        console.error('[CRON] Erreur sync Google Play:', googleErrorSummary(error));
         errorCount++;
       }
     }
@@ -33,7 +41,7 @@ const syncGooglePlaySubscriptions = cron.schedule('0 */6 * * *', async () => {
     console.log(`[CRON] Synchronisation terminée - Succès: ${successCount}, Erreurs: ${errorCount}`);
 
   } catch (error) {
-    console.error('[CRON] Erreur globale synchronisation Google Play:', error);
+    console.error('[CRON] Erreur globale synchronisation Google Play:', googleErrorSummary(error));
   }
 }, {
   scheduled: false // Ne pas démarrer automatiquement
@@ -80,7 +88,7 @@ const cleanupExpiredSubscriptions = cron.schedule('0 2 * * *', async () => {
     console.log(`[CRON] ${expiredGooglePlay.length} transactions Google Play expirées`);
 
   } catch (error) {
-    console.error('[CRON] Erreur nettoyage abonnements:', error);
+    console.error('[CRON] Erreur nettoyage abonnements:', googleErrorSummary(error));
   }
 }, {
   scheduled: false
@@ -117,14 +125,14 @@ const checkUnacknowledgedPurchases = cron.schedule('0 * * * *', async () => {
         } else {
           await googlePlayService.acknowledgePurchase(transaction.purchaseToken);
         }
-        console.log(`[CRON] Acknowledged: ${transaction.purchaseToken}`);
+        console.log('[CRON] Achat acknowledged');
       } catch (error) {
-        console.error(`[CRON] Erreur acknowledge ${transaction.purchaseToken}:`, error.message);
+        console.error('[CRON] Erreur acknowledge Google Play:', googleErrorSummary(error));
       }
     }
 
   } catch (error) {
-    console.error('[CRON] Erreur vérification acknowledgements:', error);
+    console.error('[CRON] Erreur vérification acknowledgements:', googleErrorSummary(error));
   }
 }, {
   scheduled: false

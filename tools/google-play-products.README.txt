@@ -1,0 +1,63 @@
+WinTips — préparation de deux produits Google Play ponctuels
+
+Application verrouillée : com.wintips.application.
+Produits autorisés : com.wintips.essentiel_7days_v1 (7 jours, base US 10 USD)
+et com.wintips.premium_14days_v1 (14 jours, base US 21 USD).
+Option BUY "buy", legacyCompatible=true, multiQuantityEnabled=false.
+Les descriptions FR/EN précisent l'absence de renouvellement automatique.
+
+Le mode par défaut prépare un devis, sans créer/modifier aucun produit :
+  node tools/google-play-products.cjs --prepare --out /chemin/prive/devis-neuf.json
+
+Il lit les produits modernes et calcule les prix avec POST convertRegionPrices,
+une opération de calcul non persistante. Il reprend les pays disponibles du
+produit historique 7 jours, compare les ensembles de pays des quatre anciens
+SKU et protège leurs contenus/états par empreintes. Les nouvelles régions
+futures ne sont pas automatiquement ajoutées. La version des régions provient
+de Google. Le prix US est exactement 10/21 USD ; les autres prix restent les
+propositions Google, avec un bilan d'unicité par devise et leurs régions.
+Le prix de départ du calcul exclut la taxe ; les montants régionaux retournés
+par Google incluent la taxe. Le devis n'est pas une preuve de paiement réel.
+
+Si Google refuse le calcul (403), le programme échoue sans construire de plan
+créable et sans utiliser un taux ou des prix inventés. Il faut revoir les
+permissions ou obtenir un devis officiel via l'interface autorisée avant de
+choisir le tarif EUR. Un éventuel prix EUR uniforme nécessite une revue
+explicite supplémentaire ; il n'est pas appliqué silencieusement.
+
+Après revue ET autorisation explicite de création, seul ce mode crée des
+produits DRAFT, sans les activer et sans toucher une base de données :
+  node tools/google-play-products.cjs --create-drafts --plan-file /chemin/prive/devis-neuf.json --confirm-plan-hash EMPREINTE_EXACTE --confirm-google-product-creation --out /chemin/prive/recu-neuf.json
+
+Le reçu est réservé exclusivement avant toute authentification ou mutation.
+Un fichier de sortie existant fait échouer l'opération sans écriture Google.
+Un produit cible déjà présent et identique n'est pas réécrit. Tout conflit de
+contenu ou changement d'un ancien SKU fait échouer la reprise. Une réponse
+perdue après création se récupère par lecture exacte, sans deuxième produit.
+En cas d'échec partiel, conserver le reçu et relancer le même plan approuvé ;
+ne pas modifier le SKU en conflit et ne pas activer automatiquement le premier.
+
+Limite de concurrence : l'API de création est un PATCH allowMissing, sans
+précondition CAS documentée pour une création seule. Exécuter une seule
+opération d'administration à la fois pour ces deux identifiants. Le contrôle
+GET avant/après et les empreintes ferment les conflits observables, mais ne
+constituent pas une transaction multi-produit Google ni un verrou empêchant
+un administrateur externe de créer/modifier le même SKU pendant la requête.
+
+Le programme lit uniquement GOOGLE_PLAY_PACKAGE_NAME et le chemin de clé
+GOOGLE_SERVICE_ACCOUNT_KEY_PATH depuis la configuration existante. Les valeurs
+privées et les réponses d'erreur brutes ne sont jamais écrites dans les reçus.
+Les montants et métadonnées des produits ne sont pas des secrets clients.
+
+L'activation des options et la liaison aux deux documents Package sont des
+étapes séparées, non implémentées par une commande implicite de ce programme.
+Les requêtes d'activation sont incluses dans le devis pour revue seulement.
+Vérifier les prix Google réels et la cohérence du catalogue BD avant activation,
+notamment EUR/USD et les pays Mobile Money qui partagent pricing.USD.
+Les tarifs CFA et les quatre anciens SKU ne sont pas changés par cet outil.
+
+Références primaires :
+https://developers.google.com/android-publisher/api-ref/rest/v3/monetization/convertRegionPrices
+https://developers.google.com/android-publisher/api-ref/rest/v3/monetization.onetimeproducts
+https://developers.google.com/android-publisher/api-ref/rest/v3/monetization.onetimeproducts/patch
+https://developers.google.com/android-publisher/api-ref/rest/v3/monetization.onetimeproducts.purchaseOptions/batchUpdateStates

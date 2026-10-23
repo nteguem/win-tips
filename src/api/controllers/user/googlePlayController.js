@@ -106,8 +106,6 @@ exports.getSubscriptionStatus = catchAsync(async (req, res, next) => {
 // ===== MODIFIÉ : Webhook RTDN - Recevoir les notifications de Google =====
 exports.handleRTDN = catchAsync(async (req, res, next) => {
   console.log('=== WEBHOOK REÇU ===');
-  console.log('Headers:', JSON.stringify(req.headers, null, 2));
-  console.log('Body complet:', JSON.stringify(req.body, null, 2));
   
   // Vérifier si c'est un test manuel ou Google
   if (!req.body || !req.body.message) {
@@ -129,7 +127,6 @@ exports.handleRTDN = catchAsync(async (req, res, next) => {
   try {
     // Décoder le message base64
     const decodedData = Buffer.from(message.data, 'base64').toString('utf-8');
-    console.log('Data décodée:', decodedData);
     
     // Vérifier si c'est un test simple (pas JSON)
     if (decodedData === 'test' || decodedData.length < 10) {
@@ -142,7 +139,6 @@ exports.handleRTDN = catchAsync(async (req, res, next) => {
     }
     
     const notification = JSON.parse(decodedData);
-    console.log('Notification parsée:', JSON.stringify(notification, null, 2));
 
     // Vérifier si c'est une notification de test Google
     if (notification.testNotification) {
@@ -167,7 +163,7 @@ exports.handleRTDN = catchAsync(async (req, res, next) => {
     res.status(200).send();
 
   } catch (error) {
-    console.error('❌ Erreur traitement RTDN:', error.message);
+    console.error('❌ Erreur traitement RTDN');
     console.log('===================');
     // Répondre 200 même en cas d'erreur pour éviter les renvois
     res.status(200).send();

@@ -5,6 +5,16 @@ const Package = require('../../models/common/Package');
 const { managedGooglePrice } = require('../common/packagePricing');
 const { createManagedGoogleActivation, assertBinding } = require('../common/managedGoogleActivation');
 
+// Provider errors may carry the purchase token in their URL/body. Log only
+// bounded status codes, never the error object, message or request metadata.
+function googleErrorSummary(error) {
+  const status = Number(error?.response?.status || error?.status || error?.code);
+  const known = ['PERMISSION_DENIED', 'UNAUTHENTICATED', 'INVALID_ARGUMENT', 'NOT_FOUND', 'RESOURCE_EXHAUSTED', 'INTERNAL', 'UNAVAILABLE', 'DEADLINE_EXCEEDED', 'FAILED_PRECONDITION'];
+  const providerCode = error?.response?.data?.error?.status;
+  return { status: Number.isInteger(status) && status >= 100 && status <= 599 ? status : null,
+    code: known.includes(providerCode) ? providerCode : null };
+}
+
 class GooglePlayService {
   constructor() {
     this.androidPublisher = null;
@@ -31,7 +41,7 @@ class GooglePlayService {
       if (!packageItem) throw new Error('Package non trouvé');
       if (packageItem.googleProductId !== productId) throw new Error('Produit Google Play incompatible avec ce forfait');
       const configuredPrice = managedGooglePrice(packageItem, productId, requestedCurrency);
-      console.log('[GooglePlay ONE-TIME] Début validation:', { purchaseToken, productId, packageId });
+      console.log('[GooglePlay ONE-TIME] Début validation:', { productId, packageId });
       
       // 1. Vérifier avec l'API Google (API products v1, pas v2)
       const { data } = await this.androidPublisher.purchases.products.get({
@@ -215,7 +225,7 @@ try {
   }
 } catch (consumeError) {
   // Log l'erreur mais ne bloque pas le retour (transaction déjà créée)
-  console.error('[GooglePlay ONE-TIME] ⚠️ Erreur consume (non bloquant):', consumeError);
+  console.error('[GooglePlay ONE-TIME] ⚠️ Erreur consume (non bloquant):', googleErrorSummary(consumeError));
 }
 
 // 12. Retourner le résultat avec populate
@@ -231,7 +241,7 @@ return {
 };
 
     } catch (error) {
-      console.error('[GooglePlay ONE-TIME] Erreur validation complète:', error);
+      console.error('[GooglePlay ONE-TIME] Erreur validation complète:', googleErrorSummary(error));
       
       let errorMessage = 'Erreur de validation du produit: ';
       if (error.response && error.response.data) {
@@ -262,7 +272,7 @@ return {
 
       return true;
     } catch (error) {
-      console.error('Erreur acknowledge:', error);
+      console.error('Erreur acknowledge:', googleErrorSummary(error));
       return false;
     }
   }
@@ -277,7 +287,7 @@ return {
         token: purchaseToken
       });
 
-      console.log('[GooglePlay ONE-TIME] Acknowledge réussi:', purchaseToken);
+      console.log('[GooglePlay ONE-TIME] Acknowledge réussi');
 
       // 2. ✅ CRITIQUE : Consume (permet rachats multiples)
       await this.androidPublisher.purchases.products.consume({
@@ -286,7 +296,7 @@ return {
         token: purchaseToken
       });
 
-      console.log('[GooglePlay ONE-TIME] Consume réussi - Rachats autorisés:', purchaseToken);
+      console.log('[GooglePlay ONE-TIME] Consume réussi - Rachats autorisés');
 
       // 3. Mettre à jour la BDD
       await GooglePlayTransaction.findOneAndUpdate(
@@ -299,7 +309,7 @@ return {
 
       return true;
     } catch (error) {
-      console.error('[GooglePlay ONE-TIME] Erreur acknowledge/consume:', error);
+      console.error('[GooglePlay ONE-TIME] Erreur acknowledge/consume:', googleErrorSummary(error));
       return false;
     }
   }
@@ -313,7 +323,7 @@ return {
         token: purchaseToken
       });
 
-      console.log('[GooglePlay ONE-TIME] Consume réussi - Rachats autorisés:', purchaseToken);
+      console.log('[GooglePlay ONE-TIME] Consume réussi - Rachats autorisés');
 
       await GooglePlayTransaction.findOneAndUpdate(
         { purchaseToken },
@@ -322,7 +332,7 @@ return {
 
       return true;
     } catch (error) {
-      console.error('[GooglePlay ONE-TIME] Erreur consume:', error);
+      console.error('[GooglePlay ONE-TIME] Erreur consume:', googleErrorSummary(error));
       return false;
     }
   }
@@ -335,11 +345,11 @@ return {
         const { purchaseToken, subscriptionId } = notification.subscriptionNotification;
         const notificationType = notification.subscriptionNotification.notificationType;
 
-        console.log(`[NOTIFICATION SUB] Type: ${notificationType}, Token: ${purchaseToken.substring(0, 20)}...`);
+        console.log(`[NOTIFICATION SUB] Type: ${notificationType}`);
 
         const googleTx = await GooglePlayTransaction.findOne({ purchaseToken });
         if (!googleTx) {
-          console.log('Transaction non trouvée:', purchaseToken);
+          console.log('Transaction non trouvée');
           return;
         }
 
@@ -387,7 +397,7 @@ return {
       }
 
     } catch (error) {
-      console.error('Erreur traitement notification:', error);
+      console.error('Erreur traitement notification:', googleErrorSummary(error));
     }
   }
 
@@ -397,11 +407,11 @@ return {
       const { purchaseToken } = notification.oneTimeProductNotification;
       const notificationType = notification.oneTimeProductNotification.notificationType;
 
-      console.log(`[NOTIFICATION ONE-TIME] Type: ${notificationType}, Token: ${purchaseToken.substring(0, 20)}...`);
+      console.log(`[NOTIFICATION ONE-TIME] Type: ${notificationType}`);
 
       const googleTx = await GooglePlayTransaction.findOne({ purchaseToken });
       if (!googleTx) {
-        console.log('[NOTIFICATION ONE-TIME] Transaction non trouvée:', purchaseToken);
+        console.log('[NOTIFICATION ONE-TIME] Transaction non trouvée');
         return;
       }
 
@@ -431,21 +441,21 @@ return {
       console.log('[NOTIFICATION ONE-TIME] Traitement terminé');
 
     } catch (error) {
-      console.error('[NOTIFICATION ONE-TIME] Erreur:', error);
+      console.error('[NOTIFICATION ONE-TIME] Erreur:', googleErrorSummary(error));
     }
   }
 
   // ===== EXISTANT : Méthodes pour abonnements (inchangées) =====
   async handleRecovery(googleTx) {
     try {
-      console.log('[RECOVERY] Début récupération pour:', googleTx.purchaseToken);
+      console.log('[RECOVERY] Début récupération');
       
       const { data } = await this.androidPublisher.purchases.subscriptionsv2.get({
         packageName: process.env.GOOGLE_PLAY_PACKAGE_NAME,
         token: googleTx.purchaseToken
       });
 
-      console.log('[RECOVERY] Réponse API Google:', JSON.stringify(data, null, 2));
+      console.log('[RECOVERY] Statut API Google:', data.subscriptionState);
 
       let newExpiryTime;
       
@@ -484,21 +494,21 @@ return {
       console.log('[RECOVERY] Abonnement récupéré avec succès');
       
     } catch (error) {
-      console.error('[RECOVERY] Erreur handleRecovery:', error);
+      console.error('[RECOVERY] Erreur handleRecovery:', googleErrorSummary(error));
       throw error;
     }
   }
 
   async handleRenewal(googleTx) {
     try {
-      console.log('[RENEWAL] Début handleRenewal pour:', googleTx.purchaseToken);
+      console.log('[RENEWAL] Début handleRenewal');
       
       const { data } = await this.androidPublisher.purchases.subscriptionsv2.get({
         packageName: process.env.GOOGLE_PLAY_PACKAGE_NAME,
         token: googleTx.purchaseToken
       });
 
-      console.log('[RENEWAL] Réponse API Google:', JSON.stringify(data, null, 2));
+      console.log('[RENEWAL] Statut API Google:', data.subscriptionState);
 
       let newExpiryTime;
       
@@ -555,14 +565,14 @@ return {
       console.log('[RENEWAL] Renouvellement traité avec succès');
       
     } catch (error) {
-      console.error('[RENEWAL] Erreur handleRenewal:', error);
+      console.error('[RENEWAL] Erreur handleRenewal:', googleErrorSummary(error));
       throw error;
     }
   }
 
   async handleCancellation(googleTx) {
     try {
-      console.log('[CANCELLATION] Début annulation pour:', googleTx.purchaseToken);
+      console.log('[CANCELLATION] Début annulation');
       
       googleTx.status = 'CANCELED';
       await googleTx.save();
@@ -570,14 +580,14 @@ return {
       console.log('[CANCELLATION] Annulation traitée - abonnement reste actif jusqu\'à expiration');
       
     } catch (error) {
-      console.error('[CANCELLATION] Erreur handleCancellation:', error);
+      console.error('[CANCELLATION] Erreur handleCancellation:', googleErrorSummary(error));
       throw error;
     }
   }
 
   async handleOnHold(googleTx) {
     try {
-      console.log('[ON_HOLD] Début suspension pour:', googleTx.purchaseToken);
+      console.log('[ON_HOLD] Début suspension');
       
       googleTx.status = 'ON_HOLD';
       await googleTx.save();
@@ -590,14 +600,14 @@ return {
       console.log('[ON_HOLD] Suspension traitée - accès suspendu');
       
     } catch (error) {
-      console.error('[ON_HOLD] Erreur handleOnHold:', error);
+      console.error('[ON_HOLD] Erreur handleOnHold:', googleErrorSummary(error));
       throw error;
     }
   }
 
   async handleExpiration(googleTx) {
     try {
-      console.log('[EXPIRATION] Début expiration pour:', googleTx.purchaseToken);
+      console.log('[EXPIRATION] Début expiration');
       
       googleTx.status = 'EXPIRED';
       await googleTx.save();
@@ -610,7 +620,7 @@ return {
       console.log('[EXPIRATION] Expiration traitée');
       
     } catch (error) {
-      console.error('[EXPIRATION] Erreur handleExpiration:', error);
+      console.error('[EXPIRATION] Erreur handleExpiration:', googleErrorSummary(error));
       throw error;
     }
   }
@@ -630,6 +640,22 @@ return {
         };
       }
 
+      // A consumable has a server-owned fixed duration, not a subscription-v2
+      // state. Reading status must not contact the subscription API or extend it.
+      if (googleTx.purchaseType === 'ONE_TIME_PRODUCT') {
+        const sub = googleTx.subscription;
+        const now = Date.now();
+        const end = new Date(sub?.endDate).getTime();
+        const txEnd = new Date(googleTx.expiryTime).getTime();
+        const ownsSubscription = !!sub && String(sub.user?._id || sub.user) === String(userId);
+        const isActive = ownsSubscription &&
+          sub.status === 'active' && googleTx.status === 'ACTIVE' &&
+          Number.isFinite(end) && Number.isFinite(txEnd) && Math.min(end, txEnd) > now;
+        return { hasActiveSubscription: isActive, subscription: ownsSubscription ? sub : null,
+          expiryDate: ownsSubscription && Number.isFinite(end) && Number.isFinite(txEnd) ? new Date(Math.min(end, txEnd)) : null,
+          autoRenewing: false };
+      }
+
       const { data } = await this.androidPublisher.purchases.subscriptionsv2.get({
         packageName: process.env.GOOGLE_PLAY_PACKAGE_NAME,
         token: googleTx.purchaseToken
@@ -645,7 +671,7 @@ return {
       };
 
     } catch (error) {
-      console.error('Erreur vérification statut:', error);
+      console.error('Erreur vérification statut:', googleErrorSummary(error));
       return {
         hasActiveSubscription: false,
         error: error.message
@@ -655,13 +681,15 @@ return {
 
   async syncSubscription(purchaseToken) {
     try {
+      const googleTx = await GooglePlayTransaction.findOne({ purchaseToken });
+      if (!googleTx) return;
+      // Also guard the manual sync route: no subscription RPC or write for a
+      // fixed-duration one-time purchase. Entitlement queries enforce endDate.
+      if (googleTx.purchaseType === 'ONE_TIME_PRODUCT') return googleTx;
       const { data } = await this.androidPublisher.purchases.subscriptionsv2.get({
         packageName: process.env.GOOGLE_PLAY_PACKAGE_NAME,
         token: purchaseToken
       });
-
-      const googleTx = await GooglePlayTransaction.findOne({ purchaseToken });
-      if (!googleTx) return;
 
       if (data.lineItems && data.lineItems[0] && data.lineItems[0].expiryTime) {
         googleTx.expiryTime = new Date(data.lineItems[0].expiryTime);
@@ -694,7 +722,7 @@ return {
 
       return googleTx;
     } catch (error) {
-      console.error('Erreur sync:', error);
+      console.error('Erreur sync:', googleErrorSummary(error));
       throw error;
     }
   }
