@@ -26,6 +26,28 @@ def write_json(path, value):
     temporary.replace(path)
 
 
+def ticket_reservations(configured, edition):
+    """Protected server state, never a local last-run guess or an input payload."""
+    state = configured.get('ticketState') if configured else None
+    if not isinstance(state, dict) or state.get('ready') is not True or state.get('editionDate') != edition or state.get('version') != 'rdj-ticket-v1':
+        raise ValueError('authoritative_ticket_reservations_unavailable')
+    def entry(value):
+        if not isinstance(value, dict) or not re.fullmatch(r'[a-f0-9]{64}', value.get('fingerprint', '')) or not re.fullmatch(r'\d+', value.get('sourceId', '')):
+            raise ValueError('authoritative_ticket_reservations_invalid')
+        url = source_url(value.get('sourceUrl', ''))
+        match = COMBI_PATH.fullmatch(urlsplit(url).path)
+        if match is None or match['id'] != value['sourceId']:
+            raise ValueError('authoritative_ticket_reservations_invalid')
+        return {key: value[key] for key in ('fingerprint', 'sourceId', 'sourceUrl')}
+    duo = entry(state['duo']) if state.get('duo') is not None else None
+    if not isinstance(state.get('goals'), list) or len(state['goals']) > 50:
+        raise ValueError('authoritative_ticket_reservations_invalid')
+    goals = [entry(row) for row in state['goals']]
+    if duo and any(row['fingerprint'] == duo['fingerprint'] for row in goals):
+        raise ValueError('authoritative_ticket_reservations_conflict')
+    return duo, {row['fingerprint'] for row in goals}
+
+
 @contextmanager
 def single_run(directory):
     path = Path(directory)
@@ -198,11 +220,25 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
     with single_run(output), ExitStack() as resources:
         collected = []
         seen_duo_tickets = set()
+        pinned_duo, seen_goal_tickets, ticket_state_error = None, set(), None
+        if configured is not None and any(source in {'rdj_football_duo', 'rdj_football_goals'} for source in selected):
+            try:
+                pinned_duo, seen_goal_tickets = ticket_reservations(configured, edition)
+                if pinned_duo:
+                    seen_duo_tickets.add(pinned_duo['fingerprint'])
+            except (ValueError, KeyError, TypeError) as exc:
+                ticket_state_error = safe_reason(exc)
         # Finish the bounded public HTTP collection BEFORE model inference.
         # Translation time must not consume the fetcher's four-minute budget.
         for source in selected:
             try:
-                extra = {'exclude_ticket_fingerprints': seen_duo_tickets} if source == 'rdj_football_goals' else {}
+                extra = {}
+                if source in {'rdj_football_duo', 'rdj_football_goals'}:
+                    if ticket_state_error:
+                        raise ValueError(ticket_state_error)
+                    extra = {'exclude_ticket_fingerprints': seen_duo_tickets if source == 'rdj_football_goals' else seen_goal_tickets}
+                    if source == 'rdj_football_duo' and pinned_duo:
+                        extra['pinned_ticket'] = pinned_duo
                 result = collect(source, edition, fetched, now=instant, lead=args.minimum_lead_minutes, exclude_ids=seen_free, **extra)
                 payload = {"source": source, "editionDate": edition, "items": result["items"]}
                 for item in payload["items"]:

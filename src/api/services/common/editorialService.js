@@ -48,7 +48,10 @@ function createEditorialService({ repository, clock = () => new Date(), importEn
 
     async workerConfig() {
       const categories = await repository.categories();
-      return { date: editionDateFor(clock()), importEnabled: !!importEnabled(), notificationsEnabled: !!(notifications && notifications.enabled()), requireEnglish: !!requireEnglish(),
+      const editionDate = editionDateFor(clock());
+      const ticketState = repository.ticketState ? await repository.ticketState(editionDate) : undefined;
+      return { date: editionDate, importEnabled: !!importEnabled(), notificationsEnabled: !!(notifications && notifications.enabled()), requireEnglish: !!requireEnglish(),
+        ...(ticketState ? { ticketState } : {}),
         sources: SOURCES.map(s => ({ ...s, categoryIds: categories.filter(c => c.editorialSource === s.key && sourceMatchesCategory(c)).map(c => id(c)) })).filter(s => s.categoryIds.length) };
     },
 

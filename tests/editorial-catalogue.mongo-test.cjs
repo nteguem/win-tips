@@ -259,8 +259,11 @@ test('Duo partial unique index keeps the first identity across restarts and conc
   await provision(mongoose.connection.db, { apply: true, intent: true });
   const cat = await Category.findOne({ editorialSource: 'rdj_football_duo' });
   const repo = createEditorialRepository({ Category, EditorialItem, subscriptionService, accessGateService: {} });
+  const payload = sourceId => ({ sourceId, sourceUrl: `https://www.ruedesjoueurs.com/paris-sportifs/sport-news/news-pmu-sport/${sourceId}-combine-23-10-2026.html`, kind: 'combine', legs: [1,2].map(n => ({
+    startsAtUtc: '2026-10-23T18:00:00Z', teams: { home: { name: 'TestHome' + n }, away: { name: 'TestAway' + n } }, selection: { label: { fr: 'Les deux équipes marquent' }, betType: 'btts' },
+  })) });
   const op = sourceId => ({ updateOne: { filter: { categoryId: cat._id, source: 'rdj_football_duo', editionDate: '2026-10-23', sourceId },
-    update: { $set: { kind: 'combine', payload: { testOnly: true }, contentHash: 'test', isPublished: true } }, upsert: true } });
+    update: { $set: { kind: 'combine', payload: payload(sourceId), contentHash: 'test', isPublished: true } }, upsert: true } });
   await repo.upsertBatch([op('111')]); await repo.upsertBatch([op('111')]);
   await assert.rejects(repo.upsertBatch([op('222')]), { statusCode: 409 });
   assert.equal(await EditorialItem.countDocuments({ categoryId: cat._id }), 1);

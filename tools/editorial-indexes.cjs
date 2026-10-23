@@ -8,6 +8,11 @@ const SPECS = [
 ];
 const COLLECTIONS = {
   [COLLECTION]: SPECS,
+  // This one per-edition document serializes Duo/Goals reservations in the
+  // same transaction as their items. Never create it from a request/job.
+  editorialticketstates: [
+    { key: { editionDate: 1 }, name: 'editorial_ticket_edition_unique', unique: true },
+  ],
   editorialnotifications: [
     { key: { appId: 1, categoryId: 1, source: 1, editionDate: 1 }, name: 'editorial_notification_identity_unique', unique: true },
     { key: { status: 1, nextAttemptAt: 1, leaseUntil: 1 }, name: 'editorial_notification_pending' },

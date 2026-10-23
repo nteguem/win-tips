@@ -195,6 +195,23 @@ sources inversées. L'empreinte des événements, horaires et sélections exclut
 Combiné Buts une copie du même ticket, même sous un autre article. Si seul Buts
 est actif, aucun Duo artificiel ne le prive de contenu.
 
+La priorité reste stable entre les passages horaires : GET config fournit
+ticketState (version rdj-ticket-v1, édition, Duo publié et compositions Buts).
+Le worker relit directement l'article du Duo déjà publié, vérifie sa composition,
+et ne le remplace jamais par un candidat arrivé plus tard. Une source modifiée,
+absente ou un registre indisponible bloque le ticket concerné sans inventer de
+remplacement. Buts exclut aussi le Duo persistant lorsque seul Buts est collecté ;
+un nouveau Duo exclut les compositions déjà publiées dans Buts.
+
+L'API protège les deux sens dans Mongo, indépendamment du worker : le document
+editorialticketstates de l'édition sérialise les réservations et les écritures de
+contenu dans une même transaction. Les anciennes lignes sont relues sans être
+réécrites ; un historique contradictoire exige une revue. L'index explicite
+editorial_ticket_edition_unique (editionDate unique) doit être préparé via
+tools/editorial-indexes.cjs avant activation. Aucun GET/import ne crée d'index.
+Une copie d'article, un changement de cote ou l'ordre des jambes ne peuvent pas
+contourner l'identité événements UTC + équipes + marchés + choix normalisés.
+
 rdj_football_goals : Combiné Buts
 Seulement deux ou trois jambes dont TOUS les marchés sont btts,
 over_under_goals ou team_goals, avec total explicitement publié par RDJ. Un ticket

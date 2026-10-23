@@ -279,6 +279,7 @@ test('the real DAL refuses writes until the exact unique identity index is expli
     '../../models/common/Category': {}, '../../models/common/EditorialItem': item,
     '../user/subscriptionService': {}, './accessGateService': {},
     './editorialSources': require('../src/api/services/common/editorialSources'),
+    './editorialTickets': require('../src/api/services/common/editorialTickets'),
   };
   const file = path.join(__dirname, '../src/api/services/common/editorialRepository.js');
   vm.runInNewContext(fs.readFileSync(file, 'utf8'), { module, require: key => { if (!(key in mocks)) throw new Error(key); return mocks[key]; } });
@@ -322,8 +323,8 @@ test('index CLI defaults to read-only, requires explicit intent and never drops 
   await assert.rejects(provision(db, { apply: true }), { code: 'INTENT_REQUIRED' }); assert.equal(mutations, 0);
   current = { editorialitems: [{ name: SPECS[0].name, key: { wrong: 1 } }] };
   await assert.rejects(provision(db, { apply: true, intent: true }), { code: 'INDEX_CONFLICT' }); assert.equal(mutations, 0);
-  current = {}; const applied = await provision(db, { apply: true, intent: true }); assert.equal(applied.ready, true); assert.equal(mutations, 9);
-  const repeat = await provision(db, { apply: true, intent: true }); assert.equal(repeat.readOnly, true); assert.equal(mutations, 9);
+  current = {}; const applied = await provision(db, { apply: true, intent: true }); assert.equal(applied.ready, true); assert.equal(mutations, 11);
+  const repeat = await provision(db, { apply: true, intent: true }); assert.equal(repeat.readOnly, true); assert.equal(mutations, 11);
 });
 
 test('late/started/unknown single and race imports fail before writes; every combine leg has a 30 minute lead', async () => {

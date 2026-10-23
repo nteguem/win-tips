@@ -616,22 +616,62 @@ def _slug_candidate(slug, name):
 
 
 def ticket_fingerprint(item):
-    """Same events/times/markets stay one ticket, even under another article ID."""
+    """Server-compatible, versioned composition; IDs/odds/prose are not identity."""
     legs = []
     for leg in item.get("legs", []):
         teams = [leg["teams"][side]["name"] for side in ("home", "away")]
         kind, english = describe_market(leg["selection"]["label"]["fr"], teams, "football")
-        # Duplicate prediction IDs cannot create another ticket for the same
-        # verified event: ordered participants and UTC start own its identity.
-        legs.append({"startsAtUtc": utc_text(iso(leg["startsAtUtc"])),
-            "participants": [team_key(name) for name in teams], "market": kind, "selection": rdj.folded(english)})
-    legs.sort(key=lambda n: (n["participants"], n["startsAtUtc"], n["selection"]))
-    return hashlib.sha256(json.dumps(legs, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+        checked(kind == leg['selection'].get('betType'), 'ticket_market_type_conflict')
+        def decimal(value):
+            whole, dot, fraction = value.replace(',', '.').partition('.')
+            return (whole.lstrip('0') or '0') + ('.' + fraction.rstrip('0') if fraction.rstrip('0') else '')
+        if kind == 'btts':
+            selection = [kind, 'no' if english.endswith('No') else 'yes']
+        elif kind == 'over_under_goals':
+            match = re.fullmatch(r'(Over|Under) (\d+(?:\.\d+)?) goals', english)
+            checked(match is not None, 'ticket_market_unverifiable')
+            selection = [kind, match[1].lower(), decimal(match[2])]
+        elif kind == 'team_goals':
+            match = re.fullmatch(r'(.+) (over|under) (\d+(?:\.\d+)?) goals', english)
+            checked(match is not None, 'ticket_market_unverifiable')
+            selection = [kind, team_key(match[1]), match[2], decimal(match[3])]
+        elif kind == 'match_winner':
+            checked(english.endswith(' to win'), 'ticket_market_unverifiable')
+            selection = [kind, team_key(english[:-7])]
+        elif kind == 'draw':
+            selection = [kind]
+        else:
+            raise ParseError('ticket_market_unverifiable')
+        moment = iso(leg['startsAtUtc'])
+        checked(moment.microsecond == 0, 'ticket_start_precision_invalid')
+        legs.append([utc_text(moment), *[team_key(name) for name in teams], *selection])
+    checked(2 <= len(legs) <= 3, 'ticket_composition_invalid')
+    checked(len({tuple(leg[:3]) for leg in legs}) == len(legs), 'ticket_duplicate_event')
+    packed = lambda value: json.dumps(value, ensure_ascii=False, separators=(',', ':'))
+    legs.sort(key=packed)
+    return hashlib.sha256(packed(['rdj-ticket-v1', legs]).encode()).hexdigest()
 
 
-def collect_combine(edition, fetcher, *, now, resolver, lead=30, limit=2, source="rdj_football_combine", exclude_ids=None, exclude_ticket_fingerprints=None):
+def collect_combine(edition, fetcher, *, now, resolver, lead=30, limit=2, source="rdj_football_combine", exclude_ids=None, exclude_ticket_fingerprints=None, pinned_ticket=None):
     links, issues, items = [], [], []
     roots = []
+    if pinned_ticket is not None:
+        # Published Duo identity survives index reorder, a later better ticket,
+        # disappearance from the listing, and a fresh worker state directory.
+        try:
+            checked(source == 'rdj_football_duo', 'pinned_ticket_source_conflict')
+            url = source_url(pinned_ticket['sourceUrl'])
+            match = COMBI_PATH.fullmatch(urlsplit(url).path)
+            checked(match is not None and match['id'] == pinned_ticket['sourceId'], 'pinned_ticket_identity_conflict')
+            item = parse_combine(fetcher.html(url), edition, fetcher, resolver, source=source)
+            checked(item['sourceId'] == pinned_ticket['sourceId'] and ticket_fingerprint(item) == pinned_ticket['fingerprint'], 'published_ticket_composition_changed')
+            checked(ticket_fingerprint(item) not in (exclude_ticket_fingerprints or set()), 'ticket_reserved_in_other_family')
+            checked(not any(leg['sourceId'] in (exclude_ids or set()) for leg in item['legs']), 'ticket_contains_free_fixture')
+            if eligible(item, edition, now, lead) and all(eligible(leg, edition, now, lead) for leg in item['legs']):
+                items.append(item)
+            return {'status': 'ready' if items else 'source_absent', 'items': items, 'issues': []}
+        except (ValueError, OSError, KeyError, TypeError) as exc:
+            return {'status': 'source_incomplete', 'items': [], 'issues': [{'code': 'published_duo_unavailable_or_changed', 'detail': str(exc)[:100]}]}
     # A current article in the news index does not imply that PMU's independent
     # current ticket is present there. Always inspect these three bounded lists;
     # the shared fetcher reuses each GET across all three compatible adapters.
@@ -648,7 +688,7 @@ def collect_combine(edition, fetcher, *, now, resolver, lead=30, limit=2, source
         try:
             item = parse_combine(fetcher.html(url), edition, fetcher, resolver, source=source)
             checked(not any(leg["sourceId"] in (exclude_ids or set()) for leg in item["legs"]), "ticket_contains_free_fixture")
-            checked(ticket_fingerprint(item) not in (exclude_ticket_fingerprints or set()), "ticket_already_selected_as_duo")
+            checked(ticket_fingerprint(item) not in (exclude_ticket_fingerprints or set()), "ticket_reserved_in_other_family")
             if eligible(item, edition, now, lead) and all(eligible(leg, edition, now, lead) for leg in item["legs"]):
                 items.append(item)
             if source != "rdj_football_duo" and len(items) >= limit:
@@ -683,7 +723,7 @@ def _dated_combine_links(root, edition):
     return links
 
 
-def collect(source, edition, fetcher, *, now, lead=30, exclude_ids=None, exclude_ticket_fingerprints=None):
+def collect(source, edition, fetcher, *, now, lead=30, exclude_ids=None, exclude_ticket_fingerprints=None, pinned_ticket=None):
     checked(source in SOURCES, "unknown_source")
     checked(date.fromisoformat(edition).isoformat() == edition and now.tzinfo is not None, "date_or_clock_invalid")
     resolver = VerifiedKickoffs(fetch_json=fetcher.json)
@@ -696,8 +736,10 @@ def collect(source, edition, fetcher, *, now, lead=30, exclude_ids=None, exclude
                 "rdj_multisport_analysis": collect_multisport}
     if source in {"rdj_football_duo", "rdj_football_goals"}:
         kwargs["source"] = source
-    if source == "rdj_football_goals":
+    if source in {"rdj_football_duo", "rdj_football_goals"}:
         kwargs["exclude_ticket_fingerprints"] = exclude_ticket_fingerprints
+    if source == 'rdj_football_duo':
+        kwargs['pinned_ticket'] = pinned_ticket
     try:
         return adapters[source](edition, fetcher, **kwargs)
     except (ValueError, OSError) as exc:
