@@ -55,7 +55,7 @@ class DeviceController {
     
     const device = await deviceService.linkDeviceToUser(deviceId, userId);
     
-    res.status(200).json(formatResponse(device));
+    res.status(200).json({ success: true, data: device });
   });
   
   unlinkDevice = catchAsync(async (req, res) => {
@@ -63,7 +63,7 @@ class DeviceController {
     
     const device = await deviceService.unlinkDeviceFromUser(deviceId);
     
-    res.status(200).json(formatResponse(device));
+    res.status(200).json({ success: true, data: device });
   });
   
   updateDevice = catchAsync(async (req, res) => {
@@ -72,7 +72,7 @@ class DeviceController {
     
     const device = await deviceService.updateDevice(deviceId, updateData);
     
-    res.status(200).json(formatResponse(device));
+    res.status(200).json({ success: true, data: device });
   });
   
   deactivateDevice = catchAsync(async (req, res) => {
@@ -80,7 +80,7 @@ class DeviceController {
     
     const device = await deviceService.deactivateDevice(deviceId);
     
-    res.status(200).json(formatResponse(device));
+    res.status(200).json({ success: true, data: device });
   });
 }
 
