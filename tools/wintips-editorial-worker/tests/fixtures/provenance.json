@@ -44,7 +44,7 @@
     "sourceUrl": "https://www.ruedesjoueurs.com/actualites/paris-sportifs/74744-combine-21-10-2026.html",
     "retrievedAtUtc": "2026-10-23T06:00:00.160028+00:00",
     "rawUtf8Sha256": "9e8bc8f8c7eeb43b28f23ecb0b32c0b3dafe9de612804703fd1c398a6962e00b",
-    "fixtureSha256": "ade2f44000bbc70a83d16641c59b556239eb6ac17360105d486342c349851938",
+    "fixtureSha256": "2c049242a69d77f818c2129b4772269b06927f0214a4c07704dec2b4a39eb493",
     "note": "Reduced source DOM; source text retained; not a full source document."
   },
   {
@@ -60,7 +60,7 @@
     "sourceUrl": "https://www.ruedesjoueurs.com/paris-sportifs/le-petit-journal/74762-le-petit-journal-du-parieur-jeudi-22-octobre-2026.html",
     "retrievedAtUtc": "2026-10-23T06:00:03.580261+00:00",
     "rawUtf8Sha256": "dfa728165ea261d18a7d30a58fe013ac5f7aa0b4cc3bca5b0ba46732e9ae7cc2",
-    "fixtureSha256": "1fda31be8245d1ae2e9d2f4afbf5bbcc5e443c2377313b76563226eed56c6822",
+    "fixtureSha256": "9e54a636ec4c8eafa78b377e5b39c62ffc120709a257b17112cef3e98241ac58",
     "note": "Reduced source DOM; source text retained; not a full source document."
   }
 ]

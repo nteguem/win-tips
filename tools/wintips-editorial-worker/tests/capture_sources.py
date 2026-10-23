@@ -87,9 +87,12 @@ def main():
             raise ValueError("Fixture source unavailable")
         body = "<!doctype html><html><head><meta charset=\"utf-8\"></head><body>" + reduced(key, fetched["body"]) + "</body></html>"
         filename = key + ".html"
-        (destination / filename).write_bytes(body.encode("utf-8"))
+        # Git fixtures are explicitly LF on every platform. Keep the full
+        # response's raw hash separate from this reduced canonical fragment.
+        fixture = body.replace("\r\n", "\n").replace("\r", "\n").encode("utf-8")
+        (destination / filename).write_bytes(fixture)
         manifest.append({"file": filename, "sourceUrl": url, "retrievedAtUtc": datetime.fromtimestamp(fetched["saved"], timezone.utc).isoformat(),
-                         "rawUtf8Sha256": fetched["sha256"], "fixtureSha256": hashlib.sha256(body.encode()).hexdigest(),
+                         "rawUtf8Sha256": fetched["sha256"], "fixtureSha256": hashlib.sha256(fixture).hexdigest(),
                          "note": "Reduced source DOM; source text retained; not a full source document."})
     (destination / "provenance.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), "utf-8")
     print(json.dumps({"fixturesCaptured": len(manifest), "fullArticlePrinted": False}))

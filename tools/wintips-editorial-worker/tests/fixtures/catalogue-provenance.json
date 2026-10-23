@@ -12,7 +12,7 @@
     "sourceUrl": "https://www.ruedesjoueurs.com/pronostic/vfb-stuttgart-m-gladbach-5881205.html",
     "retrievedAtUtc": "2026-10-23T14:26:58.009888Z",
     "rawUtf8Sha256": "f70bdb47efdb1edf9101ae980cdc5d45efaa5566e38969900df1cb4b458db628",
-    "fixtureSha256": "50b9177bcd4581dd74d54ca5ec14d368a906f928207a9921db0365ce9df9ada7",
+    "fixtureSha256": "c1b983a063a557afcc0f4f7f5e06503f833c27ebc7f28362e534ff16c76446a5",
     "note": "Reduced real DOM identity/clock/market; analysis replaced by explicit synthetic regression text. Full current source retained only in local QA cache."
   },
   {
@@ -20,7 +20,7 @@
     "sourceUrl": "https://www.ruedesjoueurs.com/pronostic/brest-nice-5802966.html",
     "retrievedAtUtc": "2026-10-23T14:27:01.843138Z",
     "rawUtf8Sha256": "e38311b6b520cd4c4bd1d6ae694d0c206f2acf4513541197eb211f148dfc423e",
-    "fixtureSha256": "c7d5a894ebfbc0bad4ee01aca9dc5a3b1f967134672bd903598b08606c11b6bd",
+    "fixtureSha256": "f4369309369688e6c4659f610475ee6ec85e533319e67bc0deea2ed1d50752c8",
     "note": "Reduced real DOM identity/clock/market; analysis replaced by explicit synthetic regression text. Full current source retained only in local QA cache."
   }
 ]

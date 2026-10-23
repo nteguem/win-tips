@@ -1,0 +1,2 @@
+# Fixture hashes bind exact bytes on Windows and Linux; preserve canonical LF.
+*.html text eol=lf
