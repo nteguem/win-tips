@@ -29,6 +29,7 @@ function harness({ devices = [device(1, { language: 'fr' }), device(2, { languag
       if (state.ledger && !['pending', 'retry_pending'].includes(state.ledger.status)) return null;
       state.claims++; state.ledger = { ...state.ledger, status: 'processing', lockToken: 'lock', passes: (state.ledger?.passes || 0) + 1 }; return { ...state.ledger };
     },
+    ledgerState: async () => state.ledger && { status: state.ledger.status, stats: state.ledger.stats },
     checkpoint: async (key, token, after) => { state.checkpoints++; state.ledger.afterDeviceId = after; },
     finish: async (key, token, fields) => { state.finishes++; Object.assign(state.ledger, fields); },
     deliverySummary: async () => summary || ({ accepted: state.delivered.size, failed: 0, uncertain: 0, retryable: 0 }),
@@ -115,7 +116,23 @@ test('known failed recipients are retry-pending, ambiguous queued recipients req
   let result = await pair.service.drain({ dryRun: false }); assert.equal(result.groups[0].status, 'retry_pending'); assert.equal(pair.state.ledger.afterDeviceId, null);
   pair = harness({ summary: { accepted: 1, retryable: 0, failed: 0, uncertain: 1 } });
   result = await pair.service.drain({ dryRun: false }); assert.equal(result.groups[0].status, 'review_required');
-  await pair.service.drain({ dryRun: false }); assert.equal(pair.state.claims, 1);
+  const sends = pair.state.calls.length, finishes = pair.state.finishes;
+  const again = await pair.service.drain({ dryRun: false });
+  assert.equal(again.groups[0].status, 'review_required'); assert.equal(again.groups[0].stats.uncertain, 1);
+  assert.equal(again.sent, 0); assert.equal(pair.state.claims, 1);
+  assert.equal(pair.state.calls.length, sends); assert.equal(pair.state.finishes, finishes);
+});
+
+test('terminal ledger monitoring reads only status and summary by exact durable identity', async () => {
+  const { createEditorialNotificationRepository } = require('../src/api/services/common/editorialNotificationRepository');
+  const key = { appId: 'wintips', categoryId: catId, source: 'rdj_petit_journal', editionDate: date };
+  let filter, projection;
+  const state = { status: 'review_required', stats: { uncertain: 1 } };
+  const repo = createEditorialNotificationRepository({ EditorialNotification: { findOne: input => {
+    filter = input; return { select: fields => { projection = fields; return { lean: async () => state }; } };
+  } } });
+  assert.equal(await repo.ledgerState(key), state); assert.deepEqual(filter, key);
+  assert.equal(projection, 'status stats -_id');
 });
 test('late or untranslated content is never announced; a multi-item message routes to its feed', async () => {
   const { service, state } = harness(); state.groups[0].items[0].payload.startsAtUtc = date + 'T08:20:00Z';

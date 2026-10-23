@@ -86,7 +86,14 @@ function createEditorialNotificationService({ repository, push, clock = () => ne
         }
         await repository.assertIndexes();
         const claim = await repository.claim(key, stableId, now);
-        if (!claim) { result.status = 'already_claimed_or_finished'; report.groups.push(result); continue; }
+        if (!claim) {
+          // Preserve terminal review visibility on every hourly drain without
+          // reclaiming or sending an already-finished notification again.
+          const existing = await repository.ledgerState(key);
+          result.status = terminal.has(existing?.status) ? existing.status : 'already_claimed_or_finished';
+          if (terminal.has(existing?.status)) result.stats = existing.stats;
+          report.groups.push(result); continue;
+        }
         let after = claim.afterDeviceId || null, finished = false;
         try {
           while (batches < maxBatches && Date.now() < deadline && activated()) {

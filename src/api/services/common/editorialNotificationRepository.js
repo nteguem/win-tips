@@ -36,6 +36,7 @@ function createEditorialNotificationRepository({ Category, EditorialItem, Editor
         { $or: [{ nextAttemptAt: null }, { nextAttemptAt: { $lte: now } }] } ],
     }, { $set: { status: 'processing', lockToken: crypto.randomUUID(), leaseUntil: new Date(now.getTime() + 5 * 60000) }, $inc: { passes: 1 } }, { new: true }).lean();
   },
+  ledgerState: key => EditorialNotification.findOne(key).select('status stats -_id').lean(),
   async checkpoint(key, lockToken, afterDeviceId, now) {
     const result = await EditorialNotification.updateOne({ ...key, status: 'processing', lockToken }, {
       $set: { afterDeviceId, leaseUntil: new Date(now.getTime() + 5 * 60000) },
