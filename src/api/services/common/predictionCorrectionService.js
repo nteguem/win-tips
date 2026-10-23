@@ -15,8 +15,10 @@ class PredictionCronService {
     this.isRunning = false;
     this.retryAttempts = 3;
     
-    // Heures de correction fixes (24h format)
-    this.correctionHours = [0, 3, 8, 11, 13, 15, 16, 18, 19, 20, 22];
+    // Heure unique de correction quotidienne (UTC, 24h format).
+    // Les matchs étant terminés en fin de soirée, un seul passage le matin
+    // suffit à clôturer la journée précédente sans surcharger l'API.
+    this.correctionHours = [5];
     
     // Statistiques
     this.stats = {
@@ -77,16 +79,19 @@ class PredictionCronService {
     logger.info(`Starting correction cycle at ${triggerHour}:00 UTC`);
 
     try {
-      // Calculer les bornes de la journée en cours (UTC)
+      // Fenêtre : strictement la journée d'HIER (00h00 → 23h59 UTC).
+      // Le cron tourne à 5h UTC le lendemain matin : tous les matchs joués
+      // la veille sont termines et leurs résultats disponibles.
       const now = new Date();
-      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const startOfYesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+      const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
       const predictionsToProcess = await Prediction.find({
         status: 'pending',
-        // Match de la journée en cours ET déjà passé
-        'matchData.date': { 
-          $gte: startOfDay,   // Après le début de la journée (00:00 UTC)
-          $lt: now            // Mais avant maintenant (match passé)
+        // Matchs joués hier uniquement.
+        'matchData.date': {
+          $gte: startOfYesterday,
+          $lt: startOfToday
         },
         $or: [
           { 'correctionMetadata.attempts': { $exists: false } },
@@ -130,7 +135,16 @@ class PredictionCronService {
 
       const duration = Date.now() - startTime;
       logger.info(`Correction cycle completed in ${duration}ms: ${corrected} corrected, ${errors} errors`);
-      
+
+      // Cascade : recalculer le résultat des tickets après la correction des pronos.
+      try {
+        const ticketCorrectionService = require('./ticketCorrectionService');
+        const ticketStats = await ticketCorrectionService.correctTickets({ lookbackDays: 10 });
+        logger.info(`Ticket correction: ${ticketStats.updated} ticket(s) mis à jour`);
+      } catch (e) {
+        logger.error(`Erreur correction tickets: ${e.message}`);
+      }
+
     } catch (error) {
       logger.error(`Error in correction cycle: ${error.message}`);
     }

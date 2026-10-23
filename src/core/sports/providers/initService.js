@@ -15,6 +15,7 @@ const FileStorageManager = require('../storage/FileStorageManager');
 const logger = require('../../../utils/logger');
 const path = require('path');
 const HttpClient = require('../../../utils/httpClient');
+const { transportFor } = require('./sportsApiTransport');
 
 // Dépendances
 const httpClient = new HttpClient();
@@ -24,58 +25,43 @@ const sportsConfig = {
     name: 'Football',
     icon: '⚽',
     sportId: 'football',
-    // Migré de RapidAPI vers API-Sports (accès direct) le 2026-07-17
-    apiKey: process.env.API_SPORTS_KEY,
-    baseUrl: 'https://v3.football.api-sports.io',
-    host: 'v3.football.api-sports.io'
+    ...transportFor('football')
   },
   basketball: {
     name: 'Basketball',
     icon: '🏀',
     sportId: 'basketball',
-    apiKey: process.env.API_SPORTS_KEY,
-    baseUrl: 'https://v1.basketball.api-sports.io',
-    host: 'v1.basketball.api-sports.io'
+    ...transportFor('basketball')
   },
   rugby: {
     name: 'Rugby',
     icon: '🏉',
     sportId: 'rugby',
-    apiKey: process.env.API_SPORTS_KEY,
-    baseUrl: 'https://v1.rugby.api-sports.io',
-    host: 'v1.rugby.api-sports.io'
+    ...transportFor('rugby')
   },
   handball: {
     name: 'Handball',
     icon: '🤾',
     sportId: 'handball',
-    apiKey: process.env.API_SPORTS_KEY,
-    baseUrl: 'https://v1.handball.api-sports.io',
-    host: 'v1.handball.api-sports.io'
+    ...transportFor('handball')
   },
   volleyball: {
     name: 'Volleyball',
     icon: '🏐',
     sportId: 'volleyball',
-    apiKey: process.env.API_SPORTS_KEY,
-    baseUrl: 'https://v1.volleyball.api-sports.io',
-    host: 'v1.volleyball.api-sports.io'
+    ...transportFor('volleyball')
   },
   baseball: {
     name: 'Baseball',
     icon: '⚾',
     sportId: 'baseball',
-    apiKey: process.env.API_SPORTS_KEY,
-    baseUrl: 'https://v1.baseball.api-sports.io',
-    host: 'v1.baseball.api-sports.io'
+    ...transportFor('baseball')
   },
   hockey: {
     name: 'Hockey',
     icon: '🏒',
     sportId: 'hockey',
-    apiKey: process.env.API_SPORTS_KEY,
-    baseUrl: 'https://v1.hockey.api-sports.io',
-    host: 'v1.hockey.api-sports.io'
+    ...transportFor('hockey')
   },
   tennis: {
     name: 'Tennis',

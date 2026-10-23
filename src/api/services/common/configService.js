@@ -158,6 +158,30 @@ class ConfigService {
   }
 
   /**
+   * Liste des pays ACTIFS, exposée publiquement pour le sélecteur de pays
+   * côté app mobile. Champs minimaux (pas de données admin sensibles).
+   * @returns {Promise<Array>}
+   */
+  async getActiveCountriesPublic() {
+    try {
+      const configs = await AppConfig.find({ isActive: true })
+        .sort({ countryName: 1 })
+        .select('countryCode countryName currency language phonePrefix paymentProvider');
+      return configs.map((c) => ({
+        countryCode: c.countryCode,
+        countryName: c.countryName,
+        currency: c.currency,
+        language: c.language,
+        phonePrefix: c.phonePrefix,
+        paymentProvider: c.paymentProvider,
+      }));
+    } catch (error) {
+      logger.error(`[ConfigService] Erreur getActiveCountriesPublic: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
    * Créer ou mettre à jour une configuration (Admin)
    * @param {string} countryCode - Code pays
    * @param {Object} configData - Données de configuration

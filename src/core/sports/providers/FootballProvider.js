@@ -2,6 +2,7 @@
  * @fileoverview Fournisseur de données pour le football - VERSION CORRIGÉE
  */
 const SportProvider = require('./SportProvider');
+const { headersFor } = require('./sportsApiTransport');
 
 /**
  * Fournisseur de données pour le football
@@ -30,9 +31,7 @@ class FootballProvider extends SportProvider {
       
       const response = await this.httpClient.get(`${this.baseUrl}${this.endpoints.fixtures}`, {
         params: { date },
-        headers: {
-          'x-apisports-key': this.apiKey
-        }
+        headers: headersFor(this)
       });
       
       return response;

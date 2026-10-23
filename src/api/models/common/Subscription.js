@@ -19,15 +19,19 @@ const subscriptionSchema = new mongoose.Schema({
     type: Date,
     required: true
   },
+  // Prix payé en argent. Quand `paymentProvider='ADS'`, amount = 0 et
+  // currency = 'XAF' (placeholder), car aucune transaction monétaire n'a
+  // eu lieu — l'utilisateur a "payé" en regardant des pubs.
   pricing: {
     amount: {
       type: Number,
-      required: true
+      required: true,
+      default: 0
     },
     currency: {
       type: String,
       required: true,
-      enum: ['XAF','XOF','GMD','CDF','GNF','USD','NGN','GHS','KES','ZAR','EGP'],
+      enum: ['XAF','XOF','GMD','CDF','GNF','USD','NGN','GHS','KES','ZAR','EGP','TZS','UGX','ZMW','MWK','RWF','SLE','MZN','LSL'],
       default: 'XAF'
     }
   },
@@ -38,11 +42,13 @@ const subscriptionSchema = new mongoose.Schema({
   },
   paymentReference: String,
   paymentProvider: {
-  type: String,
-  enum: ['MOBILE_MONEY', 'GOOGLE_PLAY'],
-  default: 'MOBILE_MONEY',
-  required: true
-},
+    type: String,
+    // 'ADS' : abonnement débloqué en regardant N pubs récompensées
+    // (paymentMode='ads' côté Package). Aucune transaction monétaire.
+    enum: ['MOBILE_MONEY', 'GOOGLE_PLAY', 'ADS'],
+    default: 'MOBILE_MONEY',
+    required: true
+  },
 
 googlePlayTransaction: {
   type: mongoose.Schema.ObjectId,

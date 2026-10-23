@@ -82,20 +82,7 @@ class GoogleAuthService {
       
       // 3. Créer un nouveau compte Google
       const pseudo = await this.generateUniquePseudo(googleData);
-      
-      // Valider le code affilié si fourni
-      let referredBy = null;
-      if (additionalData.affiliateCode) {
-        const authService = require('./authService');
-        try {
-          const affiliate = await authService.validateAffiliateCode(additionalData.affiliateCode);
-          referredBy = affiliate?._id;
-        } catch (error) {
-          console.log('Code affilié invalide:', additionalData.affiliateCode);
-          // On continue sans affilié
-        }
-      }
-      
+
       // Créer le nouveau user
       user = await User.create({
         // Auth Google
@@ -113,8 +100,7 @@ class GoogleAuthService {
         // Infos additionnelles de l'app
         city: additionalData.city || '',
         countryCode: additionalData.countryCode || '',
-        referredBy,
-        
+
         // Statut
         isActive: true
       });

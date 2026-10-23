@@ -3,7 +3,6 @@ const Package = require('../../models/common/Package');
 const User = require('../../models/user/User');
 const Category = require('../../models/common/Category');
 const GooglePlayTransaction = require('../../models/user/GooglePlayTransaction');
-const commissionService = require('../common/commissionService');
 const { AppError, ErrorCodes } = require('../../../utils/AppError');
 
 class SubscriptionService {
@@ -46,11 +45,6 @@ class SubscriptionService {
       paymentReference,
       paymentProvider: 'MOBILE_MONEY'
     });
-    
-    // Créer commission si l'utilisateur a un parrain
-    if (user.referredBy) {
-      await commissionService.createCommission(subscription._id);
-    }
 
     return subscription;
   }
@@ -87,11 +81,6 @@ class SubscriptionService {
       googlePlayTransaction: googleTransactionId,
       autoRenewing: purchaseData.autoRenewing
     });
-
-    // Créer commission si l'utilisateur a un parrain
-    if (user.referredBy) {
-      await commissionService.createCommission(subscription._id);
-    }
 
     return subscription;
   }
@@ -173,7 +162,12 @@ class SubscriptionService {
     
     for (const subscription of activeSubscriptions) {
       // Récupérer le package ACTUEL avec ses catégories ACTUELLES
-      const currentPackage = await Package.findById(subscription.package._id);
+      // Protection : sub.package peut être null (package supprimé) ou un
+      // ObjectId brut (non populé). On extrait l'id de façon sûre.
+      const pkgRef = subscription.package;
+      if (!pkgRef) continue;
+      const pkgId = pkgRef._id || pkgRef;
+      const currentPackage = await Package.findById(pkgId);
       
       // Vérifie uniquement que le package existe et contient la catégorie
       // Plus de vérification isActive - l'utilisateur garde l'accès qu'il a payé
@@ -201,7 +195,12 @@ class SubscriptionService {
     const categoryIds = [];
     for (const subscription of activeSubscriptions) {
       // Récupérer le package ACTUEL (pas celui stocké dans l'abonnement)
-      const currentPackage = await Package.findById(subscription.package._id);
+      // Protection : sub.package peut être null (package supprimé) ou un
+      // ObjectId brut (non populé). On extrait l'id de façon sûre.
+      const pkgRef = subscription.package;
+      if (!pkgRef) continue;
+      const pkgId = pkgRef._id || pkgRef;
+      const currentPackage = await Package.findById(pkgId);
       
       // Plus de vérification isActive - l'utilisateur garde l'accès qu'il a payé
       if (currentPackage) {
@@ -241,7 +240,12 @@ class SubscriptionService {
     const categoryIds = [];
     for (const subscription of activeSubscriptions) {
       // Récupérer le package ACTUEL (pas celui stocké dans l'abonnement)
-      const currentPackage = await Package.findById(subscription.package._id);
+      // Protection : sub.package peut être null (package supprimé) ou un
+      // ObjectId brut (non populé). On extrait l'id de façon sûre.
+      const pkgRef = subscription.package;
+      if (!pkgRef) continue;
+      const pkgId = pkgRef._id || pkgRef;
+      const currentPackage = await Package.findById(pkgId);
       
       // Plus de vérification isActive - l'utilisateur garde l'accès qu'il a payé
       if (currentPackage) {
@@ -297,13 +301,6 @@ class SubscriptionService {
 
     // Annuler l'abonnement Mobile Money
     await subscription.cancel();
-
-    // Annuler la commission associée via commissionService
-    const Commission = require('../../models/common/Commission');
-    const commission = await Commission.findOne({ subscription: subscriptionId });
-    if (commission && commission.status === 'pending') {
-      await commissionService.cancelCommissions([commission._id], 'Abonnement annulé par utilisateur');
-    }
 
     return subscription;
   }
@@ -389,10 +386,12 @@ class SubscriptionService {
     // Vérifier si l'utilisateur a au moins un abonnement actif
     // correspondant à un des packages requis
     for (const subscription of activeSubscriptions) {
-      // Convertir les IDs en string pour la comparaison
-      const subscriptionPackageId = subscription.package._id.toString();
+      // Protection : sub.package peut être null (package supprimé).
+      const pkgRef = subscription.package;
+      if (!pkgRef) continue;
+      const pkgId = (pkgRef._id || pkgRef).toString();
       const hasRequiredPackage = requiredPackages.some(
-        packageId => packageId.toString() === subscriptionPackageId
+        packageId => packageId.toString() === pkgId
       );
 
       if (hasRequiredPackage) {

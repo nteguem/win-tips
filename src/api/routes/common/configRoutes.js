@@ -14,11 +14,15 @@ const router = express.Router();
 // Obtenir config par IP (onboarding)
 router.post('/', configController.getConfigByIp);
 
-// Obtenir config par code pays
-router.get('/:countryCode', configController.getConfigByCountryCode);
+// Liste publique des pays actifs (selecteur de pays mobile).
+// DOIT etre declaree AVANT /:countryCode sinon "countries" est capture
+// comme un code pays.
+router.get('/countries', configController.getActiveCountries);
 
 /**
- * Routes protégées admin (authentification requise)
+ * Routes protégées admin (authentification requise).
+ * IMPORTANT : déclarées AVANT GET /:countryCode, sinon "/config/admin" est
+ * capturé par la route générique comme un code pays (countryCode="admin").
  */
 router.use('/admin', adminAuth.protect);
 
@@ -39,5 +43,9 @@ router.patch('/admin/:countryCode/toggle', configController.toggleCountry);
 
 // Vider les caches
 router.post('/admin/cache/clear', configController.clearCache);
+
+// Obtenir config par code pays — route GÉNÉRIQUE : DOIT rester APRÈS
+// /countries et /admin, sinon elle les capture comme des codes pays.
+router.get('/:countryCode', configController.getConfigByCountryCode);
 
 module.exports = router;

@@ -73,6 +73,34 @@ const packageSchema = new mongoose.Schema({
   },
   // =========================================
   
+  // ===== MODE DE PAIEMENT =====
+  // 'money' : abonnement payé en argent via intégrateurs (`pricing` requis,
+  //           `adsRequired` ignoré). C'est le mode historique.
+  // 'ads'   : abonnement débloqué en regardant `adsRequired` pubs récompensées
+  //           SSV-vérifiées (`pricing` ignoré, sera vide).
+  // Les deux modes sont MUTUELLEMENT EXCLUSIFS au niveau du pack — l'admin
+  // crée un pack distinct pour chaque mode (ex: "Pack Hebdo Cash" + "Pack
+  // Hebdo Pubs"). La validation mutex se fait en pre-save.
+  paymentMode: {
+    type: String,
+    enum: ['money', 'ads'],
+    default: 'money',
+    required: true
+  },
+
+  // Nombre de pubs récompensées requises pour débloquer ce pack quand
+  // `paymentMode='ads'`. Doit être >= 1. Ignoré quand paymentMode='money'.
+  adsRequired: {
+    type: Number,
+    min: 1,
+    default: null
+  },
+  // =============================
+
+  // Prix en devises locales. Map<currencyCode, amount>. REQUIS quand
+  // `paymentMode='money'`, IGNORÉ quand `paymentMode='ads'`. La validation
+  // conditionnelle est dans le pre-save (le champ Mongoose ne peut pas
+  // dépendre d'un autre champ pour `required`).
   pricing: {
     type: Map,
     of: {
@@ -85,13 +113,7 @@ const packageSchema = new mongoose.Schema({
         message: 'Le prix doit être positif'
       }
     },
-    required: true,
-    validate: {
-      validator: function(map) {
-        return map.size > 0;
-      },
-      message: 'Au moins une devise doit être spécifiée'
-    }
+    default: undefined
   },
   duration: {
     type: Number,
@@ -271,36 +293,62 @@ packageSchema.methods.getEconomy = function(currency) {
 packageSchema.methods.formatForLanguage = function(lang = 'fr') {
   const packageObj = this.toObject();
   
-  // Formater la formation si elle est populée
+  // Formater la formation si elle est POPULÉE. Attention : un ObjectId non
+  // populé satisfait `typeof === 'object'` — on vérifie donc la présence de
+  // `title` (champ réel d'une Formation populée) avant de la traiter.
   let formation = null;
-  if (packageObj.formationId && typeof packageObj.formationId === 'object') {
+  const fId = packageObj.formationId;
+  if (fId && typeof fId === 'object' && fId.title) {
+    const tr = (field) => {
+      if (field == null) return '';
+      if (typeof field === 'string') return field;
+      return field[lang] || field.fr || field.en || '';
+    };
     formation = {
-      _id: packageObj.formationId._id,
-      title: packageObj.formationId.title[lang] || packageObj.formationId.title.fr,
-      description: packageObj.formationId.description[lang] || packageObj.formationId.description.fr,
-      isActive: packageObj.formationId.isActive,
-      createdAt: packageObj.formationId.createdAt,
-      updatedAt: packageObj.formationId.updatedAt
+      _id: fId._id,
+      title: tr(fId.title),
+      description: tr(fId.description),
+      isActive: fId.isActive,
+      createdAt: fId.createdAt,
+      updatedAt: fId.updatedAt
     };
   }
   
+  // Traduit les catégories imbriquées (populées) : name/description bilingues
+  // → strings dans la langue demandée. Tolère l'ancien format string.
+  const pickLang = (field) => {
+    if (field == null) return '';
+    if (typeof field === 'string') return field;
+    return field[lang] || field.fr || field.en || '';
+  };
+  const translatedCategories = Array.isArray(packageObj.categories)
+    ? packageObj.categories.map((cat) => {
+        if (!cat || typeof cat !== 'object') return cat;
+        return { ...cat, name: pickLang(cat.name), description: pickLang(cat.description) };
+      })
+    : packageObj.categories;
+
   return {
     _id: packageObj._id,
     name: packageObj.name[lang] || packageObj.name.fr,
     description: packageObj.description ? (packageObj.description[lang] || packageObj.description.fr) : null,
     pricing: packageObj.pricing instanceof Map ? Object.fromEntries(packageObj.pricing) : packageObj.pricing,
     duration: packageObj.duration,
-    categories: packageObj.categories,
+    categories: translatedCategories,
     badge: packageObj.badge ? (packageObj.badge[lang] || packageObj.badge.fr) : null,
     economy: packageObj.economy instanceof Map ? Object.fromEntries(packageObj.economy) : packageObj.economy,
-    
+
+    // Mode de paiement + nb de pubs (si applicable)
+    paymentMode: packageObj.paymentMode || 'money',
+    adsRequired: packageObj.adsRequired ?? null,
+
     // ===== AJOUT DES PROMESSES DE COTES =====
     oddsPromise: {
       daily: packageObj.oddsPromise?.daily || null,
       weekly: packageObj.oddsPromise?.weekly || null
     },
     // ========================================
-    
+
     formation: formation,
     formationId: typeof packageObj.formationId === 'object' ? packageObj.formationId._id : packageObj.formationId,
     isActive: packageObj.isActive,
@@ -329,8 +377,9 @@ packageSchema.methods.toJSON = function() {
   return packageObj;
 };
 
-// Pre-save hook pour valider les codes de devises
+// Pre-save hook : validation devises + mutex paymentMode
 packageSchema.pre('save', function(next) {
+  // Validation 1 : codes devises (3 lettres majuscules)
   if (this.pricing) {
     for (let currency of this.pricing.keys()) {
       if (!/^[A-Z]{3}$/.test(currency)) {
@@ -338,7 +387,7 @@ packageSchema.pre('save', function(next) {
       }
     }
   }
-  
+
   if (this.economy) {
     for (let currency of this.economy.keys()) {
       if (!/^[A-Z]{3}$/.test(currency)) {
@@ -346,7 +395,36 @@ packageSchema.pre('save', function(next) {
       }
     }
   }
-  
+
+  // Validation 2 : mutex paymentMode ↔ champs requis
+  //   money → pricing requis (non vide), adsRequired interdit
+  //   ads   → adsRequired requis (>=1), pricing interdit
+  if (this.paymentMode === 'money') {
+    if (!this.pricing || (this.pricing.size === 0)) {
+      return next(new Error('paymentMode=money requiert au moins un prix dans `pricing`.'));
+    }
+    if (this.adsRequired != null) {
+      // On efface silencieusement pour rester tolérant côté admin.
+      this.adsRequired = null;
+    }
+  } else if (this.paymentMode === 'ads') {
+    if (!this.adsRequired || this.adsRequired < 1) {
+      return next(new Error('paymentMode=ads requiert `adsRequired >= 1`.'));
+    }
+    // On efface pricing/economy/googleProductId pour rester cohérent.
+    if (this.pricing && this.pricing.size > 0) {
+      this.pricing = new Map();
+    }
+    if (this.economy && this.economy.size > 0) {
+      this.economy = new Map();
+    }
+    if (this.availableOnGooglePlay) {
+      this.availableOnGooglePlay = false;
+      this.googleProductId = undefined;
+      this.googleProductType = null;
+    }
+  }
+
   next();
 });
 

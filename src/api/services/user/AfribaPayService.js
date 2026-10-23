@@ -48,6 +48,30 @@ function generateUrls() {
 }
 
 /**
+ * Construit un reference_id compatible AfribaPay.
+ * L'API AfribaPay rejette les accents (û, é, à…), les apostrophes et la
+ * ponctuation non-ASCII. On translittère donc en ASCII propre :
+ *   - normalize('NFD') décompose les accents (é → e + diacritique)
+ *   - les apostrophes (droites ET typographiques) → espace, AVANT le strip,
+ *     pour éviter de coller les mots (L'Élan → "L Elan", pas "LElan")
+ *   - tout caractère hors [a-zA-Z0-9 _-] (dont les diacritiques NFD) → supprimé
+ *   - espaces compressés, trim, longueur bornée à 100
+ * Ex : "L'Élan - 7 jours" → "L Elan - 7 jours"
+ */
+function buildReferenceId(packageDoc) {
+  const name = packageDoc.name?.fr || packageDoc.name?.en || packageDoc.name || 'Package';
+  const raw = `${name} - ${packageDoc.duration} jours`;
+  const clean = raw
+    .normalize('NFD')
+    .replace(/['’‘`´]/g, ' ')
+    .replace(/[^a-zA-Z0-9 _-]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 100);
+  return clean || `Package ${packageDoc.duration}j`;
+}
+
+/**
  * Obtenir le token d'accès
  */
 async function getAccessToken() {
@@ -204,7 +228,7 @@ async function initiatePayment(userId, packageId, phoneNumber, operator, country
       currency,
       order_id: orderId,
       merchant_key: MERCHANT_KEY,
-      reference_id: `${packageDoc.name.fr} - ${packageDoc.duration} jours`,
+      reference_id: buildReferenceId(packageDoc),
       lang: 'fr',
       notify_url,
       return_url,
@@ -252,7 +276,7 @@ async function initiatePayment(userId, packageId, phoneNumber, operator, country
       amount: responseData.amount || amount,
       currency,
       merchantKey: MERCHANT_KEY,
-      referenceId: `${packageDoc.name.fr} - ${packageDoc.duration} jours`,
+      referenceId: buildReferenceId(packageDoc),
       notifyUrl: notify_url,
       returnUrl: return_url,
       cancelUrl: cancel_url,

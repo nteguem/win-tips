@@ -395,7 +395,7 @@ async function processTransactionUpdate(transaction) {
     if (transaction.isSuccessful()) {
       return await handleSuccessfulTransaction(transaction);
     } 
-    else if (transaction.status === 'FAILED' || transaction.status === 'REFUSED' || transaction.status === 'ERROR' || transaction.status === 'CANCELED') {
+    else if (transaction.status === 'FAILED' || transaction.status === 'REFUSED' || transaction.status === 'ERROR' || transaction.status === 'CANCELED' || transaction.status === 'CANCELLED' || transaction.status === 'EXPIRED') {
       await handleFailedTransaction(transaction);
     }
     

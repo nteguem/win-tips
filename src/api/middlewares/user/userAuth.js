@@ -39,6 +39,34 @@ exports.protect = catchAsync(async (req, res, next) => {
 });
 
 /**
+ * Middleware d'authentification OPTIONNELLE.
+ * Si un Bearer token valide est présent → req.user est défini.
+ * Sinon → req.user reste undefined ET la requête passe.
+ * Utilisé pour les routes free qui ont besoin de savoir QUI demande (gate
+ * personnalisé) sans imposer l'auth.
+ */
+exports.optional = catchAsync(async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  let token;
+
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.split(' ')[1];
+  }
+  if (!token) return next();
+
+  try {
+    const decoded = authService.verifyToken(token, 'user');
+    const user = await User.findById(decoded.id);
+    if (user && user.isActive) {
+      req.user = user;
+    }
+  } catch (_) {
+    // Token invalide / expiré → on traite comme anonyme.
+  }
+  return next();
+});
+
+/**
  * Middleware pour vérifier les refresh tokens user
  */
 exports.verifyRefreshToken = catchAsync(async (req, res, next) => {

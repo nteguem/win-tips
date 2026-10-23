@@ -105,7 +105,18 @@ const checkUnacknowledgedPurchases = cron.schedule('0 * * * *', async () => {
 
     for (const transaction of unacknowledged) {
       try {
-        await googlePlayService.acknowledgePurchase(transaction.purchaseToken);
+        // L'API d'acknowledge diffère selon le type d'achat : les produits
+        // ponctuels passent par products.acknowledge (+consume), les
+        // abonnements par subscriptions.acknowledge. Utiliser la mauvaise
+        // API échoue silencieusement → Google rembourse après 3 jours.
+        if (transaction.purchaseType === 'ONE_TIME_PRODUCT') {
+          await googlePlayService.acknowledgeAndConsumeOneTimePurchase(
+            transaction.purchaseToken,
+            transaction.productId
+          );
+        } else {
+          await googlePlayService.acknowledgePurchase(transaction.purchaseToken);
+        }
         console.log(`[CRON] Acknowledged: ${transaction.purchaseToken}`);
       } catch (error) {
         console.error(`[CRON] Erreur acknowledge ${transaction.purchaseToken}:`, error.message);

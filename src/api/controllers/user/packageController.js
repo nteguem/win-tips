@@ -3,37 +3,98 @@ const subscriptionService = require('../../services/user/subscriptionService');
 const { AppError, ErrorCodes } = require('../../../utils/AppError');
 const catchAsync = require('../../../utils/catchAsync');
 
+// Marqueur visible au boot pour vérifier que ce fichier est chargé par Node
+// après un redémarrage pm2. Si tu ne vois pas cette ligne dans `pm2 logs`
+// après un restart, c'est que Node ne charge pas ce fichier (autre branche,
+// autre process, etc.).
+console.log('🟢 [packageController.js] chargé', new Date().toISOString());
+
 /**
- * Obtenir tous les packages disponibles (user)
+ * Obtenir tous les packages disponibles (user).
+ *
+ * Query params:
+ *   - currency : filtre les packs money par devise disponible
+ *   - lang     : 'fr' ou 'en'
+ *   - paymentMode : 'money' (défaut) | 'ads' | 'all'
+ *       'money' → uniquement les packs payables en argent (rétrocompat)
+ *       'ads'   → uniquement les packs débloquables par pubs
+ *       'all'   → les deux types (le client filtrera lui-même)
  */
 exports.getAvailablePackages = catchAsync(async (req, res, next) => {
-  const { currency, lang = 'fr' } = req.query;  
-  const packages = await Package.find({ isActive: true })
+  const { currency, lang = 'fr', paymentMode = 'money' } = req.query;
+
+  // Filtre Mongoose
+  const filter = { isActive: true };
+  if (paymentMode === 'money') {
+    filter.paymentMode = { $in: ['money', null] }; // tolérance docs legacy sans champ
+  } else if (paymentMode === 'ads') {
+    filter.paymentMode = 'ads';
+  } else if (paymentMode !== 'all') {
+    return next(new AppError(`paymentMode invalide: ${paymentMode}`, 400, ErrorCodes.VALIDATION_ERROR));
+  }
+
+  // ── DEBUG TEMP [v2 marker] ────────────────────────────────────────────
+  console.log('🔵 [getAvailablePackages][v2] paymentMode=%s filter=%j', paymentMode, filter);
+
+  const packages = await Package.find(filter)
     .populate('categories', 'name description isVip')
     .populate('formationId');
 
-  // Trier manuellement par prix dans la devise demandée
+  console.log('🔵 [getAvailablePackages][v2] %d packs trouvés :', packages.length);
+  for (const p of packages) {
+    console.log('🔵   - %s | paymentMode=%s | adsRequired=%s | name.fr=%s',
+      p._id, p.paymentMode, p.adsRequired, p.name?.fr || p.name);
+  }
+  // ── /DEBUG ─────────────────────────────────────────────────────────────
+
+  // Tri : par adsRequired croissant pour 'ads', par prix sinon
   const sortedPackages = packages.sort((a, b) => {
+    if ((a.paymentMode || 'money') === 'ads' && (b.paymentMode || 'money') === 'ads') {
+      return (a.adsRequired || 0) - (b.adsRequired || 0);
+    }
     const priceA = a.getPricing(currency || 'XAF') || 0;
     const priceB = b.getPricing(currency || 'XAF') || 0;
     return priceA - priceB;
   });
 
   let result = sortedPackages.map(pkg => pkg.formatForLanguage(lang));
-  
-  if (currency) {    
-    // Filtrer d'abord les packages qui ont la devise
-    const packagesWithCurrency = result.filter(pkg => {
-      return pkg.pricing && pkg.pricing[currency] !== undefined;
-    });
-      
-    // Puis transformer pour ne garder que la devise demandée
-    result = packagesWithCurrency.map(pkg => {
-      const packageData = { ...pkg };
-      packageData.pricing = { [currency]: pkg.pricing[currency] };
-      packageData.economy = pkg.economy ? { [currency]: pkg.economy[currency] } : null;
-      return packageData;
-    });
+
+  // Filtre par devise UNIQUEMENT pour les packs 'money' (les packs 'ads'
+  // n'ont pas de pricing, on les laisse passer tels quels).
+  // Format de sortie pour les packs 'money' : `pricing` et `economy` sont
+  // des nombres directs (pas un objet `{XAF: ...}`) — c'est le contrat
+  // historique attendu par Flutter (PackageCatalog.fromJson lit
+  // `json['pricing'] is num`).
+  if (currency) {
+    // En USD, le paiement passe EXCLUSIVEMENT par Google Play : les
+    // intégrateurs mobile money (AfribaPay/Smobilpay/CinetPay/KoraPay) ne
+    // couvrent que XAF/XOF/CDF. On ne propose donc, en USD, que les packs
+    // money réellement achetables sur Google Play.
+    const usdGooglePlayOnly = String(currency).toUpperCase() === 'USD';
+    result = result
+      .filter(pkg => {
+        if ((pkg.paymentMode || 'money') === 'ads') return true; // bypass filtre devise
+        if (!(pkg.pricing && pkg.pricing[currency] !== undefined)) return false;
+        if (usdGooglePlayOnly && !(pkg.availableOnGooglePlay && pkg.googleProductId)) {
+          return false;
+        }
+        return true;
+      })
+      .map(pkg => {
+        if ((pkg.paymentMode || 'money') === 'ads') {
+          // Packs ads : aplatir aussi (mais à 0) pour que Flutter parse pareil
+          const adsData = { ...pkg };
+          adsData.pricing = 0;
+          adsData.economy = null;
+          return adsData;
+        }
+        const packageData = { ...pkg };
+        packageData.pricing = pkg.pricing[currency];
+        packageData.economy = pkg.economy && pkg.economy[currency] != null
+          ? pkg.economy[currency]
+          : null;
+        return packageData;
+      });
   }
 
   res.status(200).json({
@@ -41,6 +102,7 @@ exports.getAvailablePackages = catchAsync(async (req, res, next) => {
     data: {
       packages: result,
       count: result.length,
+      paymentMode,
       ...(currency && { currency })
     }
   });

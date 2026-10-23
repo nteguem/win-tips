@@ -1,7 +1,28 @@
 // controllers/ticketController.js
 const ticketService = require('../../services/common/ticketService');
 const categoryService = require('../../services/common/categoryService');
+const correctAndNotifyService = require('../../services/admin/correctAndNotifyService');
+const syncOutgoingService = require('../../services/admin/syncOutgoingService');
+const Category = require('../../models/common/Category');
 const { formatSuccess, formatError } = require('../../../utils/responseFormatter');
+
+/**
+ * Aplatit le nom/description bilingue ({fr,en}) de la catégorie peuplée d'un
+ * ticket en chaîne simple : le backoffice et l'app attendent du texte, pas un
+ * objet (sinon React plante en tentant d'afficher l'objet).
+ */
+function flattenTicketCategory(ticket, lang = 'fr') {
+  if (!ticket) return ticket;
+  const t = typeof ticket.toObject === 'function' ? ticket.toObject() : ticket;
+  if (t.category && typeof t.category === 'object' && t.category.name !== undefined) {
+    t.category = {
+      ...t.category,
+      name: Category.pickLang(t.category.name, lang),
+      description: Category.pickLang(t.category.description, lang),
+    };
+  }
+  return t;
+}
 
 class TicketController {
 
@@ -18,8 +39,9 @@ class TicketController {
         isVisible: isVisible !== undefined ? isVisible === 'true' : null // null = pas de filtre
       });
 
+      const lang = req.query.lang || 'fr';
       formatSuccess(res, {
-        data: result.data,
+        data: result.data.map((t) => flattenTicketCategory(t, lang)),
         pagination: result.pagination,
         message: 'Tickets retrieved successfully'
       });
@@ -39,7 +61,7 @@ class TicketController {
       }
 
       formatSuccess(res, {
-        data: ticket,
+        data: flattenTicketCategory(ticket, req.query.lang || 'fr'),
         message: 'Ticket retrieved successfully'
       });
     } catch (error) {
@@ -115,6 +137,14 @@ class TicketController {
         return formatError(res, 'Ticket not found', 404);
       }
 
+      // Synchro sortante fire-and-forget : si la cible (WinTips) est
+      // configurée via la variable d'env SYNC_TARGET_WINTIPS_URL, on lui
+      // pousse l'info à chaque publication. WinTips décide lui-même si la
+      // catégorie source est mappée chez lui.
+      if (updates.isVisible === true) {
+        syncOutgoingService.maybeSyncTicket(ticket).catch(() => {});
+      }
+
       formatSuccess(res, {
         data: ticket,
         message: 'Ticket updated successfully'
@@ -141,6 +171,20 @@ class TicketController {
       });
     } catch (error) {
       formatError(res, error.message, 500);
+    }
+  }
+
+  // POST /tickets/:id/correct - Corriger un ticket (pronostics + résultat)
+  async correctTicket(req, res) {
+    try {
+      const { id } = req.params;
+      const result = await correctAndNotifyService.correctTicket(id);
+      formatSuccess(res, {
+        data: result,
+        message: `Ticket corrigé — résultat : ${result.result}`
+      });
+    } catch (error) {
+      formatError(res, error.message, error.statusCode || 500);
     }
   }
 }
