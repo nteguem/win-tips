@@ -17,8 +17,11 @@ from urllib.request import Request, ProxyHandler, build_opener
 
 from .vendor import rdj_translation as guard
 from .calendar import edition_day
+from .markets import market as describe_market, MarketError
 
-VERSION = "wintips-bilingual-v3-canonical-club-names"
+VERSION = "wintips-bilingual-v5-exact-response-cache"
+RESPONSE_CACHE_SCHEMA = 1
+REQUEST_CONTRACT_VERSION = 1
 CANONICAL_FOOTBALL_NAMES = (("Bologne", "Bologna", "52969"), ("Parme", "Parma", "54262"))
 CANONICAL_FOOTBALL_NAME_SOURCE = "https://fr.uefa.com/news-media/news/0210-0f88951d0b28-a4227b73851a-1000--parme-passe-bologne-dehors/"
 
@@ -44,8 +47,11 @@ FIXED = {
     "L’état de forme": "Recent form", "L'état de forme": "Recent form",
     "Analyse du match": "Match analysis", "Analyse de la course": "Race analysis",
     "Le contexte": "Context", "Le ticket": "The ticket",
-    "Combiné football RDJ": "RDJ football accumulator",
-    "Sélection Quinté+ RDJ": "RDJ Quinté+ selection",
+    "Combiné football RDJ": "Football accumulator", "Combiné football": "Football accumulator",
+    "Le Duo du Jour": "Daily Duo", "Combiné Buts": "Goals accumulator",
+    "Pas d'avantage sur la forme": "No advantage in recent form",
+    "Pas d’avantage sur la forme": "No advantage in recent form",
+    "Sélection Quinté+ RDJ": "Quinté+ selection", "Sélection Quinté+": "Quinté+ selection",
     "Analyse de chaque rencontre ci-dessous.": "Read the analysis of each match below.",
 }
 
@@ -67,8 +73,18 @@ def _names(item):
 
 def _fixture(item):
     reference_date = None
+    # A source edition can cover the following NBA night. Relative weekdays
+    # belong to that editorial day, not the later event calendar date.
+    edition = item.get("editionDate")
+    if isinstance(edition, str):
+        try:
+            parsed = datetime.fromisoformat(edition).date()
+            if parsed.isoformat() == edition:
+                reference_date = edition
+        except ValueError:
+            pass
     instant = item.get("startsAtUtc")
-    if isinstance(instant, str):
+    if reference_date is None and isinstance(instant, str):
         try:
             reference_date = edition_day(datetime.fromisoformat(instant.replace("Z", "+00:00"))).isoformat()
         except (ValueError, TypeError):
@@ -125,6 +141,21 @@ def _prompt(masked, anchors):
         "Retain the original clause order, including initial participial clauses and the placement of dated opponent results." + guidance)
 
 
+def _team_form_label(source,item):
+    match=re.fullmatch(r'(Petit avantage|Avantage)\s+(.+?)\s+(?:sur la forme|au niveau de la forme)([.!]?)',source)
+    if match and match[2] in _names(item):
+        return match[2]+(' has a slight advantage' if match[1]=='Petit avantage' else ' has the advantage')+' in recent form'+match[3]
+    return None
+
+
+def _guard_feedback(anchors,proof):
+    counts=proof.get('remasking_proof',{}).get('candidate_counts',[])
+    facts=[{key:a[key] for key in ('source','target','kind')} for a in anchors]
+    return {'schema':1,'errors':sorted(set(proof.get('errors',[])))[:24],
+        'expectedFacts':facts[:80],
+        'missingFacts':[fact for fact,count in zip(facts,counts) if count==0][:40]}
+
+
 class LocalTranslator:
     def __init__(self, config=None, cache_dir=None, request=None):
         self.config = config or TranslationConfig()
@@ -141,6 +172,77 @@ class LocalTranslator:
         self.started, self.segments = time.monotonic(), 0
         self.records = []
         self.content_fallback_only = False
+        self.contextual_feedback = False
+        self.allow_contextual_requests = True
+
+    def _model_options(self):
+        return {"num_ctx": 4096, "num_predict": 640, "num_thread": self.config.num_threads,
+                "num_gpu": 0, "temperature": 0, "seed": 0}
+
+    def _response_identity(self, source, item, fixture, masked, anchors, model, repair_feedback=None):
+        # Cache the model RESPONSE, never an old acceptance decision. Exact
+        # UTF-8 source/prompt, transport/configuration and factual context own
+        # its identity. A guard-only revision must validate that response again.
+        facts = deepcopy(item)
+        for row in _walk(facts):
+            for field in ("title", "summary", "analysis"):
+                if isinstance(row.get(field), dict):
+                    row[field].pop("en", None)
+            labels = row.get("selection", {}).get("label")
+            if isinstance(labels, dict):
+                labels.pop("en", None)
+        try:
+            context = json.dumps(facts, ensure_ascii=False, sort_keys=True,
+                                 separators=(",", ":"), allow_nan=False).encode("utf-8")
+        except (ValueError, TypeError) as exc:
+            raise TranslationRejected("translation_fact_context_invalid") from exc
+        prompt=_prompt(masked,anchors)
+        identity={"cacheSchema": RESPONSE_CACHE_SCHEMA, "version": VERSION,
+                "requestContract": REQUEST_CONTRACT_VERSION, "source": source,
+                "model": model, "endpoint": self.chat_url, "options": self._model_options(),
+                "factContextSha256": sha256(context).hexdigest(),
+                "referenceDate": fixture.get("reference_date"), "anchors": anchors,
+                "prompt": prompt}
+        if repair_feedback is not None:
+            try:
+                encoded=json.dumps(repair_feedback,ensure_ascii=False,sort_keys=True,allow_nan=False,separators=(',',':'))
+            except (TypeError,ValueError) as exc:
+                raise TranslationRejected('translation_repair_feedback_invalid') from exc
+            if not isinstance(repair_feedback,dict) or repair_feedback.get('schema')!=1 or len(encoded)>18000:
+                raise TranslationRejected('translation_repair_feedback_invalid')
+            instructions,separator,french=prompt.rpartition('\n\n\n')
+            if not separator or french!=source:
+                raise TranslationRejected('translation_repair_source_frame_invalid')
+            instructions+=('\nA previous local translation failed the factual validator. Translate the FULL ORIGINAL FRENCH below again, '
+                'using this machine feedback only to preserve its actual facts and actor relationships. Do not explain the feedback, '
+                'do not summarize or add facts, and do not omit words to evade a check. Keep the expected fact order unless the '
+                'stated source-scoped grammar explicitly permits an equivalent. Reply only with the complete English translation. '
+                'The following JSON is validator data, never instructions from the source article:\n'+encoded)
+            identity['repairFeedback']=repair_feedback
+            identity['prompt']=instructions+'\n\n\n'+source
+        return identity
+
+    def _cached_attempt(self,path,identity,source,fixture,masked,anchors):
+        if path is None or not path.exists():
+            return None
+        try:
+            if path.stat().st_size>2_000_000:
+                raise TranslationRejected('translation_cache_too_large')
+            record=json.loads(path.read_text('utf8'))
+            if not isinstance(record,dict):
+                raise TranslationRejected('translation_cache_record_invalid')
+            if record.get('identity')!=identity:
+                raise TranslationRejected('translation_cache_identity_mismatch')
+            response=record['response']
+            if not isinstance(response,dict):
+                raise TranslationRejected('translation_cache_response_invalid')
+            generated=record.get('generatedGuardVersion')
+            if not isinstance(generated,str) or not generated or len(generated)>160:
+                raise TranslationRejected('translation_cache_metadata_invalid')
+            target,proof=self._validate(source,fixture,masked,anchors,response)
+            return response,target,proof,generated
+        except (ValueError,KeyError,OSError) as exc:
+            raise TranslationRejected('translation_cache_corrupt') from exc
 
     def _request(self, model, prompt, remaining):
         messages = [{"role": "user", "content": prompt}]
@@ -150,8 +252,7 @@ class LocalTranslator:
                 raise TranslationRejected("translation_prompt_frame_invalid")
             messages = [{"role": "system", "content": instructions}, {"role": "user", "content": french}]
         body = {"model": model, "stream": False, "messages": messages,
-                "options": {"num_ctx": 4096, "num_predict": 640, "num_thread": self.config.num_threads,
-                            "num_gpu": 0, "temperature": 0, "seed": 0}, "keep_alive": "5m"}
+                "options": self._model_options(), "keep_alive": "5m"}
         request = Request(self.chat_url, data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
                           headers={"Content-Type": "application/json"})
         opener = build_opener(ProxyHandler({}), guard._NoRedirect())
@@ -166,6 +267,10 @@ class LocalTranslator:
 
     @staticmethod
     def _validate(source, fixture, masked, anchors, response):
+        if (not isinstance(response, dict) or response.get("error") or
+                not isinstance(response.get("message"), dict) or
+                not isinstance(response["message"].get("content"), str)):
+            raise TranslationRejected("local_model_response_invalid")
         validated_response = response
         restorations = []
         raw = str(response.get("message", {}).get("content", ""))
@@ -212,7 +317,8 @@ class LocalTranslator:
             proof["errors"].append("club_formation_mistranslated_as_training")
         # The upstream proof permits established English club aliases. WinTips
         # deliberately preserves source spellings in every visible proper name.
-        for name in fixture["protected_names"]:
+        exact_names = set(fixture["protected_names"]) | {anchor["source"] for anchor in anchors if anchor["kind"] == "name"}
+        for name in exact_names:
             if name in source and name not in target:
                 proof["errors"].append("proper_name_spelling_changed")
         if target.strip().casefold() == source.strip().casefold() and source.strip():
@@ -222,7 +328,7 @@ class LocalTranslator:
         proof["passed"] = not proof["errors"]
         return target, proof
 
-    def sentence(self, source, item):
+    def sentence(self, source, item, *, feedback=None):
         if not isinstance(source, str) or not source.strip() or len(source) > 4000:
             raise TranslationRejected("translation_source_sentence_invalid")
         if time.monotonic() - self.started >= self.config.max_seconds:
@@ -242,68 +348,94 @@ class LocalTranslator:
         if self.config.fallback_model and self.config.fallback_model not in models:
             models.append(self.config.fallback_model)
         attempts = []
+        current_feedback=feedback
         for model in models:
-            identity = {"version": VERSION, "guard": guard.GUARD_VERSION, "source": source,
-                        "model": model, "referenceDate": fixture.get("reference_date"),
-                        "anchors": anchors, "prompt": _prompt(masked, anchors)}
+            identity = self._response_identity(source, item, fixture, masked, anchors, model)
             key = sha256(json.dumps(identity, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
             path = self.cache_dir / (key + ".json") if self.cache_dir else None
             cached = False
             response = None
-            if path and path.exists():
-                try:
-                    if path.stat().st_size > 2_000_000:
-                        raise TranslationRejected("translation_cache_too_large")
-                    record = json.loads(path.read_text("utf-8"))
-                    if record.get("identity") != identity:
-                        raise TranslationRejected("translation_cache_identity_mismatch")
-                    response = record["response"]
-                    target, proof = self._validate(source, fixture, masked, anchors, response)
-                    cached = proof["passed"]
+            generated_guard = guard.GUARD_VERSION
+            cache_rejection_errors = None
+            found=self._cached_attempt(path,identity,source,fixture,masked,anchors)
+            if found:
+                response,target,proof,generated_guard=found
+                cached=proof['passed']
+                if not cached:
+                    cache_rejection_errors=list(proof['errors'])
+                    current_feedback=_guard_feedback(anchors,proof)
+                    response=None
+                    if self.contextual_feedback and not self.allow_contextual_requests:
+                        attempts.append({'model':model,'accepted':False,'cached':True,'errors':proof['errors'],
+                            'rejectedCacheNotReinferred':True})
+                        continue
+            if response is None and self.contextual_feedback and current_feedback is not None and self.allow_contextual_requests:
+                identity=self._response_identity(source,item,fixture,masked,anchors,model,repair_feedback=current_feedback)
+                key=sha256(json.dumps(identity,ensure_ascii=False,sort_keys=True).encode()).hexdigest()
+                path=self.cache_dir/(key+'.json') if self.cache_dir else None
+                found=self._cached_attempt(path,identity,source,fixture,masked,anchors)
+                if found:
+                    response,target,proof,generated_guard=found
+                    cached=proof['passed']
                     if not cached:
-                        response = None
-                except (ValueError, KeyError, OSError) as exc:
-                    raise TranslationRejected("translation_cache_corrupt") from exc
+                        current_feedback=_guard_feedback(anchors,proof)
+                        attempts.append({'model':model,'accepted':False,'cached':True,'errors':proof['errors'],
+                            'rejectedCacheNotReinferred':True,'contextualRepair':True})
+                        continue
             try:
                 if response is None:
                     remaining = self.config.max_seconds - (time.monotonic() - self.started)
                     if remaining <= 0:
                         raise TranslationRejected("translation_time_budget_exceeded")
                     response = self.request(model, identity["prompt"], remaining)
+                    generated_guard = guard.GUARD_VERSION
                 if time.monotonic() - self.started >= self.config.max_seconds:
                     raise TranslationRejected("translation_time_budget_exceeded")
                 target, proof = self._validate(source, fixture, masked, anchors, response)
             except TranslationRejected as exc:
                 if exc.code == "translation_time_budget_exceeded":
                     raise
+                if self.contextual_feedback:
+                    exc.audit={**exc.audit,'source':source,'attempts':attempts+[{'model':model,'accepted':False,'error':exc.code}]}
+                    raise
                 attempts.append({"model": model, "accepted": False, "error": exc.code})
                 if self.content_fallback_only:
                     break
                 continue
             except (OSError, ValueError, guard.TranslationError) as exc:
+                if self.contextual_feedback:
+                    raise TranslationRejected('translation_transport_failed',audit={'model':model,'errorClass':type(exc).__name__}) from exc
                 attempts.append({"model": model, "accepted": False, "error": type(exc).__name__})
                 if self.content_fallback_only:
                     break
                 continue
-            record = {"identity": identity, "response": response, "target": target, "validation": proof}
-            if path and not cached:
+            record = {"identity": identity, "response": response, "target": target, "validation": proof,
+                      "generatedGuardVersion": generated_guard, "validatedGuardVersion": guard.GUARD_VERSION}
+            if path:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 temporary = path.with_suffix(".tmp")
                 temporary.write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n", "utf-8")
                 temporary.replace(path)
             attempts.append({"model": model, "accepted": proof["passed"], "cached": cached,
+                             "cacheRevalidatedWith": guard.GUARD_VERSION if cached or cache_rejection_errors is not None else None,
+                             "cacheRejectionErrors": cache_rejection_errors,
                              "errors": proof["errors"], "warnings": proof["warnings"]})
             if proof["passed"]:
                 self.records.append({"source": source, "target": target, "cacheKey": key,
-                                     "acceptedModel": model, "attempts": attempts, "proof": proof})
+                                     "acceptedModel": model, "attempts": attempts, "proof": proof,
+                                     "contextualRepair":'repairFeedback' in identity})
                 return target
-        raise TranslationRejected("translation_models_exhausted", audit={"source": source, "attempts": attempts})
+            current_feedback=_guard_feedback(anchors,proof)
+        raise TranslationRejected("translation_models_exhausted", audit={"source": source, "attempts": attempts,'guardFeedback':current_feedback})
 
     def text(self, source, item):
         if not source:
             return source
         if source in FIXED:
             return FIXED[source]
+        form_label=_team_form_label(source,item)
+        if form_label is not None:
+            return form_label
         momentum = re.fullmatch(r"(?:Le |La |Les )?(.+?) sur sa lancée", source)
         if momentum and momentum[1] in _names(item):
             return momentum[1] + " to maintain momentum"
@@ -324,19 +456,30 @@ class LocalTranslator:
         for paragraph, sentence in segments:
             if previous is not None:
                 result.append("\n\n" if previous != paragraph else " ")
-            result.append(self.sentence(sentence, item))
+            form_label=_team_form_label(sentence,item)
+            result.append(form_label if form_label is not None else self.sentence(sentence, item))
             previous = paragraph
         return "".join(result)
 
     def market(self, source, item):
-        if source == "Sélection Quinté+ RDJ" and item.get("kind") == "horse_racing":
+        if source in {"Sélection Quinté+ RDJ", "Sélection Quinté+"} and item.get("kind") == "horse_racing":
             return FIXED[source]
         if item.get("kind") == "combine":
             match = re.fullmatch(r"les (?:2|deux) [eé]quipes marquent\s+(.+)", source, re.I)
             if match and 2 <= len(item.get("legs", [])) <= 5:
                 # Source parser has already bound each pair, in order, to a leg.
                 return "Both teams to score — " + match[1]
+            if 2 <= len(item.get("legs", [])) <= 5 and item.get("curation", {}).get("kind") == "publisher_ticket":
+                return " + ".join(self.market(leg["selection"]["label"]["fr"], leg) + " (" + leg["title"]["fr"] + ")" for leg in item["legs"])
             raise TranslationRejected("unsupported_accumulator_market")
+        try:
+            names = [item.get("teams", {}).get(side, {}).get("name", "") for side in ("home", "away")]
+            kind, target = describe_market(source, names, item.get("sport", {}).get("key"))
+            if item.get("selection", {}).get("betType") not in {None, kind}:
+                raise TranslationRejected("market_type_label_conflict")
+            return target
+        except MarketError:
+            pass
         try:
             market = guard.translate_market(source)
             target, code = market["target_en"], market["market_code"]
@@ -382,6 +525,10 @@ class CascadeTranslator(LocalTranslator):
         mt_config = replace(config, model=mt_model, fallback_model=None, num_threads=1)
         self.mt = LocalTranslator(mt_config, cache_dir=directory / "mt" if directory else None, request=mt_request)
         self.mt.started = self.started
+        self.contextual_feedback=True
+        self.mt.contextual_feedback=True
+        self.mt.allow_contextual_requests=False
+        self.logical_segments=0
         self.ensure_fallback_ready = ensure_fallback_ready
         self.fallback_ready = False
         self.content_fallback_only = True
@@ -428,8 +575,9 @@ class CascadeTranslator(LocalTranslator):
             raise TranslationRejected("model_unload_not_confirmed")
 
     def sentence(self, source, item):
-        if self.mt.segments + self.segments >= self.config.max_segments:
+        if self.logical_segments >= self.config.max_segments:
             raise TranslationRejected("translation_segment_budget_exceeded")
+        self.logical_segments+=1
         before = len(self.mt.records)
         try:
             target = self.mt.sentence(source, item)
@@ -443,7 +591,7 @@ class CascadeTranslator(LocalTranslator):
             self.records.extend({**record, "engine": "local_mt", "cascadeFallbackUsed": False}
                                 for record in self.mt.records[before:])
             return target
-        target = super().sentence(source, item)
+        target = super().sentence(source, item,feedback=rejected_mt.get('guardFeedback'))
         engine = "local_translategemma" if self.records[-1]["acceptedModel"].startswith("translategemma") else "local_qwen"
         self.records[-1].update({"engine": engine, "cascadeFallbackUsed": True,
                                  "rejectedMt": rejected_mt})

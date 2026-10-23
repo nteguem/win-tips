@@ -10,7 +10,7 @@ from urllib.parse import urlsplit
 from urllib.request import Request, HTTPRedirectHandler, build_opener
 
 PUBLIC_HOSTS = {"www.ruedesjoueurs.com", "ruedesjoueurs.com", "match.uefa.com",
-                "site.api.espn.com", "cdn.nba.com"}
+                "site.api.espn.com", "cdn.nba.com", "en.volleyballworld.com"}
 
 
 class FetchError(ValueError):
@@ -65,8 +65,11 @@ class PublicFetcher:
             if self.requests >= self.max_requests:
                 raise FetchError("public_request_budget_exceeded")
             self.requests += 1
-            req = Request(url, method="GET", headers={"User-Agent": "WinTipsEditorialWorker/0.1 (public source reader)",
-                                                    "Accept": "text/html,application/json"})
+            headers = {"User-Agent": "WinTipsEditorialWorker/0.1 (public source reader)", "Accept": "text/html,application/json"}
+            if urlsplit(url).hostname == "cdn.nba.com":
+                headers.update(Referer="https://www.nba.com/", Origin="https://www.nba.com",
+                               **{"User-Agent": "Mozilla/5.0 (compatible; WinTipsEditorialWorker/1.0; schedule verification)"})
+            req = Request(url, method="GET", headers=headers)
             try:
                 with self.opener.open(req, timeout=self.timeout) as response:
                     final_url = public_url(response.url)

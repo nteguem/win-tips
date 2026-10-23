@@ -62,6 +62,10 @@ FOOTBALL_NAME_GROUPS = (
     ('union berlin', 'fc union berlin', '1. fc union berlin'),
     ('hoffenheim', 'tsg hoffenheim', 'tsg 1899 hoffenheim'),
     ('leverkusen', 'bayer leverkusen', 'bayer 04 leverkusen'),
+    # RDJ article74768 prints Stuttgat; linked prediction and provider identify
+    # VfB Stuttgart. Gladbach's RDJ abbreviation is equally finite.
+    ('stuttgart', 'vfb stuttgart', 'stuttgat'),
+    ('borussia monchengladbach', 'borussia mönchengladbach', 'm gladbach', 'mgladbach'),
 )
 FOOTBALL_ALIASES = {_identity(name): _identity(names[0]) for names in FOOTBALL_NAME_GROUPS for name in names}
 TENNIS_ALIASES = {_identity('Daniel Vallejo'): _identity('Adolfo Daniel Vallejo')}

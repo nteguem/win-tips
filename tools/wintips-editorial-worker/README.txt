@@ -39,7 +39,7 @@ la prévisualisation peut conserver le français seul. Avec --translate, la mêm
 traduction et les mêmes gardes bilingues que la publication sont exigées, mais
 aucun POST d'import ou notification n'est exécuté.
 
-Sans --api-base, les quatre adaptateurs sont inspectés. Avec --api-base (ou
+Sans --api-base, les sept adaptateurs sont inspectés. Avec --api-base (ou
 WINTIPS_EDITORIAL_API_BASE), GET /api/internal/editorial/config sélectionne les
 seules sources affectées par le BO à des catégories actives. Cette route et les
 POST internes utilisent Bearer WINTIPS_EDITORIAL_WORKER_TOKEN ; aucun compte admin
@@ -81,6 +81,29 @@ ne déclenche pas ce troisième moteur. Aucun texte n'est assemblé manuellement
 pour faire passer une fixture. Un cache exact déjà valide ne démarre pas Ollama.
 Une erreur de configuration, de source, de cache corrompu ou de budget ne contourne
 pas les garde-fous. Le budget global et les validations restent identiques.
+
+Le cache v5 conserve des RÉPONSES exactes, jamais une autorisation réutilisable.
+La clé lie le source et le prompt UTF-8 complets, le modèle demandé, l'endpoint,
+les options, les ancres et l'empreinte de tous les faits FR de l'item et de ses
+jambes, ainsi que les versions du contrat. Seuls les champs EN sont retirés du
+contexte factuel. Une cote, un horaire, un acteur, le prompt ou le modèle modifié
+exige une nouvelle réponse. La version du garde est conservée dans l'audit,
+distincte de la clé : toute réponse retrouvée passe encore le garde courant.
+Un ancien passed n'est jamais accepté aveuglément. Les caches d'ancien format
+ne sont pas migrés ou réétiquetés sous de nouveaux prompts. Une configuration
+opérateur qui remplace les poids sous un même nom de modèle doit invalider ce
+nom/version de cache ; le transport ne télécharge aucun modèle automatiquement.
+
+La cascade transmet au moteur suivant un retour factuel structuré du garde
+(faits attendus et manquants, erreurs), avec la phrase FR originale entière.
+Ce retour ne contient aucune analyse EN écrite manuellement. Le prompt de
+réparation et son feedback ont une identité cache distincte ; les mêmes gardes
+s'appliquent encore. Une réponse de base valide est cherchée en premier. Une
+réponse refusée n'est pas recalculée à l'identique sous un prompt déterministe.
+Une réparation déjà refusée passe au prochain moteur, puis bloque la source
+si aucun candidat n'est validé. Les erreurs techniques et budgets ne deviennent
+pas des demandes de réparation. Le plafond de segments compte chaque phrase
+source une fois, tandis que le temps global borne toute la cascade.
 
 WINTIPS_EDITORIAL_MT_ROOT désigne les poids existants ; WINTIPS_EDITORIAL_MT_DEPS
 leur installation CTranslate2/SentencePiece. WINTIPS_EDITORIAL_MODEL_ENDPOINT et
@@ -132,21 +155,67 @@ n'est pas prouvé. Les matchs connus du Petit Journal du jour sont exclus du VIP
 Le VIP peut être traité seul si le Petit Journal est absent.
 
 rdj_football_combine : /actualites/paris-sportifs.html
-Articles COMBI/COMBINÉ récents avec liens de matchs vérifiés. Le format pris en
-charge est « Les deux équipes marquent », de deux à cinq rencontres, et cote totale
-explicitement donnée. Aucun autre marché n'est deviné par l'IA. Les cotes de
-rencontres restent nulles si seul le total est annoncé ; aucun produit calculé.
-Le premier départ du combiné gouverne sa fermeture. Alias finis, pas de recherche
-approximative pouvant mélanger deux équipes ou une rencontre d'une autre date.
+Clé historique conservée. Articles COMBI/COMBINÉ récents avec identités vérifiées,
+de deux à cinq rencontres et cote totale publiée. La découverte inspecte aussi
+/paris-sportifs/sport-news/news-pmu-sport.html et /paris-sportifs.html, car les vrais
+tickets PMU ne sont pas toujours liés par l'index /actualites/paris-sportifs.html.
+Les formats BTTS et les jambes explicites victoire/BTTS/buts sont identifiés par
+une grammaire finie, jamais par l'IA. Les cotes de jambes restent nulles si seul
+le total est annoncé. Le premier départ ferme le ticket. Les horaires contenant
+plusieurs heures ou un qualificatif non géré (UTC, etc.) sont refusés, non tronqués.
+
+rdj_football_duo : Le Duo du Jour
+Seulement un vrai ticket RDJ de DEUX événements distincts avec total publié entre
+2 et 4 inclus. Le champ curation identifie publisher_ticket, RDJ, l'article source
+et le bookmaker explicitement cité. Aucun produit de meilleures cotes de plusieurs
+opérateurs, aucun faux ticket construit. Une journée sans ticket adapté reste vide.
+Un seul Duo est retenu par édition. À validité égale, un ticket mixte/résultat
+précède un ticket uniquement buts ; ce dernier reste utilisable s'il est le seul
+candidat. L'ordre de collecte impose cette priorité même si le BO envoie les
+sources inversées. L'empreinte des événements, horaires et sélections exclut du
+Combiné Buts une copie du même ticket, même sous un autre article. Si seul Buts
+est actif, aucun Duo artificiel ne le prive de contenu.
+
+rdj_football_goals : Combiné Buts
+Seulement deux ou trois jambes dont TOUS les marchés sont btts,
+over_under_goals ou team_goals, avec total explicitement publié par RDJ. Un ticket
+victoire Stuttgart + Brest/Nice BTTS peut devenir un Duo, jamais un Combiné Buts.
+La construction de tickets WinTips à partir de cotes individuelles n'est pas armée :
+elle exigerait un contrat séparé prouvant même opérateur et horodatages compatibles.
+
+rdj_multisport_analysis : Expert Multisports
+Analyses éditoriales /pronostics/basket.html et /pronostics/volleyball.html : NBA et
+volley quand une sélection, l'identité, la compétition et le départ sont prouvés.
+Les pannes de tous les index donnent source_incomplete, pas une journée vide normale.
+Le Petit Journal gratuit conserve ses sports d'origine et ses propres sélections ;
+les IDs gratuits connus sont exclus du VIP. Aucun quota quotidien promis.
+Le calendrier NBA public est prioritaire ; un secours ESPN NBA est limité aux
+matchs scheduled, timeValid, aux deux participants ordonnés et à la bonne ligue.
+Volleyball World /api/v1/globalschedule/date/date vérifie seulement les événements
+réellement renvoyés par son calendrier (VNL et certains clubs). Ce n'est pas une
+couverture universelle CEV/volley. Statut0, identité unique, tournoi et heureUTC
+sont exigés ; classement mondial historique et matchs en cours/terminés sont exclus.
+Une absence de preuve diffère la publication, elle n'invente jamais une heure.
+Victoire, écart, points d'équipe/joueur et scores/totaux de sets ont des traductions
+déterministes lorsqu'ils correspondent à la grammaire supportée. Aucune inclusion
+des prolongations n'est déduite de la simple étiquette NBA.
 
 DATES ET CONTRAT API
 L'édition est celle du calendrier RDJ Europe/Paris, changements d'heure inclus.
 Les départs restent des instants UTC vérifiés ; une date de publication n'est
 jamais réutilisée comme coup d'envoi. Les fiches sans offset explicite exigent un
-calendrier UEFA/NBA/ESPN avec identité et compétition prouvées, sinon le match est
+calendrier UEFA/NBA/ESPN/Volleyball World avec identité et compétition prouvées, sinon le match est
 bloqué. Chaque nouveau match, course et rencontre de combiné doit être programmé
 au moins trente minutes après l'instant de publication. L'API revérifie ce délai,
 l'identité, le schéma et la correspondance des dates présentes dans les URL.
+Exception explicite NBA : une éditionD peut inclure la nuit suivante AVANT midi
+Europe/Paris en D+1, avec changements d'heure. La date d'éditionD et l'instantUTC
+restent intacts. editionConvention=nba_following_night et scheduleProof sont
+obligatoires, avec preuveNBA/ESPN exacte ; pas de WNBA, autre sport, D+2 ou midi.
+Cette exception couvre aussi la carte NBA nocturne du Petit Journal gratuit.
+Le budget de collecte reste borné à80GET au maximum par passage et240secondes par
+défaut ; les trois sources de tickets partagent les pages du même fetcher. Seules
+les sources actives dans le BO sont collectées en exploitation avec --api-base.
 
 L'import exige par défaut FR+EN complet : WINTIPS_EDITORIAL_REQUIRE_EN reste true
 en production. Les analyses sont affichées développées ; le choix et la cote
@@ -194,7 +263,7 @@ doublons. Le pont est explicite, silencieux et temporaire ; aucune conversion en
 faux coupon. Sa désactivation doit attendre une décision sur l'adoption mobile.
 
 SANTÉ ET CHARGE
-Un verrou empêche deux tours simultanés. Bornes par défaut : quarante GET publics,
+Un verrou empêche deux tours simultanés. Bornes par défaut : quatre-vingts GET publics,
 vingt secondes par réponse, 240 secondes de collecte, cache HTTP dix minutes ; le
 budget de traduction séparé est 1200 secondes et reste plafonné par CLI. Réponses
 publiques et API ont des limites de taille. Les redirections publiques restent

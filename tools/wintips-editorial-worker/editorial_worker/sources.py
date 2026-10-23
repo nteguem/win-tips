@@ -1,15 +1,18 @@
-"""Four explicit RDJ adapters; missing or ambiguous data never creates a ticket."""
+"""Explicit RDJ adapters; missing or ambiguous data never creates a ticket."""
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 import json
+import hashlib
 import math
 import re
 from urllib.parse import urljoin, urlsplit
 
 from .vendor import rdj_collector as rdj
 from .vendor.timing import OfficialKickoffs, _provider_name
-from .calendar import edition_day, source_event_day
+from .calendar import edition_day, source_event_day, paris_timezone
+from .verified import VerifiedKickoffs
+from .markets import market as describe_market, GOAL_TYPES, MarketError
 
 HOST = "https://www.ruedesjoueurs.com"
 SOURCES = {
@@ -17,7 +20,12 @@ SOURCES = {
     "rdj_turf_quinte": HOST + "/turf/pronostic-turf.html",
     "rdj_football_analysis": HOST + "/pronostics/foot.html",
     "rdj_football_combine": HOST + "/actualites/paris-sportifs.html",
+    "rdj_football_duo": HOST + "/paris-sportifs/sport-news/news-pmu-sport.html",
+    "rdj_football_goals": HOST + "/actualites/paris-sportifs.html",
+    "rdj_multisport_analysis": HOST + "/pronostics/basket.html",
 }
+COMBINE_INDEXES = tuple(dict.fromkeys((SOURCES["rdj_football_combine"], SOURCES["rdj_football_duo"], HOST + "/paris-sportifs.html")))
+MULTISPORT_INDEXES = (HOST + "/pronostics/basket.html", HOST + "/pronostics/volleyball.html")
 MATCH_PATH = re.compile(r"/pronostic/(?!statistiques/)[^/?#]+-(\d+)\.html$")
 RACE_PATH = re.compile(r"/turf/pronostic-turf/course/(\d{2}-\d{2}-\d{4})/R(\d+)/C(\d+)/[^/?#]+\.html$")
 COMBI_PATH = re.compile(r"/(?:actualites/paris-sportifs|paris-sportifs/sport-news/news-[a-z-]+)/(?P<id>\d+)-[^/?#]+\.html$")
@@ -122,7 +130,7 @@ def match_item(detail, page, source, edition, *, resolver, pick=None, odds=None,
             kickoff = detail["kickoff"].astimezone(timezone.utc)
         else:
             fixture = {"home": detail["home"], "away": detail["away"], "sport": detail["sport"],
-                       "competition": detail["competition"], "source_url": page.url, "journal_source_url": page.url}
+                       "competition": detail["competition"], "gender": detail.get("gender"), "source_url": page.url, "journal_source_url": page.url}
             moment, _ = rdj._utc(fixture, detail["kickoff"], detail["kickoff"], date.fromisoformat(edition), resolver)
             kickoff = iso(moment)
     logo_home, logo_away = _team_logos(root, page.url)
@@ -139,19 +147,74 @@ def match_item(detail, page, source, edition, *, resolver, pick=None, odds=None,
                  if rdj.folded(row["pick_fr"]) == rdj.folded(pick)}
         if len(pairs) == 1:
             odds = float(pairs.pop())
-    return {"source": source, "sourceId": MATCH_PATH.fullmatch(urlsplit(page.url).path).group(1),
+    result = {"source": source, "sourceId": MATCH_PATH.fullmatch(urlsplit(page.url).path).group(1),
             "sourceUrl": page.url, "editionDate": edition, "kind": "match",
             "title": {"fr": detail["home"] + " — " + detail["away"]},
-            "summary": {"fr": expert.get("text") or detail["headline_fr"]},
+            "summary": {"fr": expert.get("text") or detail["home"] + " — " + detail["away"]},
             "startsAtUtc": utc_text(kickoff), "sport": {"key": detail["sport"], "name": detail["sport"].capitalize()},
             "competition": {"name": detail["competition"]}, "teams": teams,
             "analysis": paragraphs(detail["analysis_paragraphs"]),
             "selection": {"label": {"fr": pick}, "odds": odds}, "status": "upcoming"}
+    local = kickoff.astimezone(paris_timezone())
+    day = date.fromisoformat(edition)
+    if detail["sport"] == "basketball" and rdj.folded(detail["competition"]) in {"nba", "national basketball association"} and local.date() == day + timedelta(days=1):
+        checked(local.hour < 12, "nba_following_night_window_closed")
+        fixture = {"home": detail["home"], "away": detail["away"], "sport": "basketball", "competition": "NBA", "source_url": page.url, "journal_source_url": page.url}
+        checked(resolver is not None, "nba_following_night_schedule_required")
+        proof = resolver(fixture, edition)
+        # Even a source offset alone cannot grant the following-night exception.
+        # Run the existing allowlisted clock guard over the provider's proof.
+        canonical = kickoff.astimezone(timezone.utc).replace(tzinfo=None)
+        resolved, _ = rdj._utc(fixture, canonical, canonical, day, lambda *args: proof)
+        checked(iso(resolved) == kickoff, "nba_following_night_schedule_conflict")
+        checked(proof["method"] in {"official_schedule", "provider_schedule"}, "nba_following_night_schedule_required")
+        result["competition"]["name"] = "NBA"
+        result["editionConvention"] = "nba_following_night"
+        result["scheduleProof"] = {"sourceUrl": proof["source_url"], "sourceId": str(proof["source_id"]),
+            "method": proof["method"], "provider": "espn" if proof["method"] == "provider_schedule" else "nba",
+            "matchedParticipants": [detail["home"], detail["away"]], "startsAtUtc": result["startsAtUtc"], "status": "upcoming"}
+    try:
+        result["selection"]["betType"] = describe_market(pick, [detail["home"], detail["away"]], detail["sport"])[0]
+    except MarketError:
+        # Existing supported journal markets keep their original label; the
+        # guarded translator will explicitly accept or reject that grammar.
+        pass
+    return result
 
 
 def eligible(item, edition, now, lead=30):
     instant = iso(item["startsAtUtc"])
-    return edition_day(instant).isoformat() == edition and instant >= now + timedelta(minutes=lead)
+    local = instant.astimezone(paris_timezone())
+    day = date.fromisoformat(edition)
+    membership = local.date() == day
+    if (local.date() == day + timedelta(days=1) and local.hour < 12 and item.get("sport", {}).get("key") == "basketball"
+            and item.get("competition", {}).get("name") == "NBA" and item.get("editionConvention") == "nba_following_night"):
+        proof = item.get("scheduleProof", {})
+        if not isinstance(proof, dict):
+            return False
+        membership = (proof.get("startsAtUtc") == item["startsAtUtc"] and proof.get("status") == "upcoming"
+                      and proof.get("matchedParticipants") == [item.get("teams", {}).get(side, {}).get("name") for side in ("home", "away")]
+                      and _night_schedule_valid(proof))
+    return membership and instant >= now + timedelta(minutes=lead)
+
+
+def _night_schedule_valid(proof):
+    if not isinstance(proof.get("sourceId"), str) or not re.fullmatch(r"\d+", proof["sourceId"]) or not int(proof["sourceId"]):
+        return False
+    url = proof.get("sourceUrl")
+    if proof.get("method") == "official_schedule" and proof.get("provider") == "nba":
+        return url in {"https://cdn.nba.com/static/json/staticData/scheduleLeagueV2_1.json", "https://cdn.nba.com/static/json/staticData/scheduleLeagueV2.json"}
+    if proof.get("method") != "provider_schedule" or proof.get("provider") != "espn" or not isinstance(url, str):
+        return False
+    match = re.fullmatch(r"https://site\.api\.espn\.com/apis/site/v2/sports/basketball/nba/scoreboard\?dates=(\d{8})", url)
+    if not match:
+        return False
+    try:
+        requested = datetime.strptime(match[1], "%Y%m%d").date()
+        instant = iso(proof.get("startsAtUtc"))
+    except (ValueError, TypeError):
+        return False
+    return abs((requested - instant.date()).days) <= 1
 
 
 def collect_petit(edition, fetcher, *, now, resolver, lead=30, limit=8):
@@ -200,6 +263,7 @@ def collect_football(edition, fetcher, *, now, resolver, lead=30, limit=6, exclu
             continue
         try:
             p = fetcher.html(url)
+            checked(MATCH_PATH.fullmatch(urlsplit(p.url).path) is not None and MATCH_PATH.fullmatch(urlsplit(p.url).path).group(1) == match_id, "prediction_redirected_to_other_id")
             detail = rdj._detail(p)
             if detail["sport"] != "football" or source_event_day(detail["kickoff"]).isoformat() != edition:
                 continue
@@ -211,6 +275,77 @@ def collect_football(edition, fetcher, *, now, resolver, lead=30, limit=6, exclu
         except (ValueError, OSError) as exc:
             issues.append({"url": url, "code": getattr(exc, "code", str(exc)[:100])})
     return {"status": "ready" if items else "source_absent", "items": items, "issues": issues}
+
+
+def _multisport_pick(detail, page):
+    """Only the authored conclusion owns the selection, not odds tables/ads."""
+    root = page_root(page)
+    headings = rdj.find(root, lambda n: n.tag == "h2" and re.match(r"pronostics?\s+(?:1n2|1-2)\s+du match\b", rdj.folded(n.plain())))
+    labels = []
+    for heading in headings:
+        siblings = heading.parent.children
+        start = next(i for i, n in enumerate(siblings) if n is heading)
+        for node in siblings[start + 1:]:
+            if isinstance(node, rdj.Node) and node.tag == "h2":
+                break
+            if not isinstance(node, rdj.Node):
+                continue
+            for bold in rdj.find(node, lambda n: n.tag in {"b", "strong"}):
+                label = bold.plain().rstrip(".")
+                try:
+                    describe_market(label, [detail["home"], detail["away"]], detail["sport"])
+                except MarketError:
+                    continue
+                labels.append(label)
+    if len(set(labels)) == 1:
+        label = labels[0]
+    else:
+        checked(not labels, "multisport_expert_selection_ambiguous")
+        outcome = detail.get("expert_headline", {}).get("outcome_1n2")
+        checked(outcome in {"1", "2"}, "multisport_explicit_selection_missing")
+        label = "Victoire " + detail["home" if outcome == "1" else "away"]
+        describe_market(label, [detail["home"], detail["away"]], detail["sport"])
+    prices = {row["odds"] for row in detail.get("detail_priced_markets", []) if rdj.folded(row["pick_fr"]) == rdj.folded(label)}
+    return label, float(prices.pop()) if len(prices) == 1 else None
+
+
+def collect_multisport(edition, fetcher, *, now, resolver, lead=30, limit=6, exclude_ids=None):
+    items, issues, links = [], [], []
+    valid_indexes = 0
+    for index in MULTISPORT_INDEXES:
+        try:
+            root = page_root(fetcher.html(index))
+            valid_indexes += 1
+            for link in rdj.find(root, lambda n: n.tag == "a" and "lire l'analyse" in rdj.folded(n.plain())):
+                url = source_url(link.attrs.get("href", ""))
+                if MATCH_PATH.fullmatch(urlsplit(url).path) and url not in links:
+                    links.append(url)
+        except (ValueError, OSError) as exc:
+            issues.append({"url": index, "code": str(exc)[:100]})
+    for url in links[:16]:
+        identity = MATCH_PATH.fullmatch(urlsplit(url).path).group(1)
+        if identity in (exclude_ids or set()):
+            continue
+        try:
+            page = fetcher.html(url)
+            checked(MATCH_PATH.fullmatch(urlsplit(page.url).path) is not None and MATCH_PATH.fullmatch(urlsplit(page.url).path).group(1) == identity, "prediction_redirected_to_other_id")
+            detail = rdj._detail(page)
+            event_day = source_event_day(detail["kickoff"])
+            following_nba = (detail["sport"] == "basketball" and rdj.folded(detail["competition"]) in {"nba", "national basketball association"}
+                             and event_day == date.fromisoformat(edition) + timedelta(days=1))
+            if detail["sport"] not in {"basketball", "volleyball"} or (event_day.isoformat() != edition and not following_nba):
+                continue
+            label, odds = _multisport_pick(detail, page)
+            item = match_item(detail, page, "rdj_multisport_analysis", edition, resolver=resolver, pick=label, odds=odds)
+            if eligible(item, edition, now, lead):
+                items.append(item)
+            else:
+                issues.append({"url": url, "code": "outside_publication_window"})
+            if len(items) >= limit:
+                break
+        except (ValueError, OSError) as exc:
+            issues.append({"url": url, "code": getattr(exc, "code", str(exc)[:100])})
+    return {"status": "ready" if items else "source_absent" if valid_indexes else "source_incomplete", "items": items, "issues": issues}
 
 
 def _runners(root, url):
@@ -291,7 +426,7 @@ def parse_turf(page, edition):
                      "racecourse": racecourse, "discipline": discipline[1], "distanceMeters": int(distance[1].replace(" ", "")),
                      "runnersCount": int(count[1]), "runners": runners},
             "analysis": paragraphs(text, "Analyse de la course"),
-            "selection": {"label": {"fr": "Sélection Quinté+ RDJ"}, "odds": None, "betType": "quinte_selection",
+            "selection": {"label": {"fr": "Sélection Quinté+"}, "odds": None, "betType": "quinte_selection",
                           "orderedNumbers": numbers}, "status": "upcoming"}
 
 
@@ -325,26 +460,27 @@ def _article_date(root):
 
 def _analysis_blocks(root):
     body = rdj.one(rdj.find(root, lambda n: n.attrs.get("id") == "articleMainContent"), "article body")
-    h = rdj.one(rdj.find(body, lambda n: n.tag == "h2" and rdj.folded(n.plain()).replace("'", "").startswith("lanalyse du combine")), "combi analysis heading")
-    children = h.parent.children
-    start = next(i for i, n in enumerate(children) if n is h)
-    blocks = []
-    for n in children[start + 1:]:
-        if isinstance(n, str):
-            if rdj.text(n):
-                blocks.append(rdj.text(n))
+    h = rdj.one(rdj.find(body, lambda n: n.tag == "h2" and re.match(r"lanalyse (?:du|de ce) combine", rdj.folded(n.plain()).replace("'", ""))), "combi analysis heading")
+    blocks, active = [], False
+    # PMU nests analysis AND its next promotional h2 in one div. Traverse in
+    # document order and stop at that h2 even across wrapper boundaries; never
+    # flatten the div and accidentally ingest bookmaker instructions as prose.
+    for n in body.walk():
+        if n is h:
+            active = True
+            continue
+        if not active:
             continue
         if n.tag == "h2":
             break
-        checked(n.tag in {"p", "strong", "b", "br", "div"}, "combi_analysis_structure_unknown")
-        if n.tag != "br" and n.plain():
+        if n.tag == "p" and n.plain():
             checked(not rdj.find(n, lambda a: "sponsored" in (a.attrs.get("rel") or "")), "combi_analysis_contains_ad")
             blocks.append(n.plain())
     checked(bool(blocks), "combi_analysis_empty")
     return body, blocks
 
 
-def parse_combine(page, edition, fetcher, resolver):
+def parse_combine(page, edition, fetcher, resolver, *, source="rdj_football_combine"):
     root = page_root(page)
     identity = COMBI_PATH.fullmatch(urlsplit(page.url).path)
     checked(identity is not None, "invalid_combi_url")
@@ -353,11 +489,11 @@ def parse_combine(page, edition, fetcher, resolver):
     explicit = []
     for n in rdj.find(body, lambda n: n.tag == "p"):
         raw = n.plain()
-        match = re.search(r'pari combin[eé]\s+["«](.+?)["»]\s+est cot[eé]\s+[aà]\s+(\d+[,.]\d+)\s+chez\s+', raw, re.I)
+        match = re.search(r'(?:pari|le) combin[eé]\s+["«](.+?)["»]\s+est cot[eé]\s+[aà]\s+(\d+[,.]\d+)\s+chez\s+(.+?)(?:\s*[-—]\s*|$)', raw, re.I)
         if match:
-            explicit.append((match[1], float(match[2].replace(",", "."))))
+            explicit.append((match[1], float(match[2].replace(",", ".")), match[3].strip()))
     checked(len(set(explicit)) == 1, "one_explicit_combine_market_and_price_required")
-    market, total = explicit[0]
+    market, total, bookmaker = explicit[0]
     checked(math.isfinite(total) and total > 1, "invalid_combine_odds")
     # Format supported by the verified modern COMBI article: each exact match
     # heading is a paragraph, then its analysis. No LLM guesses at segmentation.
@@ -374,14 +510,35 @@ def parse_combine(page, edition, fetcher, resolver):
         else:
             raise ParseError("combi_analysis_unbound_paragraph")
     checked(2 <= len(groups) <= 5 and all(g["paragraphs"] for g in groups), "combi_leg_analysis_missing")
+    # Legacy format scopes one BTTS instruction over a list of exact pairs;
+    # modern PMU tickets spell a distinct market for every leg instead.
     prefix = re.match(r"les (?:2|deux) [eé]quipes marquent\s+", market, re.I)
-    checked(prefix is not None, "combi_market_requires_new_explicit_adapter")
-    market_pairs = []
-    for part in market[prefix.end():].split("+"):
-        sides = re.fullmatch(r"\s*(.+?)\s+[—–-]\s+(.+?)\s*", part)
-        checked(sides is not None, "combi_market_participants_ambiguous")
-        market_pairs.append([team_key(sides[1]), team_key(sides[2])])
-    checked(market_pairs == [[team_key(g["home"]), team_key(g["away"])] for g in groups], "combi_market_participants_conflict")
+    if prefix:
+        parts = market[prefix.end():].split("+")
+        market_pairs = []
+        for part in parts:
+            sides = re.fullmatch(r"\s*(.+?)\s+[—–-]\s+(.+?)\s*", part)
+            checked(sides is not None, "combi_market_participants_ambiguous")
+            market_pairs.append([team_key(sides[1]), team_key(sides[2])])
+        checked(market_pairs == [[team_key(g["home"]), team_key(g["away"])] for g in groups], "combi_market_participants_conflict")
+        labels = ["Les deux équipes marquent"] * len(groups)
+    else:
+        parts = [part.strip() for part in market.split("+")]
+        checked(len(parts) == len(groups), "combi_market_leg_count_conflict")
+        labels = []
+        for part, group in zip(parts, groups):
+            contextual = re.fullmatch(r"(.+?)\s+[—–-]\s+(.+?)\s*:\s*(.+)", part)
+            if contextual:
+                checked([team_key(contextual[1]), team_key(contextual[2])] == [team_key(group["home"]), team_key(group["away"])], "combi_market_participants_conflict")
+                label = contextual[3]
+                if re.fullmatch(r"Les (?:2|deux) marquent", label, re.I):
+                    label = "Les deux équipes marquent"
+            else:
+                label = part
+            # Winner shorthand must bind to exactly one group participant.
+            kind, _ = describe_market(label, [group["home"], group["away"]], "football")
+            checked(contextual is not None or kind == "match_winner", "combi_market_context_required")
+            labels.append(label)
     # No dates are inferred from 'Wednesday'. The article date/URL must identify
     # the requested edition, and every match must bind to a real prediction page.
     path_date = re.search(r"(?<!\d)(\d{2})-(\d{2})-(\d{4})(?!\d)", urlsplit(page.url).path)
@@ -391,40 +548,56 @@ def parse_combine(page, edition, fetcher, resolver):
         catalogue = page_root(fetcher.html(SOURCES["rdj_football_analysis"]))
         links = _fixture_links(catalogue)
     legs = []
-    for group in groups:
+    for group, label in zip(groups, labels):
         pair = [team_key(group[s]) for s in ("home", "away")]
         checked(all(pair), "combi_participant_unknown")
         matched = []
         for url in links[:30]:
             # Decode source slugs only to bound requests; never use them as names.
             slug = urlsplit(url).path.rsplit("/", 1)[-1].rsplit("-", 1)[0].replace("-", " ")
-            if not all(any(part in rdj.folded(slug) for part in re.findall(r"[a-z]{3,}", rdj.folded(group[s]))) for s in ("home", "away")):
+            if not all(_slug_candidate(slug, group[s]) for s in ("home", "away")):
                 continue
             p = fetcher.html(url)
+            checked(MATCH_PATH.fullmatch(urlsplit(p.url).path) is not None and MATCH_PATH.fullmatch(urlsplit(p.url).path).group(1) == MATCH_PATH.fullmatch(urlsplit(url).path).group(1), "prediction_redirected_to_other_id")
             detail = rdj._detail(p)
             if [team_key(detail[s]) for s in ("home", "away")] != pair:
                 continue
             if source_event_day(detail["kickoff"]).isoformat() != edition:
                 continue
-            clock = re.search(r"(?<!\d)(\d{1,2})[:h](\d{2})(?!\d)", group["displayClock"])
-            checked(clock is not None and (detail["kickoff"].hour, detail["kickoff"].minute) == (int(clock[1]), int(clock[2])),
-                    "combi_displayed_time_conflict")
-            matched.append((p, detail))
+            clock = re.fullmatch(r"(?:(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\s+)?([01]?\d|2[0-3])[:h]([0-5]\d)", rdj.folded(group["displayClock"]).strip())
+            checked(clock is not None, "combi_displayed_time_conflict")
+            checked(clock[1] is None or clock[1] == rdj.WEEKDAYS[date.fromisoformat(edition).weekday()], "combi_displayed_weekday_conflict")
+            # Author clock and detail may independently display UTC or Paris.
+            # Reconcile BOTH to the same verified provider instant, including DST.
+            author = datetime.combine(date.fromisoformat(edition), datetime.min.time()).replace(hour=int(clock[2]), minute=int(clock[3]))
+            fixture = {"home": detail["home"], "away": detail["away"], "sport": "football", "competition": detail["competition"], "source_url": p.url, "journal_source_url": page.url}
+            try:
+                verified, _ = rdj._utc(fixture, author, detail["kickoff"], date.fromisoformat(edition), resolver)
+            except ValueError as exc:
+                raise ParseError("combi_displayed_time_conflict") from exc
+            matched.append((p, detail, iso(verified)))
         checked(len(matched) == 1, "combi_match_identity_unresolved")
-        p, detail = matched[0]
-        # Only this explicitly supported market maps unambiguously to every leg.
-        label = "Les deux équipes marquent"
-        leg = match_item(detail, p, "rdj_football_combine", edition, resolver=resolver, pick=label, odds=None)
+        p, detail, kickoff = matched[0]
+        # Shorthand 'Stuttgart' is retained in the FR label; names in the match
+        # identity remain the source detail's full, verified team names.
+        leg = match_item(detail, p, source, edition, resolver=resolver, pick=label, odds=None, kickoff=kickoff)
+        leg["selection"]["betType"] = describe_market(label, [detail["home"], detail["away"]], "football")[0]
         leg["analysis"] = paragraphs(group["paragraphs"], "Analyse du match")
         legs.append(leg)
     start = min(iso(n["startsAtUtc"]) for n in legs)
     title = rdj.one(rdj.find(root, lambda n: n.tag == "h1"), "combi title").plain()
-    return {"source": "rdj_football_combine", "sourceId": identity.group("id"), "sourceUrl": page.url,
-            "editionDate": edition, "kind": "combine", "title": {"fr": "Combiné football RDJ"},
+    if source == "rdj_football_duo":
+        checked(len(legs) == 2 and 2 <= total <= 4, "duo_requires_two_legs_and_total_2_to_4")
+    if source == "rdj_football_goals":
+        checked(2 <= len(legs) <= 3 and all(leg["selection"]["betType"] in GOAL_TYPES for leg in legs), "goals_requires_two_or_three_goal_markets")
+    checked(len({leg["sourceId"] for leg in legs}) == len(legs), "duplicate_combine_fixture")
+    return {"source": source, "sourceId": identity.group("id"), "sourceUrl": page.url,
+            "editionDate": edition, "kind": "combine", "title": {"fr": {"rdj_football_duo": "Le Duo du Jour", "rdj_football_goals": "Combiné Buts"}.get(source, "Combiné football")},
             "summary": {"fr": " · ".join(n["title"]["fr"] for n in legs)}, "startsAtUtc": utc_text(start),
             "sport": {"key": "football", "name": "Football"}, "competition": {"name": "Combiné football"},
             "analysis": paragraphs(["Analyse de chaque rencontre ci-dessous."], "Le ticket"),
-            "selection": {"label": {"fr": market}, "odds": None, "totalOdds": total, "betType": "combine"},
+            "selection": {"label": {"fr": market}, "odds": None, "totalOdds": total, "betType": "combine" if source == "rdj_football_combine" else "accumulator"},
+            "curation": {"kind": "publisher_ticket", "publisher": "RDJ", "bookmaker": bookmaker, "sourceUrl": page.url},
             "legs": legs, "status": "upcoming"}
 
 
@@ -432,43 +605,99 @@ def team_key(value):
     # Spellings explicitly observed in the same 21 October RDJ COMBI article
     # and its linked match pages. Finite aliases, never fuzzy identity matching.
     value = _provider_name(value, True)
-    return {"come": "como", "manu": "manchesterunited"}.get(value, value)
+    return {"come": "como", "manu": "manchesterunited", "stuttgat": "stuttgart", "vfbstuttgart": "stuttgart", "mgladbach": "borussiamonchengladbach"}.get(value, value)
 
 
-def collect_combine(edition, fetcher, *, now, resolver, lead=30, limit=2):
-    root = page_root(fetcher.html(SOURCES["rdj_football_combine"]))
+def _slug_candidate(slug, name):
+    raw = re.sub(r"[^a-z0-9]", "", rdj.folded(slug))
+    key = team_key(name)
+    aliases = {"stuttgart": ("stuttgart",), "borussiamonchengladbach": ("mgladbach", "monchengladbach"), "manchesterunited": ("manchesterunited", "manu"), "como": ("como", "come")}
+    return any(part in raw for part in aliases.get(key, (key,)))
+
+
+def ticket_fingerprint(item):
+    """Same events/times/markets stay one ticket, even under another article ID."""
+    legs = []
+    for leg in item.get("legs", []):
+        teams = [leg["teams"][side]["name"] for side in ("home", "away")]
+        kind, english = describe_market(leg["selection"]["label"]["fr"], teams, "football")
+        # Duplicate prediction IDs cannot create another ticket for the same
+        # verified event: ordered participants and UTC start own its identity.
+        legs.append({"startsAtUtc": utc_text(iso(leg["startsAtUtc"])),
+            "participants": [team_key(name) for name in teams], "market": kind, "selection": rdj.folded(english)})
+    legs.sort(key=lambda n: (n["participants"], n["startsAtUtc"], n["selection"]))
+    return hashlib.sha256(json.dumps(legs, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+
+def collect_combine(edition, fetcher, *, now, resolver, lead=30, limit=2, source="rdj_football_combine", exclude_ids=None, exclude_ticket_fingerprints=None):
     links, issues, items = [], [], []
-    for tile in rdj.find(root, lambda n: n.tag == "article" and n.has_class("news-tile")):
-        headings = rdj.find(tile, lambda n: n.tag in {"h2", "h3"})
-        if not headings or not re.search(r"\bcombi(?:ne)?\b", rdj.folded(headings[0].plain())):
-            continue
-        for link in rdj.find(headings[0], lambda n: n.tag == "a" and n.attrs.get("href")):
-            url = source_url(link.attrs["href"])
-            m = re.search(r"(\d{2})-(\d{2})-(\d{4})", urlsplit(url).path)
-            if COMBI_PATH.fullmatch(urlsplit(url).path) and m and f"{m[3]}-{m[2]}-{m[1]}" == edition:
-                if url not in links:
-                    links.append(url)
+    roots = []
+    # A current article in the news index does not imply that PMU's independent
+    # current ticket is present there. Always inspect these three bounded lists;
+    # the shared fetcher reuses each GET across all three compatible adapters.
+    for index in COMBINE_INDEXES:
+        try:
+            roots.append(page_root(fetcher.html(index)))
+        except (ValueError, OSError) as exc:
+            issues.append({"url": index, "code": str(exc)[:100]})
+    for root in roots:
+        for url in _dated_combine_links(root, edition):
+            if url not in links:
+                links.append(url)
     for url in links[:4]:
         try:
-            item = parse_combine(fetcher.html(url), edition, fetcher, resolver)
+            item = parse_combine(fetcher.html(url), edition, fetcher, resolver, source=source)
+            checked(not any(leg["sourceId"] in (exclude_ids or set()) for leg in item["legs"]), "ticket_contains_free_fixture")
+            checked(ticket_fingerprint(item) not in (exclude_ticket_fingerprints or set()), "ticket_already_selected_as_duo")
             if eligible(item, edition, now, lead) and all(eligible(leg, edition, now, lead) for leg in item["legs"]):
                 items.append(item)
-            if len(items) >= limit:
+            if source != "rdj_football_duo" and len(items) >= limit:
                 break
         except (ValueError, OSError) as exc:
             issues.append({"url": url, "code": getattr(exc, "code", str(exc)[:100])})
-    return {"status": "ready" if items else "source_absent", "items": items, "issues": issues}
+    if source == "rdj_football_duo":
+        # Among equally verified publisher tickets prefer a mixed/result ticket,
+        # then deterministic event time and publisher ID. Never force a quota.
+        items.sort(key=lambda item: (all(leg["selection"].get("betType") in GOAL_TYPES for leg in item["legs"]), item["startsAtUtc"], int(item["sourceId"])))
+        items = items[:1]
+    # Duplicate article links or copied tickets never fill the same family twice.
+    distinct = {}
+    for item in items:
+        distinct.setdefault(ticket_fingerprint(item), item)
+    items = list(distinct.values())
+    return {"status": "ready" if items else "source_absent" if roots else "source_incomplete", "items": items, "issues": issues}
 
 
-def collect(source, edition, fetcher, *, now, lead=30, exclude_ids=None):
+def _dated_combine_links(root, edition):
+    links = []
+    for link in rdj.find(root, lambda n: n.tag == "a" and n.attrs.get("href")):
+        try:
+            url = source_url(link.attrs["href"])
+        except ValueError:
+            continue
+        path = urlsplit(url).path
+        match = re.search(r"(\d{2})-(\d{2})-(\d{4})", path)
+        if (COMBI_PATH.fullmatch(path) and re.search(r"\bcombi(?:ne)?\b", rdj.folded(path.rsplit("/", 1)[-1]))
+                and match and f"{match[3]}-{match[2]}-{match[1]}" == edition and url not in links):
+            links.append(url)
+    return links
+
+
+def collect(source, edition, fetcher, *, now, lead=30, exclude_ids=None, exclude_ticket_fingerprints=None):
     checked(source in SOURCES, "unknown_source")
     checked(date.fromisoformat(edition).isoformat() == edition and now.tzinfo is not None, "date_or_clock_invalid")
-    resolver = OfficialKickoffs(fetch_json=fetcher.json)
+    resolver = VerifiedKickoffs(fetch_json=fetcher.json)
     kwargs = {"now": now, "resolver": resolver, "lead": lead}
-    if source == "rdj_football_analysis":
+    if source in {"rdj_football_analysis", "rdj_multisport_analysis", "rdj_football_duo", "rdj_football_goals", "rdj_football_combine"}:
         kwargs["exclude_ids"] = exclude_ids
     adapters = {"rdj_petit_journal": collect_petit, "rdj_turf_quinte": collect_turf,
-                "rdj_football_analysis": collect_football, "rdj_football_combine": collect_combine}
+                "rdj_football_analysis": collect_football, "rdj_football_combine": collect_combine,
+                "rdj_football_duo": collect_combine, "rdj_football_goals": collect_combine,
+                "rdj_multisport_analysis": collect_multisport}
+    if source in {"rdj_football_duo", "rdj_football_goals"}:
+        kwargs["source"] = source
+    if source == "rdj_football_goals":
+        kwargs["exclude_ticket_fingerprints"] = exclude_ticket_fingerprints
     try:
         return adapters[source](edition, fetcher, **kwargs)
     except (ValueError, OSError) as exc:

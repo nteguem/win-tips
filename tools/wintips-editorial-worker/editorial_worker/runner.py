@@ -14,7 +14,7 @@ from urllib.parse import urlsplit
 from urllib.request import Request, HTTPRedirectHandler, ProxyHandler, build_opener
 
 from .http import PublicFetcher
-from .sources import SOURCES, MATCH_PATH, RACE_PATH, COMBI_PATH, collect, eligible, iso, source_url
+from .sources import SOURCES, MATCH_PATH, RACE_PATH, COMBI_PATH, collect, eligible, iso, source_url, ticket_fingerprint
 from .calendar import edition_day, EDITION_TIMEZONE
 
 
@@ -93,7 +93,9 @@ def validate_item(item, source, edition, now, lead):
     path = urlsplit(source_url(item.get("sourceUrl"))).path
     patterns = {"rdj_petit_journal": r"/paris-sportifs/le-petit-journal/\d+[^/?#]+\.html",
                 "rdj_football_analysis": MATCH_PATH,
-                "rdj_turf_quinte": RACE_PATH, "rdj_football_combine": COMBI_PATH}
+                "rdj_multisport_analysis": MATCH_PATH,
+                "rdj_turf_quinte": RACE_PATH, "rdj_football_combine": COMBI_PATH,
+                "rdj_football_duo": COMBI_PATH, "rdj_football_goals": COMBI_PATH}
     if re.fullmatch(patterns[source], path) is None:
         raise ValueError("source_url_does_not_match_adapter")
     if not eligible(item, edition, now, lead) or item.get("status") != "upcoming":
@@ -106,6 +108,18 @@ def validate_item(item, source, edition, now, lead):
         for leg in item["legs"]:
             if not MATCH_PATH.fullmatch(urlsplit(source_url(leg.get("sourceUrl"))).path) or not eligible(leg, edition, now, lead):
                 raise ValueError("combine_leg_unverified")
+        if len({leg.get('sourceId') for leg in item['legs']}) != len(item['legs']):
+            raise ValueError('duplicate_combine_fixture')
+        if source in {'rdj_football_duo', 'rdj_football_goals'}:
+            proof = item.get('curation', {})
+            if proof.get('kind') != 'publisher_ticket' or proof.get('publisher') != 'RDJ' or proof.get('sourceUrl') != item['sourceUrl']:
+                raise ValueError('publisher_ticket_provenance_required')
+            if source == 'rdj_football_duo' and (len(item['legs']) != 2 or not 2 <= item['selection']['totalOdds'] <= 4):
+                raise ValueError('duo_requires_two_legs_and_total_2_to_4')
+            if source == 'rdj_football_goals':
+                from .markets import GOAL_TYPES
+                if not 2 <= len(item['legs']) <= 3 or any(leg.get('selection', {}).get('betType') not in GOAL_TYPES for leg in item['legs']):
+                    raise ValueError('goals_requires_two_or_three_goal_markets')
 
 
 def make_translator(args, output, resources):
@@ -148,6 +162,10 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
     selected = list(SOURCES) if not args.source else list(dict.fromkeys(args.source))
     if any(source not in SOURCES for source in selected):
         raise ValueError("unknown_source")
+    # Free IDs must be known before VIP collection; the basic Duo owns its
+    # composition before Goals, even when CLI/config sources arrive reversed.
+    order = {key: index for index, key in enumerate(SOURCES)}
+    selected.sort(key=lambda key: (0 if key == 'rdj_petit_journal' else 1 if key == 'rdj_football_duo' else 3 if key == 'rdj_football_goals' else 2, order[key]))
     output = Path(args.output).resolve()
     output.mkdir(parents=True, exist_ok=True)
     fetched = fetcher or PublicFetcher(output / "http-cache", max_requests=args.max_requests,
@@ -179,16 +197,20 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
             pass
     with single_run(output), ExitStack() as resources:
         collected = []
+        seen_duo_tickets = set()
         # Finish the bounded public HTTP collection BEFORE model inference.
         # Translation time must not consume the fetcher's four-minute budget.
         for source in selected:
             try:
-                result = collect(source, edition, fetched, now=instant, lead=args.minimum_lead_minutes, exclude_ids=seen_free)
+                extra = {'exclude_ticket_fingerprints': seen_duo_tickets} if source == 'rdj_football_goals' else {}
+                result = collect(source, edition, fetched, now=instant, lead=args.minimum_lead_minutes, exclude_ids=seen_free, **extra)
                 payload = {"source": source, "editionDate": edition, "items": result["items"]}
                 for item in payload["items"]:
                     validate_item(item, source, edition, instant, args.minimum_lead_minutes)
                 if source == 'rdj_petit_journal':
                     seen_free.update(item['sourceId'] for item in result['items'])
+                if source == 'rdj_football_duo':
+                    seen_duo_tickets.update(ticket_fingerprint(item) for item in result['items'])
                 file = output / 'editions' / edition / (source + ('.fr.json' if bilingual else '.json'))
                 write_json(file, payload)
                 row = {'source': source, 'status': result['status'], 'itemCount': len(result['items']),
@@ -274,7 +296,7 @@ def main(argv=None):
     mode.add_argument("--dry-run", action="store_true", help="Default; no POST and no notifications")
     mode.add_argument("--publish", action="store_true", help="Explicit bilingual import; API notification policy applies")
     parser.add_argument("--minimum-lead-minutes", type=int, default=30)
-    parser.add_argument("--max-requests", type=int, default=40)
+    parser.add_argument("--max-requests", type=int, default=80)
     parser.add_argument("--max-seconds", type=int, default=240)
     parser.add_argument("--cache-ttl-seconds", type=int, default=600)
     args = parser.parse_args(argv)

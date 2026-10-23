@@ -31,7 +31,7 @@ MONTHS = {name: index for index, name in enumerate(
 WEEKDAYS = ("lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche")
 SPORTS = {"football": "football", "foot": "football", "tennis": "tennis", "basket": "basketball", "basketball": "basketball",
           "basket-ball": "basketball", "rugby": "rugby", "handball": "handball", "volleyball": "volleyball",
-          "volley": "volleyball", "hockey": "hockey", "badminton": "badminton", "football americain": "american_football"}
+          "volley": "volleyball", "volley-ball": "volleyball", "hockey": "hockey", "badminton": "badminton", "football americain": "american_football"}
 
 
 def text(value: str) -> str:
@@ -496,7 +496,17 @@ def _detail(page: FetchedPage) -> dict:
         raw = paragraph.plain()
         for item in re.finditer(r'["«]([^"»]+)["»]\s*\(cote\s+[aà]\s+(\d+[,.]\d+)', raw, re.I):
             alternatives.append({"pick_fr": item[1], "odds": item[2].replace(",", "."), "excerpt_fr": item[0], "source_url": page.url})
-    return {"home": names[0], "away": names[1], "sport": sport_values.pop(), "competition": competition,
+    sport = sport_values.pop()
+    gender = None
+    if sport == "volleyball":
+        gender_text = folded(" ".join((competition, headline, analysis)))
+        men = bool(re.search(r"\b(?:men|hommes|masculin(?:s|e|es)?)\b", gender_text))
+        women = bool(re.search(r"\b(?:women|femmes|feminin(?:s|e|es)?)\b", gender_text))
+        # Country flags and a generic competition name cannot distinguish the
+        # men's and women's teams. Never infer gender from a lone date match.
+        if men != women:
+            gender = "men" if men else "women"
+    return {"home": names[0], "away": names[1], "sport": sport, "competition": competition, "gender": gender,
             "headline_fr": headline, "analysis_fr": analysis, "image_url": urlunsplit(image_parts),
             "kickoff": kickoff, "kickoff_raw": kickoff_raw, "analysis_paragraphs": paragraphs,
             "participant_logos": participant_logos, "detail_priced_markets": alternatives,
@@ -505,7 +515,7 @@ def _detail(page: FetchedPage) -> dict:
 
 def _provider_proof(resolved: dict, parts, fixture: dict, edition: date) -> bool:
     """ESPN is a bounded provider proof, never an official league schedule."""
-    match = re.fullmatch(r"/apis/site/v2/sports/(soccer/(fra\.[12]|eng\.1|esp\.1|ita\.1|ger\.1)|tennis/(atp|wta))/scoreboard", parts.path)
+    match = re.fullmatch(r"/apis/site/v2/sports/(soccer/(fra\.[12]|eng\.1|esp\.1|ita\.1|ger\.1)|tennis/(atp|wta)|basketball/(nba))/scoreboard", parts.path)
     if parts.hostname != "site.api.espn.com" or not match:
         return False
     query = parse_qs(parts.query, keep_blank_values=True)
@@ -523,6 +533,9 @@ def _provider_proof(resolved: dict, parts, fixture: dict, edition: date) -> bool
     if match[2]:
         return (fixture.get("sport") == "football" and resolved.get("orientation") == "home_away"
                 and resolved.get("league_id") == match[2])
+    if match[4]:
+        return (fixture.get("sport") == "basketball" and folded(fixture.get("competition", "")) in {"nba", "national basketball association"}
+                and resolved.get("orientation") == "home_away" and resolved.get("league_id") == "nba")
     return (fixture.get("sport") == "tennis" and resolved.get("orientation") in {"same_order", "reversed"}
             and isinstance(resolved.get("tournament_id"), str) and bool(resolved["tournament_id"].strip())
             and isinstance(resolved.get("tournament_name"), str) and bool(resolved["tournament_name"].strip()))
@@ -558,6 +571,16 @@ def _utc(fixture: dict, card_time: datetime, detail_time: datetime, edition: dat
         valid_proof = parts.scheme == "https" and parts.hostname and not parts.username and not parts.password and not parts.fragment and parts.port in {None, 443}
         if valid_proof and resolved["method"] == "official_schedule":
             valid_proof = any(parts.hostname == h or parts.hostname.endswith("." + h) for h in ("uefa.com", "nba.com", "nba.net"))
+            if parts.hostname == "en.volleyballworld.com":
+                match = re.fullmatch(r"/api/v1/globalschedule/(\d{4}-\d{2}-\d{2})/\1", parts.path)
+                valid_proof = (bool(match) and not parts.query and fixture.get("sport") == "volleyball"
+                    and resolved.get("provider") == "VolleyballWorld" and resolved.get("status") == "upcoming"
+                    and resolved.get("time_valid") is True and resolved.get("orientation") == "home_away"
+                    and resolved.get("matched_participants") == [fixture.get("home"), fixture.get("away")]
+                    and resolved.get("competition") == fixture.get("competition")
+                    and fixture.get("gender") in {"men", "women"} and resolved.get("gender") == fixture.get("gender")
+                    and isinstance(resolved.get("tournament_id"), str) and bool(resolved["tournament_id"])
+                    and abs((date.fromisoformat(match[1]) - edition).days) <= 1)
         elif valid_proof:
             valid_proof = _provider_proof(resolved, parts, fixture, edition)
     except (ValueError, TypeError) as exc:
@@ -661,7 +684,7 @@ def collect_edition(edition: str, fetcher=None, *, kickoff_resolver=None, now: d
                 if not summaries:
                     raise SourceError("card_summary_missing", "No authentic journal teaser paragraph")
                 fixture = {"id": re.search(r"-(\d+)\.html$", urlsplit(target).path)[1],
-                    **{key: detail[key] for key in ("home", "away", "sport", "competition", "headline_fr", "analysis_fr", "image_url")},
+                    **{key: detail[key] for key in ("home", "away", "sport", "competition", "headline_fr", "analysis_fr", "image_url", "gender")},
                     "pick_fr": pick, "odds": float(odds), "source_url": page.url, "journal_source_url": journal.url,
                     "card_summary_fr": "\n\n".join(summaries),
                     "kickoff_local": {"journal": card_time.isoformat(), "detail": detail["kickoff"].isoformat(), "timezone": None},

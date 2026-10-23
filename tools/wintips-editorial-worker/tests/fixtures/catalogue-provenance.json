@@ -1,0 +1,26 @@
+[
+  {
+    "file": "combine-pmu-2026-10-23.html",
+    "sourceUrl": "https://www.ruedesjoueurs.com/paris-sportifs/sport-news/news-pmu-sport/74768-combine-23-10-2026.html",
+    "retrievedAtUtc": "2026-10-23T14:24:01.679451Z",
+    "rawUtf8Sha256": "6142a0a2331f2fd696cc57977dd784d6fc4a4383ba513eaeb1cf70db4018fadc",
+    "fixtureSha256": "329d1b4dd9fc0bb3b1a4cce6e09dadb95fddf8d915031542d13b7747eb5ea41d",
+    "note": "Reduced real DOM identity/clock/market; analysis replaced by explicit synthetic regression text. Full current source retained only in local QA cache."
+  },
+  {
+    "file": "football-stuttgart-2026-10-23.html",
+    "sourceUrl": "https://www.ruedesjoueurs.com/pronostic/vfb-stuttgart-m-gladbach-5881205.html",
+    "retrievedAtUtc": "2026-10-23T14:26:58.009888Z",
+    "rawUtf8Sha256": "f70bdb47efdb1edf9101ae980cdc5d45efaa5566e38969900df1cb4b458db628",
+    "fixtureSha256": "50b9177bcd4581dd74d54ca5ec14d368a906f928207a9921db0365ce9df9ada7",
+    "note": "Reduced real DOM identity/clock/market; analysis replaced by explicit synthetic regression text. Full current source retained only in local QA cache."
+  },
+  {
+    "file": "football-brest-2026-10-23.html",
+    "sourceUrl": "https://www.ruedesjoueurs.com/pronostic/brest-nice-5802966.html",
+    "retrievedAtUtc": "2026-10-23T14:27:01.843138Z",
+    "rawUtf8Sha256": "e38311b6b520cd4c4bd1d6ae694d0c206f2acf4513541197eb211f148dfc423e",
+    "fixtureSha256": "c7d5a894ebfbc0bad4ee01aca9dc5a3b1f967134672bd903598b08606c11b6bd",
+    "note": "Reduced real DOM identity/clock/market; analysis replaced by explicit synthetic regression text. Full current source retained only in local QA cache."
+  }
+]

@@ -8,8 +8,8 @@
       "file": "rdj_collector.py",
       "upstreamPath": "tools/journal-parieur-worker/journal_worker/collector.py",
       "upstreamSha256": "ee73abc21175f0db5ffd02756a6c967af223570ca8f12a1a51fecf7d4ded904c",
-      "sha256": "94ab6dd32731ce10f63df156b91d78379f1c1f5fa72a173a0ac637cbe412fd3d",
-      "localAdaptation": "Use package Europe/Paris IANA fallback through paris_timezone()",
+      "sha256": "a93677216e3818c8a3564bdcdf66a6cb61a75a8ec619224b08613a1454241ede",
+      "localAdaptation": "Package Europe/Paris fallback; explicit VolleyballWorld scheduled-event and gender proof allowlist; bounded verified ESPN NBA following-night proof; volleyball sport alias.",
       "upstreamNormalizedUtf8Sha256": "f8a797a5e59bcd180b4b41736ddcf5c20c7c514139ba0814b7a7aa29aee0a284",
       "lineEndings": "LF"
     },
@@ -17,11 +17,43 @@
       "file": "timing.py",
       "upstreamPath": "tools/journal-parieur-worker/journal_worker/timing.py",
       "upstreamSha256": "6b13ebfc6a0637f3741acb8e412fc0e5ac4eb082e70feccb7a1c7cb8ba30a183",
-      "sha256": "11e9138a06ca66c59e988f7fa8d1cdbfeb1249748c0af0011ea894ad9b4dc481",
-      "localAdaptation": null,
+      "sha256": "8027efff5caee8848c54b1d428f1a32195ed3bc493e84e80cb8e72c4d39d6f11",
+      "localAdaptation": "Finite Stuttgart/Stuttgat/VfB and Borussia Monchengladbach/M Gladbach aliases observed in RDJ article74768 and its linked prediction pages.",
       "upstreamNormalizedUtf8Sha256": "11e9138a06ca66c59e988f7fa8d1cdbfeb1249748c0af0011ea894ad9b4dc481",
       "lineEndings": "LF"
+    },
+    {
+      "file": "rdj_translation.py",
+      "upstreamPath": "tools/journal-parieur-worker/journal_worker/translate.py",
+      "upstreamSha256": "dfe65fb3c0db57b2cd9835d86070c2a3c2e4dc1dbf33bcb2599eceb1bf38231a",
+      "upstreamNormalizedUtf8Sha256": "a72e40ec4164890af69d93f94551f77079a523f080526314d6a1db77ead46ebf",
+      "sha256": "86489ed934e1afcc929ff62ca243c5bc93ce727179977d2c21049162c7635417",
+      "lineEndings": "LF",
+      "localAdaptation": "Port mature BigWin v19 guard; retain strict ordered actors, scores, dates, negation, results and scoped time/score grammar. WinTips adds finite sport market vocabulary, French function-word classification, basketball quarter ordinals, venue-role proof and sports idioms; no fixture-specific text substitution. Explicit full consecutive-year seasons, bounded locative venue-role proof and closed chronological equivalents. Bounded two-sided and basketball shot units, exact decimal percent typography, nearest actor champion-relative proof, same passive-elimination year grammar and explicit one-night weekday relation; old responses always revalidated."
     }
   ],
-  "localFix": "Port proven UTC/Paris event-clock reconciliation, Ligue2 provider, finite team aliases and upcoming unique-event checks; retain WinTips typed adapter contracts."
+  "localFix": "Port proven UTC/Paris event-clock reconciliation, Ligue2 provider, finite team aliases and upcoming unique-event checks; retain WinTips typed adapter contracts.",
+  "catalogueExtension": "2026-10-23: new source adapters and guarded market grammar are owned by the WinTips worker; upstream BigWin code is never modified by this package.",
+  "translationGuardVersion": "ordered-anchors-v32-wintips-returning-player-form",
+  "canonicalFootballDemonyms": [
+    {
+      "forms": [
+        "ruthénois",
+        "ruthénoise",
+        "ruthénoises"
+      ],
+      "target": "Rodez",
+      "sport": "football",
+      "primarySourceUrl": "https://rodezaveyronfootball.com/2026/06/reprise-stage-matchs-la-pre-saison-du-raf/",
+      "verifiedDate": "2026-10-23"
+    }
+  ],
+  "protectedClubNameReferences": [
+    {
+      "name": "En Avant",
+      "club": "Guingamp",
+      "primarySourceUrl": "https://www.eaguingamp.com/",
+      "verifiedDate": "2026-10-23"
+    }
+  ]
 }

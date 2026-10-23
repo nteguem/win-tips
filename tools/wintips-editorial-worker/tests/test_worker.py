@@ -179,10 +179,11 @@ class RealFixtureTests(unittest.TestCase):
     def test_old_combine_not_reused_as_today(self):
         p = page("combine-2026-10-21")
         index = s.rdj.FetchedPage(s.SOURCES["rdj_football_combine"], '<article class="news-tile"><h3><a href="' + p.url + '">COMBI FOOT</a></h3></article>')
-        fetch = Offline([index])
+        extra = [s.rdj.FetchedPage(url, '<a href="' + p.url + '">COMBINE</a>') for url in s.COMBINE_INDEXES[1:]]
+        fetch = Offline([index, *extra])
         result = s.collect_combine("2026-10-23", fetch, now=s.iso("2026-10-23T08:00:00Z"), resolver=fixture_clock)
         self.assertEqual(result["items"], [])
-        self.assertEqual(fetch.requests, 1)
+        self.assertEqual(fetch.requests, 3)
 
 
 class RuntimeSafetyTests(unittest.TestCase):
