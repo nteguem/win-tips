@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass, replace
+from datetime import datetime, timedelta
 from hashlib import sha256
 import json
 from pathlib import Path
@@ -15,6 +16,7 @@ import time
 from urllib.request import Request, ProxyHandler, build_opener
 
 from .vendor import rdj_translation as guard
+from .calendar import edition_day
 
 VERSION = "wintips-bilingual-v2-qwen-system"
 
@@ -62,10 +64,45 @@ def _names(item):
 
 
 def _fixture(item):
+    reference_date = None
+    instant = item.get("startsAtUtc")
+    if isinstance(instant, str):
+        try:
+            reference_date = edition_day(datetime.fromisoformat(instant.replace("Z", "+00:00"))).isoformat()
+        except (ValueError, TypeError):
+            pass
     return {"home": item.get("teams", {}).get("home", {}).get("name", ""),
             "away": item.get("teams", {}).get("away", {}).get("name", ""),
             "protected_names": _names(item),
-            "sport_key": item.get("sport", {}).get("key") or ("football" if item.get("teams") else "")}
+            "sport_key": item.get("sport", {}).get("key") or ("football" if item.get("teams") else ""),
+            "reference_date": reference_date}
+
+
+def _relative_weekday_errors(source, target, reference_date):
+    """Compare the last occurrence with an explicitly previous calendar week.
+
+    Stable 'last Monday'/'on Monday' needs no invented date. 'Monday last week'
+    is equivalent only when both phrases actually designate the same source day.
+    Friday-last-week on Friday is accepted; Monday-last-week on Friday is not.
+    """
+    errors = []
+    for index, (french, english) in enumerate(guard.RELATIVE_WEEKDAYS.items()):
+        if not re.search(r"\b" + french + r"\s+dernier\b", source, re.I):
+            continue
+        day = re.escape(english)
+        previous_week = (r"\b" + day + r"\s+(?:(?:of|in|during)\s+)?(?:the\s+)?(?:last|previous|preceding)\s+week\b|"
+                         r"\b(?:last|previous|preceding)\s+week(?:\s*,?\s*on)?\s+" + day + r"\b")
+        if not re.search(previous_week, target, re.I):
+            continue
+        if not reference_date:
+            errors.append("relative_weekday_calendar_context_unproven")
+            continue
+        reference = datetime.fromisoformat(reference_date).date()
+        last_occurrence = reference - timedelta(days=(reference.weekday() - index) % 7 or 7)
+        previous_week_date = reference - timedelta(days=reference.weekday() + 7) + timedelta(days=index)
+        if last_occurrence != previous_week_date:
+            errors.append("relative_weekday_shifted_to_previous_calendar_week")
+    return errors
 
 
 def _prompt(masked, anchors):
@@ -143,6 +180,7 @@ class LocalTranslator:
                 restorations = [{"rule": "verified_nice_nickname_same_actor", "from": m.group(), "to": "Aiglons"} for m in found]
         target, proof = guard._validate(masked, anchors, validated_response)
         proof["canonicalNameRestorations"] = restorations
+        proof["errors"].extend(_relative_weekday_errors(source, target, fixture.get("reference_date")))
         if fixture.get("sport_key") in {"football", "basketball"} and re.search(r"\bformation\b", source, re.I) and re.search(r"\btraining\b", target, re.I) and not re.search(r"\bentra[iî]nement\b", source, re.I):
             proof["errors"].append("club_formation_mistranslated_as_training")
         # The upstream proof permits established English club aliases. WinTips
@@ -179,7 +217,8 @@ class LocalTranslator:
         attempts = []
         for model in models:
             identity = {"version": VERSION, "guard": guard.GUARD_VERSION, "source": source,
-                        "model": model, "anchors": anchors, "prompt": _prompt(masked, anchors)}
+                        "model": model, "referenceDate": fixture.get("reference_date"),
+                        "anchors": anchors, "prompt": _prompt(masked, anchors)}
             key = sha256(json.dumps(identity, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
             path = self.cache_dir / (key + ".json") if self.cache_dir else None
             cached = False

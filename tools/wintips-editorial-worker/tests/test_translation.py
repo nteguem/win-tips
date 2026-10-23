@@ -78,6 +78,44 @@ class TranslationTest(unittest.TestCase):
         translator, _ = self.translator(["Last year, Brest reached the semi-finals."])
         self.assertEqual(translator.sentence(source, fixture()["items"][0]), "Last year, Brest reached the semi-finals.")
 
+    def test_getting_better_of_opponent_preserves_winner_not_just_a_lead(self):
+        source = "Brest a pris le dessus sur Nice (2-1)."
+        for target in ("Brest beat Nice (2-1).", "Brest defeated Nice (2-1).", "Brest got the better of Nice (2-1)."):
+            translator, _ = self.translator([target])
+            self.assertEqual(translator.sentence(source, fixture()["items"][0]), target)
+        for target in ("Brest took the lead over Nice (2-1).", "Brest led Nice (2-1).", "Nice beat Brest (2-1)."):
+            translator, _ = self.translator([target] * 2)
+            with self.assertRaises(TranslationRejected):
+                translator.sentence(source, fixture()["items"][0])
+
+    def test_result_idiom_in_forecast_preserves_uncertainty(self):
+        source = "Brest pourrait prendre le dessus sur Nice."
+        translator, _ = self.translator(["Brest could get the better of Nice."])
+        self.assertEqual(translator.sentence(source, fixture()["items"][0]), "Brest could get the better of Nice.")
+        translator, _ = self.translator(["Brest beat Nice."] * 2)
+        with self.assertRaises(TranslationRejected):
+            translator.sentence(source, fixture()["items"][0])
+
+    def test_last_monday_does_not_become_monday_of_previous_week_on_friday(self):
+        source = "Brest a gagné lundi dernier."
+        for target in ("Brest won last Monday.", "Brest won on Monday."):
+            translator, _ = self.translator([target])
+            self.assertEqual(translator.sentence(source, fixture()["items"][0]), target)
+        for target in ("Brest won on Monday last week.", "Brest won last week on Monday."):
+            translator, _ = self.translator([target] * 2)
+            with self.assertRaises(TranslationRejected):
+                translator.sentence(source, fixture()["items"][0])
+
+    def test_last_friday_and_friday_last_week_are_equivalent_on_friday(self):
+        translator, _ = self.translator(["Brest won on Friday last week."])
+        self.assertEqual(translator.sentence("Brest a gagné vendredi dernier.", fixture()["items"][0]), "Brest won on Friday last week.")
+
+    def test_previous_week_equivalence_uses_source_paris_calendar(self):
+        item = fixture()["items"][0]
+        item["startsAtUtc"] = "2026-10-25T23:15:00Z"  # Monday in Paris.
+        translator, _ = self.translator(["Brest won on Monday last week."])
+        self.assertEqual(translator.sentence("Brest a gagné lundi dernier.", item), "Brest won on Monday last week.")
+
     def test_expected_relegation_battle_is_not_expected_safety(self):
         source = "Attendu dans la lutte pour ne pas descendre, le promu fait belle impression."
         translator, _ = self.translator(["Expected to avoid relegation, the promoted team has made a good impression."] * 2)

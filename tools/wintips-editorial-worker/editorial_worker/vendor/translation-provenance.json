@@ -16,6 +16,8 @@
     "Unbeaten, numerical superiority and relegation play-off semantic protection",
     "Negative concord, restrictive ne-que and factual past concession protection",
     "Football promotion, home fixtures, recent form, sole wins and semi-final terminology",
+    "Football prendre le dessus sur preserves defeating an opponent, not just taking a lead",
+    "Weekday-dernier references preserve the most recent past weekday and reject contradictory previous-calendar-week dates using the source Paris edition",
     "Horse-racing field, runners and unfolding of the race distinguished from results"
   ],
   "promptDocumentation": "https://ollama.com/library/translategemma",

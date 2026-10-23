@@ -22,7 +22,7 @@ import urllib.request
 
 
 PROMPT_VERSION = "fr-en-anchors-v7-bounded-fallback"
-GUARD_VERSION = "ordered-anchors-v12-wintips-grammar-domain"
+GUARD_VERSION = "ordered-anchors-v14-wintips-result-relative-day"
 TOKEN_RE = re.compile(r"ZXQ[A-Z]+QXZ")
 NUMBER_RE = re.compile(r"(?<!\w)[+-]?\s*\d+(?:[.,:]\d+)*(?:\s*[%€$])?(?!\w)")
 FRENCH_WORDS = re.compile(r"\b(?:avec|dans|leurs|leur|pour|cette|ces|étaient|était|mais|donc|ainsi|lors|depuis|toujours|également|notamment|cependant|aujourd'hui)\b", re.I)
@@ -107,7 +107,13 @@ LEXICON = {
 }
 NAMES = {"Mayence": "Mainz", "Fribourg": "Freiburg", "Nimègue": "Nijmegen", "Nimégue": "Nijmegen",
          "NEC Nimègue": "NEC Nijmegen", "NEC Nimégue": "NEC Nijmegen"}
+RELATIVE_WEEKDAYS = {"lundi": "Monday", "mardi": "Tuesday", "mercredi": "Wednesday", "jeudi": "Thursday",
+                     "vendredi": "Friday", "samedi": "Saturday", "dimanche": "Sunday"}
+LEXICON.update({day + " dernier": "last " + english for day, english in RELATIVE_WEEKDAYS.items()})
 FOOTBALL_LEXICON = {"grand coup": "major statement", "ventre mou du classement": "mid-table",
+                    "prendre le dessus sur": "got the better of", "avoir pris le dessus sur": "got the better of",
+                    "a pris le dessus sur": "got the better of", "ont pris le dessus sur": "got the better of",
+                    "avait pris le dessus sur": "got the better of", "avaient pris le dessus sur": "got the better of",
                     "Attendu dans la lutte pour ne pas descendre": "Expected to be in the relegation battle",
                     "journées": "matchdays", "journée": "matchday", "longueurs d'avance": "points ahead",
                     "assurer son maintien": "secure survival", "l'élite": "the top flight", "l’élite": "the top flight",
@@ -144,6 +150,9 @@ GENERIC_FR_RESIDUE = re.compile(r"\b(?:" + "|".join(re.escape(word) for word in 
 # Closed equivalence families, never approximate/fuzzy matching. Singular and
 # plural outcomes remain distinct, as do cardinals, ordinals and score atoms.
 SEMANTIC_EQUIVALENTS = (
+    # Taking a lead during a fixture is not equivalent to getting the better
+    # of the opponent. Preserve the source result idiom, including its actor.
+    ("got the better of", "get the better of", "beat", "beats", "defeat", "defeated", "overcome", "overcame", "have beaten", "has beaten", "had beaten"),
     ("last year", "the previous year", "a year ago"),
     ("semi-finals", "semifinals", "semi-final", "semifinal", "last four", "final four"),
     ("expected to be in the relegation battle", "expected to fight relegation", "expected to battle relegation", "expected to be in a battle to stay up", "expected to be involved in the relegation battle", "tipped to be in the relegation battle"),
@@ -204,6 +213,10 @@ SEMANTIC_EQUIVALENTS = (
     ("the last home defeat dates back to mid-February", "the last home defeat was in mid-February",
      "the last time they lost a match at home was in mid-February", "you have to go back to mid-February to find a home defeat"),
 )
+SEMANTIC_EQUIVALENTS += tuple(("last " + day, "on " + day, "this past " + day,
+    day + " last week", "on " + day + " last week", day + " of last week", "on " + day + " of last week",
+    day + " of the previous week", "on " + day + " of the previous week", "last week on " + day)
+    for day in RELATIVE_WEEKDAYS.values())
 TERMINOLOGY_VERSION = "sports-terms-v1"
 TERMINOLOGY_RULES = (
     ("winless", r"\bsans victoire\b", "sans victoire means winless/without a win, not a losing streak."),
@@ -217,6 +230,7 @@ def _terminology_profile(source: str) -> dict | None:
     entries = [{"id": key, "guidance": guidance} for key, pattern, guidance in TERMINOLOGY_RULES if re.search(pattern, source, re.I)]
     return {"version": TERMINOLOGY_VERSION, "entries": entries} if entries else None
 ABSOLUTE_TIMES = {"last week", "last weekend", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}
+ABSOLUTE_TIMES.update("last " + day.casefold() for day in RELATIVE_WEEKDAYS.values())
 CARDINAL_UNITS = ("zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
                   "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen")
 CARDINAL_TENS = ("", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety")
