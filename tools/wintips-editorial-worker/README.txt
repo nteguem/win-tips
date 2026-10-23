@@ -71,13 +71,17 @@ Une interruption ne déclenche pas une publication de la veille. Un refus conser
 son motif dans le rapport. Les fichiers FR/EN, cache et audits restent privés dans
 le répertoire d'état ; ils ne doivent pas entrer dans Git ni être exposés sur HTTP.
 
-TRADUCTION MARIAN → QWEN → TRANSLATEGEMMA, SECOURS PARESSEUX
-WINTIPS_EDITORIAL_TRANSLATOR=marian active la cascade recommandée : une traduction
-locale Marian légère, un thread CPU et poids int8 ; les gardes de sens et de faits
-valident la sortie. Si cette traduction est réellement rejetée, Qwen est sollicité
-comme secours. Si Qwen est lui-même rejeté pour son contenu, TranslateGemma 4B
-offre un troisième essai générique sous les mêmes gardes. Une erreur réseau Qwen
-ne déclenche pas ce troisième moteur. Aucun texte n'est assemblé manuellement
+TRADUCTION QWEN PRIORITAIRE, SECOURS TRANSLATEGEMMA PARESSEUX
+WINTIPS_EDITORIAL_TRANSLATOR=marian conserve le nom historique du provider.
+WINTIPS_EDITORIAL_QWEN_PRIMARY=true est obligatoire dans cette factory : toute
+phrase libre commence désormais par Qwen, y compris une analyse dont un ancien
+cache Marian prétendait être valide. Aucun texte libre MT n'est accepté et aucun
+transport Marian n'est exécuté dans ce mode. Les libellés connus et les marchés
+bornés sont traduits de façon déterministe, sans modèle. Un cache MT exact déjà
+refusé peut uniquement restituer le diagnostic factuel qui permet de retrouver
+une vraie réponse Qwen réparée ; il ne fournit jamais le texte EN du résultat.
+Si Qwen est rejeté pour son contenu, TranslateGemma 4B offre un secours sous les
+mêmes gardes. Une erreur réseau Qwen ne déclenche pas ce secours. Aucun texte n'est assemblé manuellement
 pour faire passer une fixture. Un cache exact déjà valide ne démarre pas Ollama.
 Une erreur de configuration, de source, de cache corrompu ou de budget ne contourne
 pas les garde-fous. Le budget global et les validations restent identiques.
@@ -108,7 +112,7 @@ source une fois, tandis que le temps global borne toute la cascade.
 WINTIPS_EDITORIAL_MT_ROOT désigne les poids existants ; WINTIPS_EDITORIAL_MT_DEPS
 leur installation CTranslate2/SentencePiece. WINTIPS_EDITORIAL_MODEL_ENDPOINT et
 WINTIPS_EDITORIAL_MODEL désignent Qwen ; WINTIPS_EDITORIAL_FALLBACK_MODEL désigne
-le troisième modèle (par défaut translategemma:4b, valeur vide pour le désactiver).
+le secours (par défaut translategemma:4b, valeur vide pour le désactiver).
 Avant de changer de modèle local, la cascade décharge seulement le précédent
 qu'elle a demandé, afin de ne pas garder deux modèles en RAM. Chaque cache est
 lié à l'identité exacte de son modèle et revalidé. Le mode explicite ollama
@@ -122,7 +126,11 @@ seulement lorsque nécessaire. Verrous :
 Le runtime Qwen existant est borné séparément à 6,5 Gio et deux CPU. Un runtime déjà
 actif et détenu par un autre job n'est ni réutilisé de force ni arrêté. Le finally
 arrête seulement celui que cette tâche a démarré. Le processus worker reste borné
-par son propre service ; l'arrêt du processus libère sa mémoire Marian.
+par son propre service ; la factory recommandée ne charge pas les poids Marian.
+Les fenêtres de validation avec inférence Qwen consomment réellement du CPU et
+peuvent demander plusieurs reprises bornées à vingt minutes. Le cache natif
+conserve les réponses exactes entre ces reprises. Les durées mesurées sont des
+preuves historiques, jamais une garantie de délai pour une prochaine édition.
 
 translate_batch retourne une copie bilingue et un audit séparé. title.en,
 summary.en, selection.label.en et analysis.en sont complétés, y compris chaque

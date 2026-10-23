@@ -119,7 +119,7 @@ class MarianTransport:
 
 
 def create_translator_from_env(cache_dir, max_seconds=1200, ensure_fallback_ready=None):
-    """Explicit Marian mode only; never changes the runner's default provider."""
+    """Legacy provider name; production free-form text always starts with Qwen."""
     root = Path(os.environ.get("WINTIPS_EDITORIAL_MT_ROOT", DEFAULT_ROOT))
     dependencies = os.environ.get("WINTIPS_EDITORIAL_MT_DEPS")
     transport = MarianTransport(root, deps_dir=dependencies)
@@ -131,7 +131,11 @@ def create_translator_from_env(cache_dir, max_seconds=1200, ensure_fallback_read
         max_seconds=max_seconds,
         num_threads=2,
     )
+    primary=os.environ.get('WINTIPS_EDITORIAL_QWEN_PRIMARY','true').lower()
+    if primary!='true':
+        raise TranslationRejected('invalid_primary_routing')
     translator = CascadeTranslator(config, mt_request=transport, mt_model=transport.model_id,
-                                   cache_dir=cache_dir, ensure_fallback_ready=ensure_fallback_ready)
+                                   cache_dir=cache_dir, ensure_fallback_ready=ensure_fallback_ready,
+                                   qwen_primary=True)
     translator.mt_manifest_sha256 = transport.manifest_sha256
     return translator

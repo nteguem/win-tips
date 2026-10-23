@@ -3,11 +3,13 @@ WINTIPS_EDITORIAL_API_BASE=https://api.wintips-expert.com
 WINTIPS_EDITORIAL_WORKER_TOKEN=
 # Existing read-only model/runtime; no downloads happen in the worker.
 WINTIPS_EDITORIAL_TRANSLATOR=marian
+# Compatibility provider name: free-form text starts with Qwen, never MT.
+WINTIPS_EDITORIAL_QWEN_PRIMARY=true
 WINTIPS_EDITORIAL_MT_ROOT=/opt/journal-parieur-rdj-20261022
 WINTIPS_EDITORIAL_MT_DEPS=/opt/journal-parieur-rdj-20261022/mt-deps
 WINTIPS_EDITORIAL_MODEL_ENDPOINT=http://127.0.0.1:11439/api/
 WINTIPS_EDITORIAL_MODEL=qwen2.5:7b-instruct-q4_K_M
-# Third model only after content rejection; an empty value disables this level.
+# Fallback after Qwen content rejection; an empty value disables this level.
 WINTIPS_EDITORIAL_FALLBACK_MODEL=translategemma:4b
 WINTIPS_EDITORIAL_MANAGE_MODEL=true
 # The following flags belong to the API environment, NOT this worker file:

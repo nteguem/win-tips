@@ -512,13 +512,17 @@ def validate_english_sentence(source, target, item):
 
 
 class CascadeTranslator(LocalTranslator):
-    """Fast local MT, guarded; start the larger fallback only when needed.
+    """Guarded local engines with lazy runtime and exact native response caches.
+
+    The production factory requires qwen_primary. The legacy constructor
+    default exists for isolated comparisons; it is not the recommended route.
 
     The caller owns the outer runtime context and its final cleanup. This class
     merely invokes its injected ensure_fallback_ready callback on first use.
     """
     def __init__(self, config=None, *, mt_request, mt_model, cache_dir=None,
-                 ensure_fallback_ready=None, request=None, release_model=None):
+                 ensure_fallback_ready=None, request=None, release_model=None,
+                 qwen_primary=False):
         config = config or TranslationConfig()
         directory = Path(cache_dir) if cache_dir else None
         super().__init__(config, cache_dir=directory / "qwen" if directory else None, request=request)
@@ -529,6 +533,9 @@ class CascadeTranslator(LocalTranslator):
         self.mt.contextual_feedback=True
         self.mt.allow_contextual_requests=False
         self.logical_segments=0
+        if not isinstance(qwen_primary,bool):
+            raise TranslationRejected('invalid_primary_routing')
+        self.qwen_primary=qwen_primary
         self.ensure_fallback_ready = ensure_fallback_ready
         self.fallback_ready = False
         self.content_fallback_only = True
@@ -575,9 +582,37 @@ class CascadeTranslator(LocalTranslator):
             raise TranslationRejected("model_unload_not_confirmed")
 
     def sentence(self, source, item):
+        if not isinstance(source,str) or not source.strip() or len(source)>4000:
+            raise TranslationRejected('translation_source_sentence_invalid')
         if self.logical_segments >= self.config.max_segments:
             raise TranslationRejected("translation_segment_budget_exceeded")
         self.logical_segments+=1
+        if self.qwen_primary:
+            # Never accept an MT sentence as free-form editorial English. A
+            # cached, genuinely rejected MT response may supply validator
+            # feedback only, preserving the identity of an already acquired
+            # Qwen contextual response. It never starts MT or permits its EN.
+            fixture=_fixture(item);masked,anchors=guard._protect(source,fixture)
+            for anchor in anchors:
+                if anchor['kind']=='name':anchor['target']=anchor['source']
+            def cached_base(translator,model):
+                if not translator.cache_dir:return None
+                identity=translator._response_identity(source,item,fixture,masked,anchors,model)
+                key=sha256(json.dumps(identity,ensure_ascii=False,sort_keys=True).encode()).hexdigest()
+                return translator._cached_attempt(translator.cache_dir/(key+'.json'),identity,source,fixture,masked,anchors)
+            qwen=cached_base(self,self.config.model)
+            feedback=None
+            diagnostic_read=False
+            if not qwen:
+                old_mt=cached_base(self.mt,self.mt.config.model)
+                if old_mt and not old_mt[2]['passed']:
+                    feedback=_guard_feedback(anchors,old_mt[2]);diagnostic_read=True
+            target=super().sentence(source,item,feedback=feedback)
+            gemma=self.records[-1]['acceptedModel'].startswith('translategemma')
+            self.records[-1].update({'engine':'local_translategemma' if gemma else 'local_qwen',
+                'primaryRouting':'qwen_free_form','mtAccepted':False,'mtDiagnosticRead':diagnostic_read,
+                'cascadeFallbackUsed':gemma})
+            return target
         before = len(self.mt.records)
         try:
             target = self.mt.sentence(source, item)

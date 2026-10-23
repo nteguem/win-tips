@@ -56,6 +56,21 @@ class StatisticGrammarTests(unittest.TestCase):
         self.check('Léger avantage Raptors face aux Bulls.','Slight advantage Raptors against Bulls.')
         self.check('Léger avantage Raptors face aux Bulls.','Léger advantage Raptors against Bulls.',False)
         self.check('Léger avantage Raptors face aux Bulls.','Huge advantage Raptors against Bulls.',False)
+        named=self.item();named['teams']['home']['name']='Léger'
+        _,proof=validate_english_sentence('Léger a gagné.','Léger won.',named)
+        self.assertTrue(proof['passed'],proof)
+        self.assertTrue(any(a['kind']=='name' and a['source']=='Léger' for a in proof['anchors']))
+
+    def test_sporting_appearance_and_player_turnover_are_not_literal_release_or_march(self):
+        self.check('Cette première sortie compte.','This first outing counts.')
+        self.check('Cette première sortie compte.','This first release counts.',False)
+        self.check('Chicago a vu défiler les joueurs.','Chicago has seen players come and go.')
+        self.check('Chicago a vu défiler les joueurs.','Chicago has seen players march.',False)
+
+    def test_start_of_period_is_not_before_the_period(self):
+        source='Ils menaient de 3 points à l’entame du 4e quart-temps.'
+        self.check(source,'They led by 3 points at the start of the 4th quarter.')
+        self.check(source,'They led by 3 points before the start of the 4th quarter.',False)
 
     def test_nearest_participial_champion_actor_requires_attached_relative(self):
         source=('Champions de la conférence Ouest en titre en battant OKC, les San Antonio Spurs étaient les grands favoris '

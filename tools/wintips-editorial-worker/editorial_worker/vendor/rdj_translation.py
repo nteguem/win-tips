@@ -22,7 +22,7 @@ import urllib.request
 
 
 PROMPT_VERSION = "fr-en-anchors-v8-sports-name-guidance"
-GUARD_VERSION = "ordered-anchors-v32-wintips-returning-player-form"
+GUARD_VERSION = "ordered-anchors-v33-wintips-sporting-appearance"
 TOKEN_RE = re.compile(r"ZXQ[A-Z]+QXZ")
 NUMBER_RE = re.compile(r"(?<!\w)[+-]?\s*\d+(?:[.,:]\d+)*(?:\s*[%€$])?(?!\w)")
 FRENCH_WORDS = re.compile(r"\b(?:avec|dans|leurs|leur|pour|cette|ces|étaient|était|mais|donc|ainsi|lors|depuis|toujours|également|notamment|cependant|aujourd'hui)\b", re.I)
@@ -537,7 +537,10 @@ SEMANTIC_EQUIVALENTS += (('fixture', 'match', 'matchup'),
     ('under pressure', 'challenged', 'being challenged'), ('far from it', 'far from that'),
     ('take another step forward', 'take a further step forward', 'move to the next level', 'reach the next level'),
     ('brought back a former player', 'has brought back a former player', 'brought a former player back'),
-    ('slight advantage', 'small advantage', 'slight edge'))
+    ('slight advantage', 'small advantage', 'slight edge'),
+    ('this first outing', 'this first appearance', 'this first game', 'this opening game'),
+    ('has seen a succession of players', 'has seen players come and go', 'has seen a stream of players'),
+    ('at the start of', 'at the beginning of'))
 BASKETBALL_LEXICON = {'Ouest': 'West', 'Est': 'East', 'Play-offs': 'playoffs', 'Game': 'game'}
 TERMINOLOGY_RULES += (("lost_composure", r"\bperdre\s+(?:(?:totalement|complètement)\s+)?les pédales\b",
     "Perdre les pédales is losing composure/control in sport, never losing physical pedals."),)
@@ -681,6 +684,9 @@ def _protect(source: str, fixture: dict) -> tuple[str, list[dict]]:
             'passer un nouveau cap':'take another step forward',
             'a fait revenir un ancien':'brought back a former player',
             'léger avantage':'slight advantage',
+            'cette première sortie':'this first outing',
+            'a vu défiler les joueurs':'has seen a succession of players',
+            "à l'entame du":'at the start of',"à l’entame du":'at the start of',
             "d'être battus":"losing", "d’être battus":"losing",'sur la pelouse du':'away to',
             'un nul à domicile':'a draw at home',"à l'heure de jeu":"on the hour mark","à l’heure de jeu":"on the hour mark"})
     if sport in {'football','foot','soccer'}:
