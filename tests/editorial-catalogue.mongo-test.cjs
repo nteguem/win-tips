@@ -205,6 +205,13 @@ test('optional preview exports are actual HTTP responses from seeded disposable 
   const { createEditorialNotificationService } = require('../src/api/services/common/editorialNotifications');
   const input = path.resolve(process.env.WINTIPS_PREVIEW_INPUT), out = path.resolve(process.env.WINTIPS_PREVIEW_OUT);
   const requireEnglish = process.env.WINTIPS_PREVIEW_REQUIRE_EN === 'true';
+  // Only this disposable QA driver accepts a historical eligibility clock.
+  // Source dates remain untouched; this is never evidence of live publication.
+  const requestedClock = process.env.WINTIPS_PREVIEW_CLOCK_UTC;
+  const previewNow = requestedClock ? new Date(requestedClock) : new Date();
+  assert(Number.isFinite(previewNow.getTime()), 'Invalid explicit preview UTC clock');
+  if (requestedClock) assert.equal(previewNow.toISOString().replace('.000Z', 'Z'), requestedClock.replace('.000Z', 'Z'), 'Preview clock must be a canonical UTC timestamp');
+  const fixedClock = () => previewNow;
   const sources = config.categories.map(row => row.source);
   const batches = sources.map(source => {
     const file = path.join(input, source + (requireEnglish ? '.bilingual.json' : '.json'));
@@ -232,7 +239,6 @@ test('optional preview exports are actual HTTP responses from seeded disposable 
     deviceId: 'TEST_ONLY_' + name + '_' + language, user, platform: 'android', language, deviceLanguage: language,
     fcmToken: 'TEST_ONLY_NOT_A_REAL_FCM_TOKEN_' + name + language, editorialSchemaVersion: 1, notificationsEnabled: true, isActive: true, pushProvider: 'fcm',
   });
-  const previewNow = new Date(), fixedClock = () => previewNow;
   const repository = createEditorialRepository({ Category, EditorialItem, subscriptionService, accessGateService: require('../src/api/services/common/accessGateService') });
   const providerCalls = [];
   const notificationService = createEditorialNotificationService({ repository: createEditorialNotificationRepository(models), clock: fixedClock,
@@ -324,11 +330,15 @@ test('optional preview exports are actual HTTP responses from seeded disposable 
   }
   assert.equal(analyses.length, imported.reduce((sum, row) => sum + row.count, 0));
   files.permissions = save('permissions.json', { success: true, data: { simulatedAccountAuthentication: true, checks: permissionChecks } });
-  const manifest = { date: '2026-10-23', generatedAtUtc: new Date().toISOString(), evidence: 'Real Express controllers + actual Mongoose schemas, seed/import and entitlement services; disposable local MongoDB replica set',
+  const generatedAtUtc = new Date().toISOString();
+  const manifest = { date: '2026-10-23', generatedAtUtc, evidence: 'Real Express controllers + actual Mongoose schemas, seed/import and entitlement services; disposable local MongoDB replica set',
     simulated: { database: true, accountAuthentication: true, accountIds: Object.fromEntries(Object.entries(demo).map(([key, id]) => [key, String(id)])),
-      pushProvider: true, payments: true, googlePlay: true, googleSkuConfigured: false },
+      pushProvider: true, payments: true, googlePlay: true, googleSkuConfigured: false, clock: Boolean(requestedClock) },
     english: requireEnglish ? 'complete_real_worker_batches_imported' : 'pending_not_exported', requireEnglishDuringImport: requireEnglish,
-    clock: previewNow.toISOString(), imported, totalItems: analyses.length, files, analyses, outputHashes, httpChecks,
+    clock: previewNow.toISOString(), clockMode: requestedClock ? 'qa_snapshot' : 'wall_clock',
+    clockContext: { snapshotAtUtc: previewNow.toISOString(), generatedAtUtc, livePublicationEvidence: false,
+      sourceDatesUnmodified: true, scope: 'editorial import/feed/notification simulation only; not a live publication or delivery proof' },
+    imported, totalItems: analyses.length, files, analyses, outputHashes, httpChecks,
     notifications: { simulated: true, accepted: beforeReplay, replayAdditionalAccepted: replay.sent, providerCalls },
     noProductionMutation: true, noRealNotification: true, noGooglePayment: true };
   save('manifest.json', manifest);
