@@ -251,16 +251,16 @@ function validateBatch(body, now = new Date()) {
 }
 
 function hasCompleteEnglish(item) {
-  const numbers = value => JSON.stringify((String(value).match(/[+-]?\d+(?:[.,]\d+)?/g) || []).map(v => v.replace(',', '.')).sort());
-  const translated = value => value && typeof value.en === 'string' && value.en.trim() && numbers(value.fr) === numbers(value.en);
+  const { equivalentNumericFacts } = require('./editorialNumericFacts');
+  const translated = value => value && typeof value.en === 'string' && value.en.trim() && equivalentNumericFacts(value.fr, value.en);
   if (!translated(item.title) || (item.summary && item.summary.fr && !translated(item.summary)) || !translated(item.selection && item.selection.label)) return false;
   const fr = item.analysis && item.analysis.fr, en = item.analysis && item.analysis.en;
   if (!Array.isArray(fr) || !Array.isArray(en) || fr.length !== en.length) return false;
   if (!fr.every((section, index) => {
     const other = en[index];
-    return other && typeof other.heading === 'string' && other.heading.trim() && numbers(section.heading) === numbers(other.heading) &&
+    return other && typeof other.heading === 'string' && other.heading.trim() && equivalentNumericFacts(section.heading, other.heading) &&
       Array.isArray(other.paragraphs) && section.paragraphs.length === other.paragraphs.length &&
-      section.paragraphs.every((p, i) => typeof other.paragraphs[i] === 'string' && other.paragraphs[i].trim() && numbers(p) === numbers(other.paragraphs[i]));
+      section.paragraphs.every((p, i) => typeof other.paragraphs[i] === 'string' && other.paragraphs[i].trim() && equivalentNumericFacts(p, other.paragraphs[i]));
   })) return false;
   return !item.legs || item.legs.every(hasCompleteEnglish);
 }
