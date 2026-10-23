@@ -2,9 +2,11 @@
 
 No unit/configuration/model is installed. Fixed systemd names and both existing
 worker locks prevent the WinTips preview from competing with the other journal.
-The normal Marian translation path needs neither this module nor a daemon.
+Cached translations need neither this module nor a daemon. A new lease is
+admitted only when its complete bounded budget fits before BigWin's UTC timer.
 """
 from contextlib import contextmanager, ExitStack
+from datetime import datetime, timedelta, timezone
 import json
 import os
 from pathlib import Path
@@ -16,10 +18,51 @@ MODEL = 'journal-parieur-worker-model.service'
 SHARED_JOB = 'journal-parieur-worker.service'
 LOCKS = ('/var/lib/journal-parieur-worker/daily-run/worker.lock',
          '/var/lib/journal-parieur-worker/worker.lock')
+SHARED_TIMER_MINUTE = 7
+# Covers the existing timer's 15s jitter and a pending service activation.
+SHARED_TIMER_START_GUARD_SECONDS = 60
+# systemctl calls, health/startup, unloading, finally cleanup and scheduling.
+MODEL_LIFECYCLE_RESERVE_SECONDS = 300
 
 
 class RuntimeUnavailable(RuntimeError):
     code = 'shared_local_model_unavailable'
+
+
+class RuntimeDeferred(RuntimeUnavailable):
+    code = 'shared_worker_window_reserved'
+
+    def __init__(self, window):
+        super().__init__(self.code)
+        self.window = window
+
+
+def admission_window(now, translation_seconds=1200):
+    """Pure UTC schedule check. Never sleeps, locks, queries or starts a unit."""
+    if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
+        raise RuntimeUnavailable('admission_requires_aware_clock')
+    if isinstance(translation_seconds, bool) or not isinstance(translation_seconds, (int, float)) or not 30 <= translation_seconds <= 1800:
+        raise RuntimeUnavailable('admission_requires_bounded_translation_budget')
+    instant = now.astimezone(timezone.utc)
+    mark = instant.replace(minute=SHARED_TIMER_MINUTE, second=0, microsecond=0)
+    # A run just after :07 must not race the randomized BigWin start.
+    pending_start = mark <= instant < mark + timedelta(seconds=SHARED_TIMER_START_GUARD_SECONDS)
+    next_start = mark if pending_start or instant <= mark else mark + timedelta(hours=1)
+    available = max(0, (next_start - instant).total_seconds())
+    required = translation_seconds + MODEL_LIFECYCLE_RESERVE_SECONDS
+    admitted = not pending_start and available >= required
+    retry = (mark if pending_start else next_start) + timedelta(seconds=SHARED_TIMER_START_GUARD_SECONDS)
+    return {'admitted': admitted, 'checkedAtUtc': instant.isoformat(),
+            'nextBigWinAtUtc': next_start.isoformat(),
+            'availableSeconds': available, 'requiredSeconds': required,
+            'retryNotBeforeUtc': None if admitted else retry.isoformat()}
+
+
+def require_admission(now, translation_seconds=1200):
+    window = admission_window(now, translation_seconds)
+    if not window['admitted']:
+        raise RuntimeDeferred(window)
+    return window
 
 
 def systemctl(action, unit):
@@ -66,8 +109,12 @@ def shared_locks(locks):
 
 
 @contextmanager
-def managed_model(*, control=systemctl, healthy=ready, locks=LOCKS, acquire=shared_locks, monotonic=time.monotonic, pause=time.sleep):
+def managed_model(*, control=systemctl, healthy=ready, locks=LOCKS, acquire=shared_locks, monotonic=time.monotonic, pause=time.sleep,
+                  clock=lambda: datetime.now(timezone.utc), translation_seconds=1200):
+    require_admission(clock(), translation_seconds)
     with acquire(locks):
+        # Recheck after acquisition: never turn a near-boundary lease into a run.
+        require_admission(clock(), translation_seconds)
         if control('is-active', SHARED_JOB):
             raise RuntimeUnavailable('shared_worker_busy')
         owned = not control('is-active', MODEL)

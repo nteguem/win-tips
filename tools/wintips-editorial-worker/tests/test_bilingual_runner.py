@@ -169,6 +169,7 @@ def fake_locks(paths):
 
 
 class RuntimeLeaseTests(unittest.TestCase):
+    clock = staticmethod(lambda: datetime(2026, 10, 23, 8, 30, tzinfo=timezone.utc))
     def control(self, initial=False, shared=False):
         self.actions = []
         def run(action, unit):
@@ -181,19 +182,19 @@ class RuntimeLeaseTests(unittest.TestCase):
     def test_owned_runtime_stops_on_failure_and_releases_ram(self):
         control = self.control()
         with self.assertRaisesRegex(ValueError, 'fixture'):
-            with model_runtime.managed_model(control=control, healthy=lambda: True, acquire=fake_locks):
+            with model_runtime.managed_model(control=control, healthy=lambda: True, acquire=fake_locks, clock=self.clock):
                 raise ValueError('fixture')
         self.assertIn(('start', model_runtime.MODEL), self.actions)
         self.assertIn(('stop', model_runtime.MODEL), self.actions)
 
     def test_existing_runtime_is_never_stopped(self):
-        with model_runtime.managed_model(control=self.control(initial=True), healthy=lambda: True, acquire=fake_locks):
+        with model_runtime.managed_model(control=self.control(initial=True), healthy=lambda: True, acquire=fake_locks, clock=self.clock):
             pass
         self.assertNotIn(('stop', model_runtime.MODEL), self.actions)
 
     def test_active_shared_journal_blocks_model_start(self):
         with self.assertRaises(model_runtime.RuntimeUnavailable):
-            with model_runtime.managed_model(control=self.control(shared=True), healthy=lambda: True, acquire=fake_locks):
+            with model_runtime.managed_model(control=self.control(shared=True), healthy=lambda: True, acquire=fake_locks, clock=self.clock):
                 self.fail('A shared journal is already running')
         self.assertNotIn(('start', model_runtime.MODEL), self.actions)
 

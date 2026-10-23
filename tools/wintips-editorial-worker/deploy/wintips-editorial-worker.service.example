@@ -8,10 +8,12 @@ After=network-online.target
 Type=oneshot
 User=root
 WorkingDirectory=/var/www/wintips/api/tools/wintips-editorial-worker
-EnvironmentFile=-/etc/wintips-editorial-worker.env
+EnvironmentFile=/etc/wintips-editorial-worker.env
 ExecStart=/usr/bin/python3 -B -m editorial_worker --dry-run --translate --output /var/lib/wintips-editorial-worker
 # After GO, replace --dry-run --translate with --publish. Never enable implicitly.
 StateDirectory=wintips-editorial-worker
+StateDirectoryMode=0700
+UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true

@@ -5,7 +5,7 @@ Description=Hourly WinTips RDJ check (unarmed example)
 [Timer]
 OnCalendar=*-*-* *:30:00 UTC
 RandomizedDelaySec=30
-Persistent=true
+Persistent=false
 Unit=wintips-editorial-worker.service
 
 [Install]

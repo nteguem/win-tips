@@ -1,7 +1,8 @@
 WINTIPS — WORKER ÉDITORIAL RDJ
 
 PRÉPARATION LOCALE, ACTIVATION SÉPARÉE
-Aucun service ou timer n'est installé par ce paquet. Aucun import, index, mapping
+Aucun service ou timer n'est installé automatiquement. L'installateur explicite
+décrit ci-dessous laisse toujours les unités non armées. Aucun import, index, mapping
 ou push réel n'est effectué pendant ses tests ou ses prévisualisations. Les
 exemples restent volontairement en dry-run. La revue de qualité anglaise réelle
 et le GO utilisateur précèdent toute publication ; la recette sur deux appareils
@@ -267,11 +268,52 @@ action view_editorial/view_editorial_feed, categoryId, editionDate et isVip ; au
 choix ou contenu d'analyse protégé n'est exposé dans la notification.
 
 DÉPLOIEMENT NON ARMÉ ET COEXISTENCE MOBILE
+Depuis le checkout Git API récupéré sur le VPS, faire d'abord :
+
+  python3 -B tools/wintips-editorial-worker/deploy/install.py --check
+
+Après revue du commit et GO installation, uniquement sous root/Linux :
+
+  python3 -B tools/wintips-editorial-worker/deploy/install.py --install --expected-commit <FULL_REVIEWED_API_SHA>
+
+Le HEAD doit correspondre exactement au SHA revu et le dossier worker doit être
+propre, sans source locale non suivie (les caches ignorés par Git restent permis).
+Une modification historique de yarn.lock hors de
+ce dossier est préservée ; aucune branche particulière n'est imposée. Les unités
+existantes WinTips doivent être arrêtées et le timer désactivé AVANT installation.
+L'installateur n'arrête, ne démarre, ne redémarre et n'active aucun service/timer.
+Il vérifie les unités, installe le service en --dry-run --translate, puis recharge
+uniquement les définitions systemd lorsque leur contenu a changé.
+
+L'environnement /etc/wintips-editorial-worker.env est créé en 0600 avec un jeton
+VIDE à renseigner séparément. Un environnement existant n'est jamais lu, remplacé,
+affiché ou chmodé ; un fichier non privé, non root ou un lien est refusé. Le dossier
+/var/lib/wintips-editorial-worker est privé en 0700. Aucune donnée ou configuration
+BigWin, permission de ses verrous, dépendance ou modèle n'est modifié. Le jeton
+dédié doit être synchronisé avec l'API par l'opérateur, sans apparaître dans Git
+ni les arguments de commande. Réexécuter l'installation conserve les secrets et
+ne réécrit pas des unités identiques. Publication, notifications et activation
+du timer restent des étapes séparées après GO ; --check ne crée aucun fichier.
+
 Les exemples systemd sont à revoir avant installation : dossier réel API, jeton,
 modèles et dépendances existants, droits et restrictions. Le service exemple fait
 --dry-run --translate. Le passage explicite à --publish et l'activation du timer
 horaire ne sont faits qu'après GO. La tâche est du VPS, indépendante des apps et
 du navigateur. Elle ne laisse pas un modèle chargé entre ses tours.
+
+Le timer est à *:30 UTC, sans rattrapage Persistent. En mode runtime géré
+(WINTIPS_EDITORIAL_MANAGE_MODEL=true), après la collecte HTTP légère et avant
+toute traduction/import/reprise de notification, un garde UTC exige que le budget
+de traduction complet plus 300 secondes pour démarrage/cleanup tiennent avant le
+prochain BigWin *:07 UTC. Les 60 secondes suivant *:07 sont aussi réservées pour
+son délai aléatoire de démarrage. Le garde est revérifié avant les deux verrous
+partagés puis immédiatement après leur acquisition. Il ne dort jamais en gardant
+un verrou : fenêtre insuffisante = rapport deferred_shared_window, aucun modèle,
+import ou push, puis nouvelle tentative au prochain tour. Le runtime ne s'arrête
+que s'il a été démarré par ce tour et n'est pas utilisé par BigWin. Un échec de
+cleanup interdit aussi toute livraison. Les horaires BigWin et ses unités restent
+inchangés ; si son calendrier opérateur change, revoir ce contrat UTC avant
+d'activer WinTips. Aucune promesse de latence d'une édition froide n'en découle.
 
 Conserver les catégories legacy jusqu'à disponibilité du nouveau mobile. Avant de
 basculer une ancienne catégorie RDJ, le pont WINTIPS_EDITORIAL_LEGACY_BRIDGE=true

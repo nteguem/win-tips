@@ -129,7 +129,7 @@ def make_translator(args, output, resources):
         nonlocal started
         if not started and os.environ.get('WINTIPS_EDITORIAL_MANAGE_MODEL') == 'true':
             from .model_runtime import managed_model
-            resources.enter_context(managed_model())
+            resources.enter_context(managed_model(translation_seconds=getattr(args, 'translation_max_seconds', 1200)))
         started = True
     mode = os.environ.get('WINTIPS_EDITORIAL_TRANSLATOR', 'ollama')
     if mode == 'marian':
@@ -223,8 +223,22 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
                 report['blocked'] = True
             report['sources'].append(row)
         prepared = []
+        # Public HTTP surveillance remains light. If generation cannot finish
+        # safely before BigWin, defer the complete delivery phase without waiting
+        # for, acquiring, or keeping any shared model lock.
+        if bilingual and os.environ.get('WINTIPS_EDITORIAL_MANAGE_MODEL') == 'true':
+            from .model_runtime import RuntimeDeferred, require_admission
+            try:
+                require_admission(clock() if clock else datetime.now(timezone.utc), getattr(args, 'translation_max_seconds', 1200))
+            except RuntimeDeferred as exc:
+                report['deferred'] = {'reason': exc.code, **exc.window}
+                report['blocked'] = True
         for source, payload, row in collected:
             if not payload['items']:
+                continue
+            if report.get('deferred'):
+                row['status'] = 'deferred_shared_window'
+                row['issues'].append(report['deferred']['reason'])
                 continue
             try:
                 if bilingual:
@@ -240,6 +254,9 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
                     row['bilingual'] = True
                 prepared.append((source, payload, row))
             except Exception as exc:
+                from .model_runtime import RuntimeDeferred
+                if isinstance(exc, RuntimeDeferred):
+                    report['deferred'] = {'reason': exc.code, **exc.window}
                 row['status'] = 'translation_blocked' if bilingual else 'source_blocked'
                 row['issues'].append(safe_reason(exc))
                 report['blocked'] = True
@@ -249,7 +266,8 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
         except Exception as exc:
             report['runtimeCleanupError'] = safe_reason(exc)
             report['blocked'] = True
-        if args.publish:
+        delivery_allowed = not report.get('deferred') and not report.get('runtimeCleanupError')
+        if args.publish and delivery_allowed:
             for source, payload, row in prepared:
                 try:
                     check_clock = clock() if clock else datetime.now(timezone.utc)
@@ -268,7 +286,7 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
                     report['blocked'] = True
         # Resume pending delivery even on a day/run with no new source item.
         # A preview never calls this POST route or any provider.
-        if args.publish and configured.get('notificationsEnabled') is True:
+        if args.publish and delivery_allowed and configured.get('notificationsEnabled') is True:
             try:
                 outcome = client.request('/api/internal/editorial/notifications/drain', {'dryRun': False})
                 report['notificationDrain'] = outcome
@@ -307,6 +325,8 @@ def main(argv=None):
         print(json.dumps({k: report[k] for k in ("editionDate", "mode", "published", "notificationsSent", "publicRequests")}, ensure_ascii=True))
         for row in report["sources"]:
             print(json.dumps({k: row[k] for k in ("source", "status", "itemCount", "imported")}, ensure_ascii=True))
+        if report.get('deferred'):
+            print(json.dumps({'status': 'deferred', **report['deferred']}, ensure_ascii=True))
         return 2 if report.get('blocked') else 0
     except Exception as exc:
         # Credentials and server response bodies are deliberately omitted.
