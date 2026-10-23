@@ -22,7 +22,7 @@ import urllib.request
 
 
 PROMPT_VERSION = "fr-en-anchors-v8-sports-name-guidance"
-GUARD_VERSION = "ordered-anchors-v36-wintips-signed-point-gaps"
+GUARD_VERSION = "ordered-anchors-v37-wintips-minimum-quantity"
 TOKEN_RE = re.compile(r"ZXQ[A-Z]+QXZ")
 NUMBER_RE = re.compile(r"(?<!\w)[+-]?\s*\d+(?:[.,:]\d+)*(?:\s*[%€$])?(?!\w)")
 FRENCH_WORDS = re.compile(r"\b(?:avec|dans|leurs|leur|pour|cette|ces|étaient|était|mais|donc|ainsi|lors|depuis|toujours|également|notamment|cependant|aujourd'hui)\b", re.I)
@@ -661,6 +661,10 @@ def _protect(source: str, fixture: dict) -> tuple[str, list[dict]]:
     # An explicit two-sided quantity can be expressed with "both" in English.
     # This does not make "two goals" or any other bare quantity optional.
     if sport in {'football', 'basketball', 'foot', 'soccer', 'basket'}:
+        for minimum in re.finditer(r"\bpas\s+moins\s+de\s+(\d{1,3})\b",source,re.I):
+            # This source-explicit lower bound is one quantity, not a
+            # negative proposition. Both the bound and its value are required.
+            add(minimum.start(),minimum.end(),'at least '+minimum[1],'minimum_count',6)
         for lead in re.finditer(r"\b(\d{1,3})\s+points?\s+d['’]avance\s+sur\b",source,re.I):
             add(lead.start(),lead.end(),lead[1]+(' point' if int(lead[1])==1 else ' points')+' ahead','standing_gap',6)
         for degree in re.finditer(r'\b(?:petit|léger|faible)\s+avantage\b',source,re.I):
@@ -964,6 +968,8 @@ def _grammar_hint(anchor: dict) -> str:
         return 'same elapsed years later and same destination; never earlier or another team'
     if kind == 'standing_gap':
         return 'same signed point gap relative to the stated opponent; ahead and behind cannot interchange'
+    if kind == 'minimum_count':
+        return 'same explicit lower-bound quantity; never fewer, at most or a different value'
     if kind == "quarter_periods":
         return "explicit count of basketball periods, never a mathematical fraction"
     if kind == "name":
@@ -1001,7 +1007,7 @@ def _prompt(masked: str, anchors: list[dict] | None = None) -> str:
     # never protection tokens or substituted English source prose.
     names = {anchor['source']: anchor['target'] for anchor in anchors if anchor['kind'] == 'name'}
     terms = {anchor['source']: anchor['target'] for anchor in anchors if anchor['kind'] in {
-        'semantic','both_sides','result_score','result_score_final','delay_destination','standing_gap','basket_team_possessor','basket_three_point_count','basket_three_point_made','basket_three_point_neutral','weekday_night','zero_defeats','score_margin','named_away_venue','table_gap','linked_defeat_count'}}
+        'semantic','both_sides','result_score','result_score_final','delay_destination','standing_gap','minimum_count','basket_team_possessor','basket_three_point_count','basket_three_point_made','basket_three_point_neutral','weekday_night','zero_defeats','score_margin','named_away_venue','table_gap','linked_defeat_count'}}
     if names:
         guidance += 'Keep these proper names and club nicknames exactly in their canonical spellings: ' + json.dumps(names, ensure_ascii=False) + '.\n'
     if terms:
@@ -1312,6 +1318,13 @@ def _anchor_candidates(raw: str, anchor: dict, normalized_raw):
                 for start, end in _literal_spans(raw, prefix + " " + quantity, True):
                     if _numeric_context_ok(raw, start, end):
                         add(start, end, "equivalent", "same_initial_quantity_grammar", raw[start:end])
+        return tuple(candidates.values())
+    if kind == 'minimum_count':
+        value=int(target.removeprefix('at least '))
+        for quantity in (str(value),_cardinal_word(value)):
+            for variant in ('at least '+quantity,'no fewer than '+quantity,'no less than '+quantity):
+                for start,end in _literal_spans(raw,variant,True):
+                    add(start,end,'equivalent','same_explicit_minimum_quantity',raw[start:end])
         return tuple(candidates.values())
     if kind == "calendar_date":
         weekday, day, month, year = target.split()

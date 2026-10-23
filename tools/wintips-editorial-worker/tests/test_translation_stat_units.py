@@ -140,6 +140,21 @@ class StatisticGrammarTests(unittest.TestCase):
         profile=guard._terminology_profile('Les joueurs sont capables de gagner.')
         self.assertFalse(profile and any(r['id']=='fronted_participial_capability' for r in profile['entries']))
 
+    def test_explicit_minimum_quantity_preserves_bound_and_does_not_invent_negation(self):
+        source='Ils ont cumulé pas moins de 5 matchs sans victoire.'
+        for good in ['They accumulated at least 5 matches without a win.',
+                     'They accumulated no fewer than five matches without a win.',
+                     'They accumulated no less than 5 matches without a win.']:
+            self.check(source,good,sport='football')
+        for bad in ['They accumulated 5 matches without a win.','They accumulated at most 5 matches without a win.',
+                    'They accumulated fewer than 5 matches without a win.','They accumulated at least 6 matches without a win.',
+                    'They accumulated at least 5 consecutive losses.']:
+            self.check(source,bad,False,sport='football')
+        self.check('Ils ne gagnent pas et cumulent pas moins de 5 matchs.',
+                   'They do not win and accumulate at least 5 matches.',sport='football')
+        self.check('Ils ne gagnent pas et cumulent pas moins de 5 matchs.',
+                   'They win and accumulate at least 5 matches.',False,sport='football')
+
     def test_season_opener_cannot_become_a_general_statement_this_season(self):
         source='Le Magic a manqué son entrée en matière cette saison.'
         self.check(source,'The Magic failed in their season opener.')
