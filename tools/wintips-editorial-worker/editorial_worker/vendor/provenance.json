@@ -1,18 +1,27 @@
 {
   "originRepository": "bigwin-api-v2",
-  "originCommit": "891de82290cc39f4f04ad79281e430496bfba002",
-  "snapshotUnmodified": true,
+  "originCommit": "fed52531237c300d077df25766be022d9ed661c1",
+  "snapshotUnmodified": false,
   "runtimeDependencyOnOriginalCheckout": false,
   "files": [
     {
       "file": "rdj_collector.py",
       "upstreamPath": "tools/journal-parieur-worker/journal_worker/collector.py",
-      "sha256": "469c970c0702459d517a7b1b021d7518692ddb64151bf0571325f37d06c6d2de"
+      "upstreamSha256": "ee73abc21175f0db5ffd02756a6c967af223570ca8f12a1a51fecf7d4ded904c",
+      "sha256": "94ab6dd32731ce10f63df156b91d78379f1c1f5fa72a173a0ac637cbe412fd3d",
+      "localAdaptation": "Use package Europe/Paris IANA fallback through paris_timezone()",
+      "upstreamNormalizedUtf8Sha256": "f8a797a5e59bcd180b4b41736ddcf5c20c7c514139ba0814b7a7aa29aee0a284",
+      "lineEndings": "LF"
     },
     {
       "file": "timing.py",
       "upstreamPath": "tools/journal-parieur-worker/journal_worker/timing.py",
-      "sha256": "72efb679a352eb0caf41f687bb1ee59d71bbb7ceb847e107e8c75ab89afa484b"
+      "upstreamSha256": "6b13ebfc6a0637f3741acb8e412fc0e5ac4eb082e70feccb7a1c7cb8ba30a183",
+      "sha256": "11e9138a06ca66c59e988f7fa8d1cdbfeb1249748c0af0011ea894ad9b4dc481",
+      "localAdaptation": null,
+      "upstreamNormalizedUtf8Sha256": "11e9138a06ca66c59e988f7fa8d1cdbfeb1249748c0af0011ea894ad9b4dc481",
+      "lineEndings": "LF"
     }
-  ]
+  ],
+  "localFix": "Port proven UTC/Paris event-clock reconciliation, Ligue2 provider, finite team aliases and upcoming unique-event checks; retain WinTips typed adapter contracts."
 }

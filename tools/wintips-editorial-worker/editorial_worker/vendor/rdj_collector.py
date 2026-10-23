@@ -18,6 +18,8 @@ import unicodedata
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urljoin, urlsplit, urlunsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
+from zoneinfo import ZoneInfoNotFoundError
+from ..calendar import paris_timezone
 
 INDEX_URL = "https://www.ruedesjoueurs.com/paris-sportifs/le-petit-journal.html"
 EDITION_TIMEZONE = "Europe/Paris"  # Edition calendar only; NOT an event clock policy.
@@ -196,6 +198,36 @@ def only_date(value: str) -> date:
     return days.pop()
 
 
+def _utc_instant(value: datetime) -> datetime:
+    try:
+        return value.astimezone(timezone.utc)
+    except (ValueError, OverflowError) as exc:
+        raise SourceError("invalid_kickoff", "Event offset exceeds the supported datetime range") from exc
+
+
+def _event_representations(instant: datetime, explicit: datetime | None = None) -> dict[str, datetime]:
+    """Compare source clocks against a proven instant, never assign them a zone.
+
+    RDJ exposes both UTC clocks and Europe/Paris displays. DST is resolved from
+    the UTC instant, so an ambiguous/nonexistent Paris wall clock never chooses
+    an instant by itself. Publication timestamps are deliberately not involved.
+    """
+    try:
+        paris = paris_timezone()
+    except ZoneInfoNotFoundError as exc:
+        raise SourceError("kickoff_timezone_data_missing", "Europe/Paris timezone data is unavailable") from exc
+    try:
+        values = {"UTC": _utc_instant(instant).replace(tzinfo=None),
+                  EDITION_TIMEZONE: instant.astimezone(paris).replace(tzinfo=None)}
+    except (ValueError, OverflowError) as exc:
+        if isinstance(exc, SourceError):
+            raise
+        raise SourceError("invalid_kickoff", "Event timezone conversion exceeds the supported datetime range") from exc
+    if explicit is not None:
+        values["explicit_event_offset"] = explicit.replace(tzinfo=None)
+    return values
+
+
 def _event_datetime(root: Node) -> tuple[datetime, str]:
     """Use offset-aware event <time>, otherwise preserve the naive local clock."""
     event_times = find(root, lambda n: n.tag == "time" and bool(n.attrs.get("datetime")))
@@ -212,7 +244,14 @@ def _event_datetime(root: Node) -> tuple[datetime, str]:
             raise SourceError("invalid_kickoff", "Malformed event datetime") from exc
         displayed_dates = dates_in(root.plain())
         displayed_clocks = {(int(h), int(m)) for h, m in re.findall(r"(?<!\d)(\d{1,2})\s*[:h]\s*(\d{2})(?!\d)", root.plain(), re.I)}
-        if (displayed_dates and displayed_dates != {parsed.date()}) or (displayed_clocks and displayed_clocks != {(parsed.hour, parsed.minute)}):
+        representations = ([parsed.replace(tzinfo=None)] if parsed.utcoffset() is None
+                           else list(_event_representations(parsed, parsed).values()))
+        # Dates and clocks must belong to the SAME representation. Checking
+        # them independently would allow a made-up day/time around midnight.
+        if (len(displayed_dates) > 1 or len(displayed_clocks) > 1 or not any(
+                (not displayed_dates or displayed_dates == {value.date()})
+                and (not displayed_clocks or displayed_clocks == {(value.hour, value.minute)})
+                for value in representations)):
             raise SourceError("kickoff_display_mismatch", "Event datetime attribute conflicts with its displayed date or clock")
         return parsed, raw
     raw = root.plain()
@@ -273,11 +312,27 @@ def _journal_cards(page: FetchedPage, edition: date) -> list[Node]:
     if banner and only_date(banner[1]) != edition:
         raise SourceError("edition_banner_mismatch", "Journal banner disagrees with its edition heading")
     scope = one(find(body, lambda n: n.tag == "section" and n.attrs.get("id") == "tab-pronostics"), "tab-pronostics")
-    cards = find(scope, lambda n: n.tag == "article" and ("notre prono" in folded(n.plain()) or bool(find(n, lambda a: a.tag == "a" and "analyse complete" in folded(a.plain())))))
+    articles = find(scope, lambda n: n.tag == "article")
+    cards = []
+    for article in articles:
+        links = find(article, lambda n: n.tag == "a")
+        editorial_marker = ("notre prono" in folded(article.plain()) or bool(find(
+            article, lambda n: folded(n.attrs.get("aria-label") or "") == "match")) or any(
+            "/pronostic/" in (link.attrs.get("href") or "") or "analyse complete" in folded(link.plain()) for link in links))
+        # RDJ intersperses fully sponsored promotional <article> blocks. Only
+        # this positive ad proof may exclude an article from the card count.
+        if not editorial_marker and links and all("sponsored" in (link.attrs.get("rel") or "").split() for link in links):
+            continue
+        cards.append(article)
     if not cards:
         raise SourceError("journal_no_selections", "No supported prediction cards in the journal")
     if len(cards) > 20:
         raise SourceError("journal_card_limit", "Unexpectedly many journal cards")
+    if any(find(card, lambda n: n is not card and n.tag == "article") for card in cards):
+        raise SourceError("journal_card_structure", "Nested journal articles cannot be counted unambiguously")
+    if any("notre prono" not in folded(card.plain()) and not find(
+            card, lambda n: n.tag == "a" and "analyse complete" in folded(n.plain())) for card in cards):
+        raise SourceError("journal_card_unrecognized", "An editorial article has no supported prediction markers")
     return cards
 
 
@@ -425,7 +480,9 @@ def _detail(page: FetchedPage) -> dict:
     kickoff_node = one(find(match, lambda n: n.tag == "p" and n.has_class("m_title")), "event local datetime")
     kickoff, kickoff_raw = _event_datetime(kickoff_node)
     headline = one(find(root, lambda n: n.tag == "h1"), "prediction h1").plain()
-    if only_date(headline) != kickoff.date():
+    event_dates = ({kickoff.date()} if kickoff.utcoffset() is None else
+                   {value.date() for value in _event_representations(kickoff, kickoff).values()})
+    if only_date(headline) not in event_dates:
         raise SourceError("prediction_date_mismatch", "Prediction headline and event date disagree")
     analysis, paragraphs = _analysis(root)
     images = find(root, lambda n: n.tag == "meta" and n.attrs.get("property") == "og:image")
@@ -448,7 +505,7 @@ def _detail(page: FetchedPage) -> dict:
 
 def _provider_proof(resolved: dict, parts, fixture: dict, edition: date) -> bool:
     """ESPN is a bounded provider proof, never an official league schedule."""
-    match = re.fullmatch(r"/apis/site/v2/sports/(soccer/(fra\.1|eng\.1|esp\.1|ita\.1|ger\.1)|tennis/(atp|wta))/scoreboard", parts.path)
+    match = re.fullmatch(r"/apis/site/v2/sports/(soccer/(fra\.[12]|eng\.1|esp\.1|ita\.1|ger\.1)|tennis/(atp|wta))/scoreboard", parts.path)
     if parts.hostname != "site.api.espn.com" or not match:
         return False
     query = parse_qs(parts.query, keep_blank_values=True)
@@ -472,17 +529,21 @@ def _provider_proof(resolved: dict, parts, fixture: dict, edition: date) -> bool
 
 
 def _utc(fixture: dict, card_time: datetime, detail_time: datetime, edition: date, resolver) -> tuple[str, dict]:
-    if card_time.tzinfo is not None and detail_time.tzinfo is not None:
-        if card_time.astimezone(timezone.utc) != detail_time.astimezone(timezone.utc):
+    card_aware, detail_aware = card_time.utcoffset() is not None, detail_time.utcoffset() is not None
+    if card_aware and detail_aware:
+        if _utc_instant(card_time) != _utc_instant(detail_time):
             raise SourceError("kickoff_conflict", "Explicit journal and prediction event times disagree")
-        instant = card_time.astimezone(timezone.utc)
-        return instant.isoformat(), {"method": "explicit_event_offset", "source_url": fixture["journal_source_url"]}
-    if card_time.replace(tzinfo=None) != detail_time.replace(tzinfo=None):
-        raise SourceError("kickoff_conflict", "Journal card and prediction local clocks disagree")
-    explicit = card_time if card_time.tzinfo is not None else detail_time if detail_time.tzinfo is not None else None
+        instant = _utc_instant(card_time)
+        return instant.isoformat(), {"method": "explicit_event_offset", "source_url": fixture["journal_source_url"],
+                                    "source_clocks": {"journal": card_time.isoformat(), "detail": detail_time.isoformat()}}
+    explicit = card_time if card_aware else detail_time if detail_aware else None
     if explicit is not None:
-        return explicit.astimezone(timezone.utc).isoformat(), {"method": "explicit_event_offset", "source_url": fixture["journal_source_url"] if card_time.tzinfo else fixture["source_url"]}
+        instant = _utc_instant(explicit)
+        evidence = {"method": "explicit_event_offset", "source_url": fixture["journal_source_url"] if card_aware else fixture["source_url"]}
+        return instant.isoformat(), _reconcile_clocks(card_time, detail_time, instant, evidence, explicit)
     if resolver is None:
+        if card_time != detail_time:
+            raise SourceError("kickoff_conflict", "Differing naive event clocks require a verified schedule resolver")
         raise SourceError("kickoff_timezone_missing", "Naive RDJ event clocks require a verified schedule resolver")
     try:
         resolved = resolver(dict(fixture), edition.isoformat())
@@ -505,13 +566,28 @@ def _utc(fixture: dict, card_time: datetime, detail_time: datetime, edition: dat
         raise SourceError("kickoff_untrusted_proof", "Kickoff proof is not an approved official schedule or bounded ESPN provider proof")
     try:
         instant = datetime.fromisoformat(resolved["kickoff_utc"].replace("Z", "+00:00"))
-    except (ValueError, KeyError, AttributeError) as exc:
+    except (ValueError, KeyError, AttributeError, TypeError) as exc:
         raise SourceError("kickoff_unresolved", "Resolver did not return an explicit datetime") from exc
     if instant.tzinfo is None or instant.utcoffset() != timedelta(0):
         raise SourceError("kickoff_unresolved", "Resolver kickoff_utc must be explicitly UTC")
-    if abs((instant.date() - card_time.date()).days) > 1:
+    if any(abs((instant.date() - value.date()).days) > 1 for value in (card_time, detail_time)):
         raise SourceError("kickoff_date_mismatch", "Verified schedule date is too far from the card event date")
-    return instant.isoformat(), dict(resolved)
+    return instant.isoformat(), _reconcile_clocks(card_time, detail_time, instant, dict(resolved))
+
+
+def _reconcile_clocks(card_time: datetime, detail_time: datetime, instant: datetime,
+                      evidence: dict, explicit: datetime | None = None) -> dict:
+    representations = _event_representations(instant, explicit)
+    clocks = {}
+    for label, value in (("journal", card_time), ("detail", detail_time)):
+        if value.utcoffset() is not None:
+            matches = ["explicit_event_offset"] if _utc_instant(value) == instant else []
+        else:
+            matches = [zone for zone, candidate in representations.items() if value == candidate]
+        if not matches:
+            raise SourceError("kickoff_conflict", "Source " + label + " clock conflicts with the proven event instant")
+        clocks[label] = {"raw": value.isoformat(), "matching_representations": matches}
+    return {**evidence, "source_clock_reconciliation": clocks}
 
 
 def collect_edition(edition: str, fetcher=None, *, kickoff_resolver=None, now: datetime | None = None,
@@ -551,6 +627,7 @@ def collect_edition(edition: str, fetcher=None, *, kickoff_resolver=None, now: d
         fixtures, seen = [], set()
         result["provenance"]["expected_card_count"] = len(cards)
         for index, card in enumerate(cards):
+            source_clocks = {}
             try:
                 links = find(card, lambda n: n.tag == "a" and "analyse complete" in folded(n.plain()))
                 target = rdj_url(one(links, "card complete-analysis link").attrs.get("href") or "", journal.url)
@@ -562,7 +639,10 @@ def collect_edition(edition: str, fetcher=None, *, kickoff_resolver=None, now: d
                 competition = one(find(card, lambda n: n.tag == "h2"), "card competition").plain()
                 match_block = one(find(card, lambda n: folded(n.attrs.get("aria-label") or "") == "match"), "card event time block")
                 card_time, card_raw = _event_datetime(match_block)
-                if card_time.date() not in {day, day + timedelta(days=1)}:
+                source_clocks["journal"] = card_time.isoformat()
+                event_dates = ({card_time.date()} if card_time.utcoffset() is None else
+                               {value.date() for value in _event_representations(card_time, card_time).values()})
+                if not any(0 <= (event_day - day).days <= 1 for event_day in event_dates):
                     raise SourceError("card_date_outside_edition", "Card is neither edition day nor its following night")
                 pick, odds = _card_market(card)
                 page = _fetch(fetcher, target, records)
@@ -571,6 +651,7 @@ def collect_edition(edition: str, fetcher=None, *, kickoff_resolver=None, now: d
                 if final_id is None or final_id[1] != requested_id:
                     raise SourceError("prediction_redirect_mismatch", "Linked prediction redirected to another event")
                 detail = _detail(page)
+                source_clocks["detail"] = detail["kickoff"].isoformat()
                 card_logos = _logo_ids(match_block)
                 if len(card_logos) != 2 or card_logos != detail["participant_logos"]:
                     raise SourceError("participant_mismatch", "Journal and prediction participant logos do not agree in home/away order")
@@ -596,9 +677,10 @@ def collect_edition(edition: str, fetcher=None, *, kickoff_resolver=None, now: d
                 fixture["kickoff_utc"], fixture["provenance"]["kickoff_resolution"] = _utc(fixture, card_time, detail["kickoff"], day, kickoff_resolver)
                 fixtures.append(fixture)
             except (SourceError, OSError) as exc:
-                result["issues"].append({"code": getattr(exc, "code", "source_unavailable"), "card_index": index, "detail": str(exc)})
+                result["issues"].append({"code": getattr(exc, "code", "source_unavailable"), "card_index": index,
+                                         "detail": str(exc), "source_clocks": source_clocks})
+        result["provenance"]["parsed_card_count"] = len(fixtures)
         if result["issues"]:
-            result["provenance"]["parsed_card_count"] = len(fixtures)
             return result
         result.update(status="ready", fixtures=fixtures)
         return result

@@ -5,6 +5,7 @@ import json, re, unicodedata, urllib.request
 ESPN_BASE = 'https://site.api.espn.com/apis/site/v2/sports/'
 LEAGUE_NAMES = {
     'fra.1': ('ligue 1', 'ligue1', 'french ligue 1', 'france - ligue 1', "ligue 1 mcdonald's", 'ligue 1 mcdonalds'),
+    'fra.2': ('ligue 2', 'ligue2', 'french ligue 2', 'france - ligue 2', 'ligue 2 bkt'),
     'eng.1': ('premier league', 'premierleague', 'english premier league', 'angleterre - premier league'),
     'esp.1': ('liga', 'la liga', 'laliga', 'laliga ea sports', 'spanish laliga', 'espagne - liga'),
     'ita.1': ('serie a', 'serie a enilive', 'italian serie a', 'italie - serie a'),
@@ -24,6 +25,12 @@ def _identity(value):
 
 
 PROVIDER_LEAGUES = {name: league for league, names in LEAGUE_NAMES.items() for name in names}
+UEFA_COMPETITIONS = {
+    'ligue europa': 14, 'europa league': 14, 'uefa europa league': 14,
+    'ligue des champions': 3, 'champions league': 3, 'uefa champions league': 3,
+    'ligue conference': 19, 'ligue europa conference': 19,
+    'conference league': 19, 'uefa conference league': 19, 'europa conference league': 19,
+}
 # Finite spelling/name aliases only. No surname, substring or edit-distance match.
 FOOTBALL_NAME_GROUPS = (
     ('rennes', 'stade rennais', 'stade rennais fc'), ('marseille', 'om', 'olympique de marseille'),
@@ -33,6 +40,11 @@ FOOTBALL_NAME_GROUPS = (
     ('nantes', 'fc nantes'), ('le havre', 'le havre ac'), ('lorient', 'fc lorient'),
     ('montpellier', 'montpellier hsc'), ('reims', 'stade de reims'), ('metz', 'fc metz'),
     ('strasbourg', 'rc strasbourg', 'rc strasbourg alsace'),
+    ('nancy', 'as nancy lorraine'), ('laval', 'stade laval', 'stade lavallois', 'stade lavallois mayenne fc'),
+    ('clermont', 'clermont foot', 'clermont foot 63'), ('guingamp', 'ea guingamp', 'en avant guingamp'),
+    ('dunkerque', 'usl dunkerque'), ('grenoble', 'grenoble foot 38'), ('pau', 'pau fc'),
+    ('annecy', 'fc annecy'), ('sochaux', 'fc sochaux', 'fc sochaux-montbeliard'),
+    ('bastia', 'sc bastia'), ('rodez', 'rodez aveyron'), ('red star', 'red star fc'),
     ('tottenham', 'tottenham hotspur'), ('wolverhampton', 'wolverhampton wanderers', 'wolves'),
     ('nottingham forest', 'nottingham'), ('manchester city', 'man city'),
     ('manchester united', 'man united'), ('newcastle', 'newcastle united'), ('leeds', 'leeds united'),
@@ -107,7 +119,11 @@ def _name(value):
             'necnimegue':'nec','dinamozagreb':'dinamozagreb','gnkdinamo':'dinamozagreb','lechpoznan':'lechpoznan'}.get(value,value)
 
 def _get(url):
-    request=urllib.request.Request(url,headers={'User-Agent':'JournalDuParieur/1.0 (official schedule verification)'})
+    headers = {'User-Agent': 'Mozilla/5.0 (compatible; JournalDuParieur/1.0; schedule verification)',
+               'Accept': 'application/json'}
+    if url.startswith('https://cdn.nba.com/'):
+        headers.update(Referer='https://www.nba.com/', Origin='https://www.nba.com')
+    request=urllib.request.Request(url,headers=headers)
     with urllib.request.urlopen(request,timeout=25) as response:
         raw=response.read(8_000_001)
     if len(raw)>8_000_000:raise ValueError('Official schedule exceeds input limit')
@@ -224,35 +240,55 @@ class OfficialKickoffs:
         elif sport == 'tennis':
             return self._provider(fixture, target)
         if sport in ('football','foot','soccer'):
+            competition_id = UEFA_COMPETITIONS.get(_label(fixture.get('competition', '')))
+            if competition_id is None:
+                return None
             # UEFA seasons end in the following calendar year after summer.
             season=target.year+(target.month>=7)
-            for competition in (14,3,19):
+            for competition in (competition_id,):
                 url=f'https://match.uefa.com/v5/matches?competitionId={competition}&seasonYear={season}&offset=0&limit=500&order=ASC'
                 try:data=self._load(url)
                 except (OSError,ValueError):continue
                 rows=data if isinstance(data,list) else data.get('matches',data.get('data',[]))
                 for row in rows:
+                    if not isinstance(row, dict) or row.get('status') != 'UPCOMING':
+                        continue
                     ht=row.get('homeTeam',{});at=row.get('awayTeam',{})
                     names=lambda team:{_name(team.get(k,'')) for k in ('internationalName','displayName','name','translations') if isinstance(team.get(k),str)}
                     if home not in names(ht) or away not in names(at):continue
                     raw=row.get('kickOffTime',{}).get('dateTime')
-                    self._candidate(candidates,raw,target,url,str(row.get('id','')))
+                    self._candidate(candidates,raw,target,url,row.get('id'))
         elif sport in ('basket','basketball','basket-ball','nba'):
+            if _label(fixture.get('competition', '')) not in {'nba', 'national basketball association'}:
+                return None
             url='https://cdn.nba.com/static/json/staticData/scheduleLeagueV2_1.json'
             try:data=self._load(url)
             except (OSError,ValueError):return None
             for day in data.get('leagueSchedule',{}).get('gameDates',[]):
                 for game in day.get('games',[]):
+                    if (type(game.get('gameStatus')) is not int or game['gameStatus'] != 1 or
+                        game.get('postponedStatus', 'N') != 'N' or
+                        re.search(r'\b(?:tbd|tba|postponed|cancell?ed|delayed|suspended)\b',
+                                  _label(game.get('gameStatusText', '')))):
+                        continue
                     def names(team):
                         city=team.get('teamCity','');name=team.get('teamName','')
                         return {_name(city+' '+name),_name(name),_name(team.get('teamTricode',''))}
                     if home in names(game.get('homeTeam',{})) and away in names(game.get('awayTeam',{})):
-                        self._candidate(candidates,game.get('gameDateTimeUTC'),target,url,str(game.get('gameId','')))
-        unique={x['kickoff_utc']:x for x in candidates}
+                        self._candidate(candidates,game.get('gameDateTimeUTC'),target,url,game.get('gameId'))
+        # A common kickoff is not an event identity. Two IDs remain ambiguous,
+        # and one ID returned with conflicting start times is also rejected.
+        unique = {}
+        for candidate in candidates:
+            key = (candidate['source_url'], candidate['source_id'])
+            if key in unique and unique[key]['kickoff_utc'] != candidate['kickoff_utc']:
+                return None
+            unique[key] = candidate
         return next(iter(unique.values())) if len(unique)==1 else None
     @staticmethod
     def _candidate(out,raw,target,url,source_id):
-        if not raw:return
+        source_id = _source_id(source_id)
+        if not raw or not source_id:return
         try:when=datetime.fromisoformat(raw.replace('Z','+00:00'))
         except (TypeError,ValueError):return
         if when.tzinfo is None:return
