@@ -22,7 +22,7 @@ import urllib.request
 
 
 PROMPT_VERSION = "fr-en-anchors-v8-sports-name-guidance"
-GUARD_VERSION = "ordered-anchors-v39-wintips-named-team-noun"
+GUARD_VERSION = "ordered-anchors-v40-wintips-sport-adverb-quarter-idiom"
 TOKEN_RE = re.compile(r"ZXQ[A-Z]+QXZ")
 NUMBER_RE = re.compile(r"(?<!\w)[+-]?\s*\d+(?:[.,:]\d+)*(?:\s*[%€$])?(?!\w)")
 FRENCH_WORDS = re.compile(r"\b(?:avec|dans|leurs|leur|pour|cette|ces|étaient|était|mais|donc|ainsi|lors|depuis|toujours|également|notamment|cependant|aujourd'hui)\b", re.I)
@@ -550,6 +550,16 @@ SEMANTIC_EQUIVALENTS += (
     ('season opener','opening game of the season','opening match of the season'),
     ('botched their season opener','failed in their season opener','had a poor season opener','had a disappointing season opener'))
 BASKETBALL_LEXICON = {'Ouest': 'West', 'Est': 'East', 'Play-offs': 'playoffs', 'Game': 'game'}
+# A capitalised, sentence-initial sporting adverb followed by a lowercase
+# clause is descriptive grammar, not a new athlete/team name. Apply only this
+# finite vocabulary and never override an explicitly supplied proper name.
+SPORTING_ADVERBIAL_OPENERS = {'offensivement': 'offensively', 'défensivement': 'defensively',
+    'collectivement': 'collectively', 'tactiquement': 'tactically',
+    'techniquement': 'technically', 'physiquement': 'physically'}
+SEMANTIC_EQUIVALENTS += (('under scrutiny', 'facing high expectations', 'expected to deliver'),)
+TERMINOLOGY_RULES += (("expected_to_deliver_idiom", r"\battendu(?:e|s|es)?\s+au\s+tournant\b",
+    "Attendu au tournant means under scrutiny / expected to deliver, with high expectations. "
+    "It never means a turnaround or a change of game plan. Keep the same subject and source clause order."),)
 TERMINOLOGY_RULES += (("lost_composure", r"\bperdre\s+(?:(?:totalement|complètement)\s+)?les pédales\b",
     "Perdre les pédales is losing composure/control in sport, never losing physical pedals."),)
 TERMINOLOGY_RULES += (("fronted_participial_capability",r"^(?:D['’]abord\s+)?capables?\s+de\b",
@@ -662,6 +672,14 @@ def _protect(source: str, fixture: dict) -> tuple[str, list[dict]]:
     for match in re.finditer(r"\b(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\s+(\d{1,2})\s+(janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre)\s+(\d{4})\b", source, re.I):
         add(match.start(), match.end(), f"{LEXICON[match[1].lower()]} {match[2]} {LEXICON[match[3].lower()]} {match[4]}", "calendar_date", 6)
     sport = str(fixture.get('sport', fixture.get('sport_key', ''))).casefold()
+    if sport in {'football', 'basketball', 'foot', 'soccer', 'basket', 'volleyball', 'tennis', 'horse_racing'}:
+        explicit_names = tuple(name.strip() for name in
+            (*NAMES, fixture.get('home'), fixture.get('away'), *fixture.get('protected_names', []))
+            if isinstance(name, str) and name.strip())
+        opener = re.match(r"([^\W\d_]+)(?=\s+[a-zà-öø-ÿ])", source)
+        if (opener and opener[1].casefold() in SPORTING_ADVERBIAL_OPENERS and
+                not any(re.match(re.escape(name) + r'(?!\w)', source, re.I) for name in explicit_names)):
+            add(opener.start(), opener.end(), SPORTING_ADVERBIAL_OPENERS[opener[1].casefold()], 'semantic', 6)
     # An explicit two-sided quantity can be expressed with "both" in English.
     # This does not make "two goals" or any other bare quantity optional.
     if sport in {'football', 'basketball', 'foot', 'soccer', 'basket'}:
@@ -713,6 +731,8 @@ def _protect(source: str, fixture: dict) -> tuple[str, list[dict]]:
                          **(BASKETBALL_LEXICON if sport in {'basketball', 'basket'} else {}),
                          **(TURF_LEXICON if sport == 'horse_racing' else {})}
     if sport in {'football','basketball','foot','soccer','basket'}:
+        for expectation in re.finditer(r"\battendu(?:e|s|es)?\s+au\s+tournant\b", source, re.I):
+            add(expectation.start(), expectation.end(), 'under scrutiny', 'semantic', 6)
         semantic_glossary.update({'sacrés champions':'crowned champions', 'sacrées championnes':'crowned champions',
             "n'a pas tardé":"quickly", "n’a pas tardé":"quickly", "s'imposant":"winning", "s’imposant":"winning",
             'un cap devait être franchi':'a step forward was needed','zone de relégation':'relegation zone',
@@ -772,6 +792,15 @@ def _protect(source: str, fixture: dict) -> tuple[str, list[dict]]:
     if sport == 'tennis':
         semantic_glossary.update(TENNIS_TERMS)
     if sport in {'basketball', 'basket'}:
+        written_ordinals = {original: ORDINAL_VALUES[translated] for original, translated in LEXICON.items()
+                            if translated in ORDINAL_VALUES}
+        ordinal_pattern = '|'.join(re.escape(word) for word in sorted(written_ordinals, key=len, reverse=True))
+        for match in re.finditer(r"\b(" + ordinal_pattern + r"|\d+(?:ers?|[èe]res?|[èe]mes?|es?))\s+quart[- ]temps\b", source, re.I):
+            value = written_ordinals.get(match[1].casefold())
+            if value is None:
+                value = int(re.match(r'\d+', match[1])[0])
+            if 1 <= value <= 31:
+                add(match.start(), match.end(), _ordinal_word(value) + ' quarter', 'quarter_ordinal', 6)
         for match in re.finditer(r"\b(\d{1,2}|" + initial_numbers + r")\s+quarts?[- ]temps\b", source, re.I):
             value = int(match[1]) if match[1].isdigit() else CARDINAL_VALUES.get(NUMBER_WORDS[match[1].lower()])
             if value is not None and 1 <= value <= 20:
@@ -985,6 +1014,8 @@ def _grammar_hint(anchor: dict) -> str:
         return 'same explicit lower-bound quantity and source unit; matches are not matchdays; never fewer, at most or a different value'
     if kind == "quarter_periods":
         return "explicit count of basketball periods, never a mathematical fraction"
+    if kind == "quarter_ordinal":
+        return "same ordinal basketball quarter and period unit, never a fraction or a different quarter"
     if kind == "name":
         return "proper name; keep its actor/opponent relationship"
     if kind in {"score_or_time", "number", "ordinal", "number_word"}:
@@ -1020,7 +1051,7 @@ def _prompt(masked: str, anchors: list[dict] | None = None) -> str:
     # never protection tokens or substituted English source prose.
     names = {anchor['source']: anchor['target'] for anchor in anchors if anchor['kind'] == 'name'}
     terms = {anchor['source']: anchor['target'] for anchor in anchors if anchor['kind'] in {
-        'semantic','both_sides','result_score','result_score_final','delay_destination','standing_gap','minimum_count','basket_team_possessor','basket_three_point_count','basket_three_point_made','basket_three_point_neutral','weekday_night','zero_defeats','score_margin','named_away_venue','table_gap','linked_defeat_count'}}
+        'semantic','both_sides','result_score','result_score_final','delay_destination','standing_gap','minimum_count','basket_team_possessor','basket_three_point_count','basket_three_point_made','basket_three_point_neutral','weekday_night','zero_defeats','score_margin','named_away_venue','table_gap','linked_defeat_count','quarter_ordinal'}}
     if names:
         guidance += 'Keep these proper names and club nicknames exactly in their canonical spellings: ' + json.dumps(names, ensure_ascii=False) + '.\n'
     if terms:
@@ -1322,6 +1353,13 @@ def _anchor_candidates(raw: str, anchor: dict, normalized_raw):
             for start,end in _literal_spans(raw,count+" "+unit,True):
                 if not re.match(r"\s+of\b",raw[end:],re.I):
                     add(start,end,"equivalent","source_explicit_basketball_period_count",raw[start:end])
+        return tuple(candidates.values())
+    if kind == 'quarter_ordinal':
+        value = ORDINAL_VALUES[target.casefold().removesuffix(' quarter')]
+        for ordinal in (_ordinal_digit(value), _ordinal_word(value), _ordinal_word(value).replace('-', ' ')):
+            for start, end in _literal_spans(raw, ordinal + ' quarter', True):
+                if _numeric_context_ok(raw, start, end) and not re.match(r'\s+of\b', raw[end:], re.I):
+                    add(start, end, 'equivalent', 'same_explicit_ordinal_basketball_quarter', raw[start:end])
         return tuple(candidates.values())
     if kind == "initial_count":
         word = target.removeprefix("first ")
