@@ -187,6 +187,74 @@ test('purchased rights survive future catalogue edits, preserve Essential/Premiu
   premium.categories = ids; await premium.save();
 });
 
+test('managed one-time Google rights expire at the exact 7/14-day boundary in lists, detail access and push audience', async t => {
+  const cases = [];
+  for (const pkg of packages) {
+    const user = oid();
+    await models.User.collection.insertOne({ _id: user, isActive: true });
+    const sub = await activation(args(pkg, 'TEST_EXACT_EXPIRY_' + pkg.duration, 'EUR', user));
+    assert.equal(sub.paymentProvider, 'GOOGLE_PLAY'); assert.equal(sub.autoRenewing, false);
+    assert.equal(sub.categorySnapshot.length, pkg.duration === 7 ? 2 : 4);
+    assert.equal(sub.endDate.getTime() - sub.startDate.getTime(), pkg.duration * 86400000);
+    cases.push({ user, sub, categories: sub.categorySnapshot.map(String) });
+  }
+  const audience = createEditorialNotificationRepository(models);
+  // Date-only mocking leaves real network/timeouts untouched. These are the
+  // actual service/model queries, including Subscription.find middleware.
+  t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
+  try {
+    for (const { user, sub, categories } of cases) {
+      for (const [offset, allowed] of [[-1, true], [0, false], [1, false]]) {
+        t.mock.timers.setTime(sub.endDate.getTime() + offset);
+        const rows = await subscriptionService.getActiveSubscriptions(user);
+        assert.equal(rows.length, allowed ? 1 : 0, `list at expiry ${offset}ms (${categories.length} rights)`);
+        const info = await subscriptionService.getUserSubscriptionInfo(user);
+        assert.equal(info.hasActiveSubscription, allowed); assert.equal(info.totalActiveSubscriptions, allowed ? 1 : 0);
+        for (const category of categories) assert.equal(await subscriptionService.hasAccessToCategory(user, category), allowed);
+        const recipients = await audience.entitledUsers(categories[0], [user], new Date());
+        assert.equal(recipients.includes(String(user)), allowed, `push audience at expiry ${offset}ms`);
+      }
+      const raw = await Subscription.collection.findOne({ _id: sub._id });
+      assert.equal(raw.status, 'active', 'expiry is enforced without waiting for a cleanup write');
+      assert.equal(raw.endDate.getTime(), sub.endDate.getTime());
+      assert.deepEqual(raw.categorySnapshot.map(String), categories);
+    }
+  } finally { t.mock.timers.reset(); }
+});
+
+test('historical renewable Google rights keep the existing expiry/renewal policy without adding a snapshot', async t => {
+  const user = oid(), packageId = oid(), subscriptionId = oid(), category = packages[0].categories[0];
+  const end = new Date(Date.now() + 30 * 86400000);
+  await models.User.collection.insertOne({ _id: user, isActive: true });
+  // Represent a pre-existing legacy record; it must not be retrofitted by the
+  // new-purchase schema hook or migrated into a managed fixed-term package.
+  await Package.collection.insertOne({ _id: packageId, name: { fr: 'Legacy test', en: 'Legacy test' },
+    categories: [category], duration: 30, pricing: { XAF: 10000 }, isActive: false });
+  await Subscription.collection.insertOne({ _id: subscriptionId, user, package: packageId,
+    startDate: new Date(), endDate: end, status: 'active', paymentProvider: 'GOOGLE_PLAY', autoRenewing: true,
+    pricing: { amount: 10000, currency: 'XAF' } });
+  const audience = createEditorialNotificationRepository(models);
+  t.mock.timers.enable({ apis: ['Date'], now: end.getTime() - 1 });
+  try {
+    assert.equal((await subscriptionService.getActiveSubscriptions(user)).length, 1);
+    assert.equal(await subscriptionService.hasAccessToCategory(user, String(category)), true);
+    assert((await audience.entitledUsers(String(category), [user], new Date())).includes(String(user)));
+    t.mock.timers.setTime(end.getTime());
+    assert.equal((await subscriptionService.getActiveSubscriptions(user)).length, 0);
+    assert.equal(await subscriptionService.hasAccessToCategory(user, String(category)), false);
+    assert.deepEqual(await audience.entitledUsers(String(category), [user], new Date()), []);
+    // Simulate the existing verified renewal job extending the same record.
+    const renewedEnd = new Date(end.getTime() + 30 * 86400000);
+    await Subscription.collection.updateOne({ _id: subscriptionId }, { $set: { endDate: renewedEnd } });
+    assert.equal((await subscriptionService.getActiveSubscriptions(user)).length, 1);
+    assert.equal(await subscriptionService.hasAccessToCategory(user, String(category)), true);
+    assert((await audience.entitledUsers(String(category), [user], new Date())).includes(String(user)));
+    const raw = await Subscription.collection.findOne({ _id: subscriptionId });
+    assert.equal(raw.categorySnapshot, undefined); assert.equal(raw.autoRenewing, true);
+    assert.equal(raw.status, 'active'); assert.equal(raw.endDate.getTime(), renewedEnd.getTime());
+  } finally { t.mock.timers.reset(); }
+});
+
 test('Duo partial unique index keeps the first identity across restarts and concurrent sources', async () => {
   await provision(mongoose.connection.db, { apply: true, intent: true });
   const cat = await Category.findOne({ editorialSource: 'rdj_football_duo' });
