@@ -14,7 +14,9 @@ PUBLIC_HOSTS = {"www.ruedesjoueurs.com", "ruedesjoueurs.com", "match.uefa.com",
 
 
 class FetchError(ValueError):
-    pass
+    def __init__(self, code):
+        super().__init__(code)
+        self.code = code
 
 
 def public_url(value):
@@ -41,14 +43,25 @@ class PublicFetcher:
         self.requests = 0
         self.memory = {}
         self.records = []
+        # Separate from HTTP outcomes: adapters can legitimately catch network
+        # failures and use verified fallback data, but must not hide a refused
+        # global collection budget as an absent or partially complete source.
+        self.budget_refusals = []
         self.opener = build_opener(Redirects())
+
+    def _refuse_budget(self, code):
+        self.budget_refusals.append({'code': code, 'requests': self.requests,
+            'maxRequests': self.max_requests, 'maxSeconds': self.max_seconds,
+            'elapsedSeconds': round(max(0, time.monotonic() - self.started), 3)})
+        # No URL, response, credential, or exception message enters this trace.
+        raise FetchError(code)
 
     def get(self, url):
         public_url(url)
         if url in self.memory:
             return self.memory[url]
         if time.monotonic() - self.started >= self.max_seconds:
-            raise FetchError("public_time_budget_exceeded")
+            self._refuse_budget("public_time_budget_exceeded")
         key = hashlib.sha256(url.encode()).hexdigest()
         path = self.cache_dir / (key + ".json")
         entry = None
@@ -63,7 +76,7 @@ class PublicFetcher:
                 pass
         if entry is None:
             if self.requests >= self.max_requests:
-                raise FetchError("public_request_budget_exceeded")
+                self._refuse_budget("public_request_budget_exceeded")
             self.requests += 1
             headers = {"User-Agent": "WinTipsEditorialWorker/0.1 (public source reader)", "Accept": "text/html,application/json"}
             if urlsplit(url).hostname == "cdn.nba.com":

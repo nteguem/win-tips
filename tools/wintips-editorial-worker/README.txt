@@ -49,11 +49,21 @@ jamais dans une commande, un cache HTTP public ou une sortie de journal.
 
 Après validation et GO seulement :
 
-  python3 -B -m editorial_worker --publish --output /var/lib/wintips-editorial-worker
+  python3 -B -m editorial_worker --publish --max-requests 80 --max-seconds 240 --output /var/lib/wintips-editorial-worker
 
 L'origine HTTPS et le jeton doivent être configurés ; importEnabled doit être vrai.
 Le client interne refuse proxy, redirection et toute route hors de son allowlist :
 GET config, POST import et POST notifications/drain uniquement.
+
+Le budget de production est explicite :80requêtes publiques/240secondes par
+passage, partagé entre les sources. Un refus effectif de quota ou de délai
+pendant une source rend tout son lot source_incomplete avec zéro item ; il ne
+devient ni une absence normale ni un lot partiel publiable. La trace expose
+seulement code/limites/compteurs/durée, jamais URL, réponse ou donnée sensible.
+Une source suivante satisfaite intégralement en mémoire reste autorisée, même
+après un refus précédent ; atteindre exactement le maximum sans nouveau refus
+ne suffit pas à bloquer. Les erreurs HTTP ordinaires et secours vérifiés ne sont
+pas assimilés aux refus de budget. Le préflight froid isolé garde40requêtes.
 
 LES TROIS PHASES D'UN TOUR
 1. Collecter les sources publiques, vérifier identités/date/heure et sauvegarder

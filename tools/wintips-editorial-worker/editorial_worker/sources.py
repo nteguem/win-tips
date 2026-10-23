@@ -740,7 +740,15 @@ def collect(source, edition, fetcher, *, now, lead=30, exclude_ids=None, exclude
         kwargs["exclude_ticket_fingerprints"] = exclude_ticket_fingerprints
     if source == 'rdj_football_duo':
         kwargs['pinned_ticket'] = pinned_ticket
+    refused_before = len(getattr(fetcher, 'budget_refusals', []))
     try:
-        return adapters[source](edition, fetcher, **kwargs)
+        result = adapters[source](edition, fetcher, **kwargs)
     except (ValueError, OSError) as exc:
-        return {"status": "source_incomplete", "items": [], "issues": [{"code": getattr(exc, "code", str(exc)[:140])}]}
+        result = {"status": "source_incomplete", "items": [], "issues": [{"code": getattr(exc, "code", str(exc)[:140])}]}
+    refused = getattr(fetcher, 'budget_refusals', [])[refused_before:]
+    if refused:
+        # Scope this decision to refusals DURING this source call. A subsequent
+        # source fully satisfied from memory is still complete and may proceed.
+        return {'status': 'source_incomplete', 'items': [], 'issues': [*result['issues'],
+            {'code': 'source_public_budget_refused', 'source': source, 'limits': refused}]}
+    return result
