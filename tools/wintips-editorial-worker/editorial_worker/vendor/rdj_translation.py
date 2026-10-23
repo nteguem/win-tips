@@ -22,7 +22,7 @@ import urllib.request
 
 
 PROMPT_VERSION = "fr-en-anchors-v8-sports-name-guidance"
-GUARD_VERSION = "ordered-anchors-v37-wintips-minimum-quantity"
+GUARD_VERSION = "ordered-anchors-v38-wintips-minimum-fixture-unit"
 TOKEN_RE = re.compile(r"ZXQ[A-Z]+QXZ")
 NUMBER_RE = re.compile(r"(?<!\w)[+-]?\s*\d+(?:[.,:]\d+)*(?:\s*[%€$])?(?!\w)")
 FRENCH_WORDS = re.compile(r"\b(?:avec|dans|leurs|leur|pour|cette|ces|étaient|était|mais|donc|ainsi|lors|depuis|toujours|également|notamment|cependant|aujourd'hui)\b", re.I)
@@ -557,6 +557,10 @@ TERMINOLOGY_RULES += (("fronted_participial_capability",r"^(?:D['’]abord\s+)?c
     "participial clause (Initially able to ...), before introducing the main team/player subject after the comma. "
     "Do not promote that later main subject to the beginning. Preserve the initial opponents, scores and time expressions "
     "before the main subject, exactly in the French fact order."),)
+TERMINOLOGY_RULES += (("ordinary_standing_return",r"\bretour\s+dans\s+le\s+rang\b",
+    "Retour dans le rang means becoming ordinary again after a promising spell. It is not promotion or returning "
+    "to a division. If the source later mentions the top flight separately, keep it attached to its original source clause; "
+    "do not move that division onto the verb return."),)
 # These are French function words, discourse adverbs and inflected descriptive
 # adjectives, not entities merely because sentence position capitalizes them.
 # Explicit fixture/horse/player names are protected earlier at higher priority;
@@ -661,10 +665,11 @@ def _protect(source: str, fixture: dict) -> tuple[str, list[dict]]:
     # An explicit two-sided quantity can be expressed with "both" in English.
     # This does not make "two goals" or any other bare quantity optional.
     if sport in {'football', 'basketball', 'foot', 'soccer', 'basket'}:
-        for minimum in re.finditer(r"\bpas\s+moins\s+de\s+(\d{1,3})\b",source,re.I):
+        for minimum in re.finditer(r"\bpas\s+moins\s+de\s+(\d{1,3})\b(?:\s+(matchs?))?",source,re.I):
             # This source-explicit lower bound is one quantity, not a
             # negative proposition. Both the bound and its value are required.
-            add(minimum.start(),minimum.end(),'at least '+minimum[1],'minimum_count',6)
+            unit=(' match' if int(minimum[1])==1 else ' matches') if minimum[2] else ''
+            add(minimum.start(),minimum.end(),'at least '+minimum[1]+unit,'minimum_count',6)
         for lead in re.finditer(r"\b(\d{1,3})\s+points?\s+d['’]avance\s+sur\b",source,re.I):
             add(lead.start(),lead.end(),lead[1]+(' point' if int(lead[1])==1 else ' points')+' ahead','standing_gap',6)
         for degree in re.finditer(r'\b(?:petit|léger|faible)\s+avantage\b',source,re.I):
@@ -969,7 +974,7 @@ def _grammar_hint(anchor: dict) -> str:
     if kind == 'standing_gap':
         return 'same signed point gap relative to the stated opponent; ahead and behind cannot interchange'
     if kind == 'minimum_count':
-        return 'same explicit lower-bound quantity; never fewer, at most or a different value'
+        return 'same explicit lower-bound quantity and source unit; matches are not matchdays; never fewer, at most or a different value'
     if kind == "quarter_periods":
         return "explicit count of basketball periods, never a mathematical fraction"
     if kind == "name":
@@ -1320,11 +1325,14 @@ def _anchor_candidates(raw: str, anchor: dict, normalized_raw):
                         add(start, end, "equivalent", "same_initial_quantity_grammar", raw[start:end])
         return tuple(candidates.values())
     if kind == 'minimum_count':
-        value=int(target.removeprefix('at least '))
+        atom=re.fullmatch(r'at least (\d+)(?: (matches|match))?',target)
+        value=int(atom[1])
+        units=((' match',' game') if value==1 else (' matches',' games')) if atom[2] else ('',)
         for quantity in (str(value),_cardinal_word(value)):
-            for variant in ('at least '+quantity,'no fewer than '+quantity,'no less than '+quantity):
-                for start,end in _literal_spans(raw,variant,True):
-                    add(start,end,'equivalent','same_explicit_minimum_quantity',raw[start:end])
+            for prefix in ('at least ','no fewer than ','no less than '):
+                for unit in units:
+                    for start,end in _literal_spans(raw,prefix+quantity+unit,True):
+                        add(start,end,'equivalent','same_explicit_minimum_quantity_and_unit',raw[start:end])
         return tuple(candidates.values())
     if kind == "calendar_date":
         weekday, day, month, year = target.split()

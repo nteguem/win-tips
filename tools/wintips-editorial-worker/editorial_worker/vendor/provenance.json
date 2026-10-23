@@ -27,14 +27,14 @@
       "upstreamPath": "tools/journal-parieur-worker/journal_worker/translate.py",
       "upstreamSha256": "dfe65fb3c0db57b2cd9835d86070c2a3c2e4dc1dbf33bcb2599eceb1bf38231a",
       "upstreamNormalizedUtf8Sha256": "a72e40ec4164890af69d93f94551f77079a523f080526314d6a1db77ead46ebf",
-      "sha256": "514d6a86ca83b84344722e00dcb5ff32d02e799860d4e7e95efbce923a862f25",
+      "sha256": "fdfcbf036c77250c586a37db88724813175fbe93097edf7f6205e76bfeb3bff8",
       "lineEndings": "LF",
       "localAdaptation": "Port mature BigWin v19 guard; retain strict ordered actors, scores, dates, negation, results and scoped time/score grammar. WinTips adds finite sport market vocabulary, French function-word classification, basketball quarter ordinals, venue-role proof and sports idioms; no fixture-specific text substitution. Explicit full consecutive-year seasons, bounded locative venue-role proof and closed chronological equivalents. Bounded two-sided and basketball shot units, exact decimal percent typography, nearest actor champion-relative proof, same passive-elimination year grammar and explicit one-night weekday relation; old responses always revalidated."
     }
   ],
   "localFix": "Port proven UTC/Paris event-clock reconciliation, Ligue2 provider, finite team aliases and upcoming unique-event checks; retain WinTips typed adapter contracts.",
   "catalogueExtension": "2026-10-23: new source adapters and guarded market grammar are owned by the WinTips worker; upstream BigWin code is never modified by this package.",
-  "translationGuardVersion": "ordered-anchors-v37-wintips-minimum-quantity",
+  "translationGuardVersion": "ordered-anchors-v38-wintips-minimum-fixture-unit",
   "canonicalFootballDemonyms": [
     {
       "forms": [

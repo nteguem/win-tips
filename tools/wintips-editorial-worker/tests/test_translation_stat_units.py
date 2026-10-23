@@ -144,16 +144,31 @@ class StatisticGrammarTests(unittest.TestCase):
         source='Ils ont cumulé pas moins de 5 matchs sans victoire.'
         for good in ['They accumulated at least 5 matches without a win.',
                      'They accumulated no fewer than five matches without a win.',
-                     'They accumulated no less than 5 matches without a win.']:
+                     'They accumulated no less than 5 matches without a win.',
+                     'They accumulated at least 5 games without a win.']:
             self.check(source,good,sport='football')
         for bad in ['They accumulated 5 matches without a win.','They accumulated at most 5 matches without a win.',
                     'They accumulated fewer than 5 matches without a win.','They accumulated at least 6 matches without a win.',
+                    'They accumulated at least 5 matchdays without a win.',
                     'They accumulated at least 5 consecutive losses.']:
             self.check(source,bad,False,sport='football')
         self.check('Ils ne gagnent pas et cumulent pas moins de 5 matchs.',
                    'They do not win and accumulate at least 5 matches.',sport='football')
         self.check('Ils ne gagnent pas et cumulent pas moins de 5 matchs.',
                    'They win and accumulate at least 5 matches.',False,sport='football')
+
+    def test_minimum_match_quantity_is_atomic_and_returning_to_rank_is_not_promotion(self):
+        source="Après 4 journées, cette formation a fait son retour dans le rang avec pas moins de 5 matchs sans victoire dans l'élite."
+        masked,anchors=guard._protect(source,_fixture(self.item('football')))
+        minimum=next(a for a in anchors if a['kind']=='minimum_count')
+        self.assertEqual(minimum['source'],'pas moins de 5 matchs')
+        self.assertEqual(minimum['target'],'at least 5 matches')
+        prompt=_prompt(masked,anchors)
+        self.assertIn('It is not promotion or returning to a division',prompt)
+        self.assertEqual(prompt.rpartition('\n\n\n')[2],source)
+        profile=guard._terminology_profile('Ils ont fait leur retour dans le championnat.')
+        self.assertFalse(profile and any(r['id']=='ordinary_standing_return' for r in profile['entries']))
+        self.check('Il a joué pas moins de 1 match.','He played at least one game.',sport='football')
 
     def test_season_opener_cannot_become_a_general_statement_this_season(self):
         source='Le Magic a manqué son entrée en matière cette saison.'
