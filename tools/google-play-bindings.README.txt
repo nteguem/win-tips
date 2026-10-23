@@ -1,0 +1,67 @@
+WinTips — liaison conditionnelle de deux produits Google déjà actifs
+
+Cet outil ne crée, ne modifie et n'active aucun produit Google. Il ne lit aucun
+achat Google ni document client. Il écrit uniquement les deux documents Package
+suivants, après revue d'un plan et GO explicite :
+  c97d577e0912523aab9f1bfb → com.wintips.essentiel_7days_v1
+  b8a93410f46646438cbace02 → com.wintips.premium_14days_v1
+Application : com.wintips.application. Type : ONE_TIME_PRODUCT.
+
+État initial attendu exactement : Google désactivé, SKU/type nuls ; Essentiel
+7 jours, USD6/EUR5.34, CFA3500, deux droits ; Premium14 jours, USD11.99/EUR10.67,
+CFA7000, quatre droits. Les noms FR/EN, identifiants et sources des quatre
+catégories VIP sont vérifiés. Tout écart nécessite une nouvelle revue ; aucun
+forçage ni adoption automatique ne sont proposés.
+
+Prix cibles USD : 10 et21, exacts dans la région Google US. Les EUR doivent être
+explicitement fournis après lecture des prix FR des produits réels. Les autres
+prix régionaux peuvent varier (taxes/paliers Google) : ils sont rapportés dans
+le plan, pas écrasés. La BD conserve une référence US/FR et une provenance qui
+précise qu'elle ne prouve pas le montant encaissé. La feuille native Google
+reste la source du prix régional effectivement accepté par l'acheteur.
+Modifier pricing.USD affecte aussi les pays Mobile Money qui utilisent la même
+map de prix : ce changement fait donc partie du plan à approuver. Aucun tarif
+CFA, autre devise, nom, durée ou droit n'est modifié.
+
+Configuration : WINTIPS_CATALOGUE_MONGO_URI est fourni uniquement en mémoire
+par l'opérateur, jamais en argument ou dans le reçu. Le CLI refuse une base
+différente de wintips. La configuration Google existante fournit uniquement le
+package et le chemin privé de clé. Aucun bootstrap ni job de l'API n'est chargé.
+Mongo replica set ou mongos obligatoire ; aucun fallback non transactionnel.
+
+1. PLAN EN LECTURE SEULE, après création et activation des deux produits :
+  node tools/google-play-bindings.cjs --plan --essential-eur MONTANT_FR_REEL --premium-eur MONTANT_FR_REEL --out /chemin/prive/plan-neuf.json
+
+Le programme vérifie par GET les deux vrais produits : application/SKU, option
+BUY unique ACTIVE, compatibilité historique, quantité multiple désactivée,
+libellés FR/EN 7/14 jours et non-renouvellement, prix positifs valides dans les
+régions disponibles, US10/21 et EUR FR concordants. Un produit encore DRAFT,
+absent ou différent fait échouer le plan. Le reçu de sortie est réservé en0600
+avant toute connexion ; un chemin existant provoque un échec sans écriture.
+
+Le plan contient les snapshots commerciaux privés avant/après, leurs empreintes,
+les prix/provenances approuvés et la preuve des GET. Il ne contient ni jeton
+d'achat, ni utilisateur, appareil, commande ou secret de connexion.
+
+2. APRÈS GO SUR LE PLAN EXACT SEULEMENT :
+  node tools/google-play-bindings.cjs --apply --plan-file /chemin/prive/plan-neuf.json --confirm-sha256 HASH_EXACT_DU_PLAN --confirm-google-bindings-mutation --out /chemin/prive/recu-neuf.json
+
+Un nouveau GET prouve que les produits sont toujours ACTIVE et identiques à la
+revue. Une transaction Mongo compare les snapshots actuels, protège les autres
+forfaits et modifie les seules liaisons/prix/provenances autorisés. Une dérive
+du second forfait annule aussi la première écriture. Une reprise du même plan
+saute les documents déjà exactement au bon état, sans deuxième mutation ; le
+reçu régénéré conserve les deux snapshots originaux pour un rollback vérifiable.
+
+3. ROLLBACK EXPLICITE ET CONDITIONNEL :
+  node tools/google-play-bindings.cjs --rollback --receipt-file /chemin/prive/recu-neuf.json --confirm-sha256 HASH_EXACT_DU_RECU --confirm-google-bindings-mutation --out /chemin/prive/rollback-neuf.json
+
+Le rollback restaure seulement les champs commerciaux antérieurs si leur état
+n'a pas changé depuis la liaison. Il ne désactive pas les produits dans Google
+et ne touche jamais les transactions, abonnements, coupons ou snapshots de
+droits, y compris des achats survenus après la liaison. Si un administrateur
+a modifié un forfait depuis, la transaction est refusée sans restauration
+partielle. Un deuxième rollback exact ne réécrit pas les documents.
+
+Ni --plan, --apply ni --rollback ne déclenchent worker, modèle, notification,
+timer ou achat. Les reçus privés ne remplacent pas la recette sur téléphone.
