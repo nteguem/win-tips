@@ -72,6 +72,30 @@ class StatisticGrammarTests(unittest.TestCase):
         self.check(source,'They led by 3 points at the start of the 4th quarter.')
         self.check(source,'They led by 3 points before the start of the 4th quarter.',False)
 
+    def test_compound_then_counts_one_step_and_never_replaces_a_missing_step(self):
+        source='Ils ont ensuite dominé Laval (3-2) puis en allant faire tomber Guingamp (1-2).'
+        good='They then dominated Laval (3-2) and then went on to beat Guingamp (1-2).'
+        self.check(source,good,sport='football')
+        self.check(source,'They then went on to dominate Laval (3-2) and beat Guingamp (1-2).',False,sport='football')
+        self.check(source,good.replace('Laval (3-2)','Guingamp (1-2)').replace('beat Guingamp (1-2).','beat Laval (3-2).'),False,sport='football')
+        self.check(source,good+' Then.',False,sport='football')
+        followup='Ils ont ensuite su enchaîner en dominant Laval (3-2) puis en allant faire tomber Guingamp (1-2).'
+        self.check(followup,'They then managed to follow up by dominating Laval (3-2) and then went on to beat Guingamp (1-2).',sport='football')
+        self.check(followup,'They then managed to build on their lead by dominating Laval (3-2) and then went on to beat Guingamp (1-2).',False,sport='football')
+
+    def test_prior_to_is_before_and_never_after(self):
+        source='Avant la pause, ils ont gagné.'
+        self.check(source,'Prior to the break, they won.',sport='football')
+        self.check(source,'After the break, they won.',False,sport='football')
+
+    def test_explicit_delay_and_destination_form_one_fact_not_global_actor_reordering(self):
+        source='Il est revenu 6 ans plus tard à Toronto.'
+        for target in ['He returned 6 years later to Toronto.','He returned to Toronto six years later.']:
+            self.check(source,target)
+        for target in ['He returned to Toronto six years earlier.','He returned to Toronto seven years later.','He returned to Boston six years later.','He returned to Toronto six months later.']:
+            self.check(source,target,False)
+        self.check('Clippers avant un retour 6 ans plus tard à Toronto.','Toronto before a return to Clippers six years later.',False)
+
     def test_nearest_participial_champion_actor_requires_attached_relative(self):
         source=('Champions de la conférence Ouest en titre en battant OKC, les San Antonio Spurs étaient les grands favoris '
             'de la finale, devant des New York Knicks largement sous-estimés, mais finalement sacrés champions après une victoire 4-1 en finale.')

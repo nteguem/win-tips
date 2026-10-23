@@ -22,7 +22,7 @@ import urllib.request
 
 
 PROMPT_VERSION = "fr-en-anchors-v8-sports-name-guidance"
-GUARD_VERSION = "ordered-anchors-v33-wintips-sporting-appearance"
+GUARD_VERSION = "ordered-anchors-v34-wintips-closed-chronology"
 TOKEN_RE = re.compile(r"ZXQ[A-Z]+QXZ")
 NUMBER_RE = re.compile(r"(?<!\w)[+-]?\s*\d+(?:[.,:]\d+)*(?:\s*[%€$])?(?!\w)")
 FRENCH_WORDS = re.compile(r"\b(?:avec|dans|leurs|leur|pour|cette|ces|étaient|était|mais|donc|ainsi|lors|depuis|toujours|également|notamment|cependant|aujourd'hui)\b", re.I)
@@ -506,7 +506,8 @@ _ADDITIONAL_CLOSED_EQUIVALENTS = {'expected to be in the relegation battle': ('e
 SEMANTIC_EQUIVALENTS = tuple(tuple(dict.fromkeys(family + _ADDITIONAL_CLOSED_EQUIVALENTS.get(family[0], ())))
                              for family in SEMANTIC_EQUIVALENTS)
 SEMANTIC_EQUIVALENTS += (
-    ('then', 'subsequently', 'afterwards', 'after that', 'went on to'),
+    ('then', 'subsequently', 'afterwards', 'after that', 'went on to', 'then went on to'),
+    ('before', 'prior to'),
     ('lost again at', 'lost again away to', 'suffered another defeat at'),
     ('were heading for another defeat', 'were on course for another defeat', 'were heading towards another defeat'),
 )
@@ -540,6 +541,7 @@ SEMANTIC_EQUIVALENTS += (('fixture', 'match', 'matchup'),
     ('slight advantage', 'small advantage', 'slight edge'),
     ('this first outing', 'this first appearance', 'this first game', 'this opening game'),
     ('has seen a succession of players', 'has seen players come and go', 'has seen a stream of players'),
+    ('follow up', 'followed up', 'managed to follow up', 'were able to follow up', 'build on their momentum', 'built on their momentum', 'proceeded to'),
     ('at the start of', 'at the beginning of'))
 BASKETBALL_LEXICON = {'Ouest': 'West', 'Est': 'East', 'Play-offs': 'playoffs', 'Game': 'game'}
 TERMINOLOGY_RULES += (("lost_composure", r"\bperdre\s+(?:(?:totalement|complètement)\s+)?les pédales\b",
@@ -648,6 +650,13 @@ def _protect(source: str, fixture: dict) -> tuple[str, list[dict]]:
     # An explicit two-sided quantity can be expressed with "both" in English.
     # This does not make "two goals" or any other bare quantity optional.
     if sport in {'football', 'basketball', 'foot', 'soccer', 'basket'}:
+        # One explicitly attached delay and destination may use English
+        # destination-before-delay order. This cannot move a separate actor,
+        # invert later/earlier, change years or omit the destination.
+        for delay in re.finditer(r"\b(\d{1,3})\s+ans?\s+plus\s+tard\s+à\s+",source,re.I):
+            destination=NAME_RE.match(source,delay.end())
+            if destination:
+                add(delay.start(),destination.end(),delay[1]+(' year' if int(delay[1])==1 else ' years')+' later to '+destination.group(),'delay_destination',6)
         for match in re.finditer(r"\brelégu(?:és|ées|é|ée)\s+à\s+(\d{1,3})\s+points?\s+(?:déjà\s+)?du\s+top\s+(\d{1,2})\b",source,re.I):
             add(match.start(),match.end(),match[1]+(' point' if int(match[1])==1 else ' points')+' behind top '+match[2],'table_gap',6)
         for match in re.finditer(r"\b(\d{1,2})\s+(?:journées?|matchs?)\s+et\s+(autant de défaites)\b",source,re.I):
@@ -686,6 +695,7 @@ def _protect(source: str, fixture: dict) -> tuple[str, list[dict]]:
             'léger avantage':'slight advantage',
             'cette première sortie':'this first outing',
             'a vu défiler les joueurs':'has seen a succession of players',
+            'su enchaîner':'follow up',
             "à l'entame du":'at the start of',"à l’entame du":'at the start of',
             "d'être battus":"losing", "d’être battus":"losing",'sur la pelouse du':'away to',
             'un nul à domicile':'a draw at home',"à l'heure de jeu":"on the hour mark","à l’heure de jeu":"on the hour mark"})
@@ -923,6 +933,8 @@ def _grammar_hint(anchor: dict) -> str:
         return "both sides means the source-explicit two sides, never two goals"
     if kind in {"result_score", "result_score_final"}:
         return "one attached result and exact directed score; preserve the winner"
+    if kind == 'delay_destination':
+        return 'same elapsed years later and same destination; never earlier or another team'
     if kind == "quarter_periods":
         return "explicit count of basketball periods, never a mathematical fraction"
     if kind == "name":
@@ -960,7 +972,7 @@ def _prompt(masked: str, anchors: list[dict] | None = None) -> str:
     # never protection tokens or substituted English source prose.
     names = {anchor['source']: anchor['target'] for anchor in anchors if anchor['kind'] == 'name'}
     terms = {anchor['source']: anchor['target'] for anchor in anchors if anchor['kind'] in {
-        'semantic','both_sides','result_score','result_score_final','basket_team_possessor','basket_three_point_count','basket_three_point_made','basket_three_point_neutral','weekday_night','zero_defeats','score_margin','named_away_venue','table_gap','linked_defeat_count'}}
+        'semantic','both_sides','result_score','result_score_final','delay_destination','basket_team_possessor','basket_three_point_count','basket_three_point_made','basket_three_point_neutral','weekday_night','zero_defeats','score_margin','named_away_venue','table_gap','linked_defeat_count'}}
     if names:
         guidance += 'Keep these proper names and club nicknames exactly in their canonical spellings: ' + json.dumps(names, ensure_ascii=False) + '.\n'
     if terms:
@@ -1208,6 +1220,14 @@ def _anchor_candidates(raw: str, anchor: dict, normalized_raw):
             for tail in tails:
                 for start,end in _literal_spans(raw,quantity+' '+tail,True):
                     add(start,end,'equivalent','same_count_and_three_point_shot_unit',raw[start:end])
+        return tuple(candidates.values())
+    if kind == 'delay_destination':
+        match=re.fullmatch(r'(\d{1,3}) (years?) later to (.+)',target)
+        value=int(match[1]);unit='year' if value==1 else 'years';destination=match[3]
+        for count in (str(value),_cardinal_word(value)):
+            for variant in (count+' '+unit+' later to '+destination,'to '+destination+' '+count+' '+unit+' later'):
+                for start,end in _literal_spans(raw,variant,True):
+                    add(start,end,'equivalent','same_explicit_delay_and_destination',raw[start:end])
         return tuple(candidates.values())
     if kind in {"result_score", "result_score_final"}:
         match=re.fullmatch(r"(a )?(\d{1,3})-(\d{1,3}) (win|defeat)(?: in the final)?",target,re.I)
