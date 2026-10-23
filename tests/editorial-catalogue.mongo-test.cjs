@@ -221,10 +221,13 @@ test('optional preview exports are actual HTTP responses from seeded disposable 
   const essential = await Package.findOne({ duration: 7 }), premium = await Package.findOne({ duration: 14 });
   const demo = { free: oid(), essential: oid(), premium: oid() };
   await models.User.collection.insertMany(Object.values(demo).map(_id => ({ _id, isActive: true })));
-  for (const [name, pkg] of [['essential', essential], ['premium', premium]]) await Subscription.create({
-    user: demo[name], package: pkg._id, startDate: new Date('2026-10-23T00:00:00Z'), endDate: new Date('2026-11-05T00:00:00Z'),
-    pricing: { amount: pkg.pricing.get('XAF'), currency: 'XAF' }, paymentProvider: 'MOBILE_MONEY', status: 'active',
-  });
+  for (const [name, pkg] of [['essential', essential], ['premium', premium]]) {
+    // The payment acknowledgement is simulated; actual subscription creation
+    // computes the purchased 7/14-day duration and captures the real rights.
+    const sub = await subscriptionService.createSubscription(demo[name], pkg._id, 'XAF', 'TEST_ONLY_SIMULATED_PAYMENT');
+    assert.equal(sub.endDate.getTime() - sub.startDate.getTime(), pkg.duration * 86400000);
+    assert.equal(sub.categorySnapshot.length, pkg.categories.length);
+  }
   for (const [name, user] of Object.entries(demo)) for (const language of ['fr', 'en']) await models.Device.collection.insertOne({
     deviceId: 'TEST_ONLY_' + name + '_' + language, user, platform: 'android', language, deviceLanguage: language,
     fcmToken: 'TEST_ONLY_NOT_A_REAL_FCM_TOKEN_' + name + language, editorialSchemaVersion: 1, notificationsEnabled: true, isActive: true, pushProvider: 'fcm',
@@ -290,6 +293,12 @@ test('optional preview exports are actual HTTP responses from seeded disposable 
     assert.equal(response.status, 200); assert.equal(response.body.data.packages.length, currency === 'XAF' ? 2 : 0);
     files['packages-' + currency] = save('packages-' + currency + '.json', response.body);
   }
+  if (requireEnglish) {
+    const response = await request(app).get('/api/packages').query({ currency: 'XAF', lang: 'en' });
+    assert.equal(response.status, 200); assert.equal(response.body.data.packages.length, 2);
+    assert(response.body.data.packages.some(pkg => pkg.name === 'Essential'));
+    files['packages-XAF-en'] = save('packages-XAF-en.json', response.body);
+  }
   for (const item of await EditorialItem.find().sort({ source: 1, sourceId: 1 }).lean()) {
     const entry = { id: String(item._id), source: item.source, sourceId: item.sourceId, editionDate: item.editionDate, frPath: null, enPath: null };
     const category = await Category.findById(item.categoryId).lean();
@@ -317,7 +326,7 @@ test('optional preview exports are actual HTTP responses from seeded disposable 
   files.permissions = save('permissions.json', { success: true, data: { simulatedAccountAuthentication: true, checks: permissionChecks } });
   const manifest = { date: '2026-10-23', generatedAtUtc: new Date().toISOString(), evidence: 'Real Express controllers + actual Mongoose schemas, seed/import and entitlement services; disposable local MongoDB replica set',
     simulated: { database: true, accountAuthentication: true, accountIds: Object.fromEntries(Object.entries(demo).map(([key, id]) => [key, String(id)])),
-      pushProvider: true, googlePlay: true, googleSkuConfigured: false },
+      pushProvider: true, payments: true, googlePlay: true, googleSkuConfigured: false },
     english: requireEnglish ? 'complete_real_worker_batches_imported' : 'pending_not_exported', requireEnglishDuringImport: requireEnglish,
     clock: previewNow.toISOString(), imported, totalItems: analyses.length, files, analyses, outputHashes, httpChecks,
     notifications: { simulated: true, accepted: beforeReplay, replayAdditionalAccepted: replay.sent, providerCalls },
