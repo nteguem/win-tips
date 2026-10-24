@@ -39,6 +39,36 @@ const ONE_UNITS = {
   year: ['an', 'année'], day: ['jour', 'journée'],
 };
 
+function normalizePairedForms(fr, en) {
+  let source = String(fr).normalize('NFC'), target = String(en).normalize('NFC');
+  const openingFr = /(?<!\p{L})premières\s+performances(?!\p{L})/giu;
+  const openingEn = /\b(?:early|initial)\s+performances\b/giu;
+  const sourceOpenings = [...source.matchAll(openingFr)].length;
+  // This plural describes early form, not first place. Pair the occurrences;
+  // a numbered interval or an ordinal elsewhere still retains its quantity.
+  if (sourceOpenings && sourceOpenings === [...target.matchAll(openingEn)].length) {
+    source = source.replace(openingFr, 'opening performances');
+    target = target.replace(openingEn, 'opening performances');
+  }
+  const twice = [...target.matchAll(/\btwice\b/giu)];
+  if (!twice.length) return { source, target, valid: true };
+  const sourceLosses = [...source.matchAll(/\bperdre\s+à\s+(?:2|deux)\s+reprises\b/giu)];
+  const targetLosses = [...target.matchAll(/\blosing\s+twice(?=\s*(?:[,.;!?]|$))/giu)];
+  const affirmativePrefix = (text, index, before) => !text.slice(0, index).trim() || before.test(text.slice(0, index));
+  // "Twice" is accepted only as two affirmative losses, never as an omitted
+  // number for wins/goals or as an extra occurrence. The real result group is
+  // "avant de perdre à 2 reprises, ..." / "before losing twice, ...".
+  if (!sourceLosses.length || sourceLosses.length !== targetLosses.length || twice.length !== targetLosses.length ||
+      /\b(?:once|thrice)\b/iu.test(target) ||
+      sourceLosses.some(match => !affirmativePrefix(source, match.index, /\bavant\s+de\s+$/iu)) ||
+      targetLosses.some(match => !affirmativePrefix(target, match.index, /\bbefore\s+$/iu))) {
+    return { source, target, valid: false };
+  }
+  source = source.replace(/\bperdre\s+à\s+(?:2|deux)\s+reprises\b/giu, 'perdre 2 reprises');
+  target = target.replace(/\blosing\s+twice(?=\s*(?:[,.;!?]|$))/giu, 'losing 2 times');
+  return { source, target, valid: true };
+}
+
 function normalizeOneStatistics(fr, en) {
   // "One" is otherwise a pronoun/indefinite article. Treat it as a quantity
   // only before a statistical unit, and normalize the same unit in French.
@@ -84,7 +114,9 @@ function normalize(value, language) {
 }
 
 function equivalentNumericFacts(fr, en) {
-  const [sourceText, targetText] = normalizeOneStatistics(fr, en);
+  const paired = normalizePairedForms(fr, en);
+  if (!paired.valid) return false;
+  const [sourceText, targetText] = normalizeOneStatistics(paired.source, paired.target);
   const source = normalize(sourceText, 'fr'), target = normalize(targetText, 'en');
   // "Both" is numeric only for these explicit two-team/two-side statements.
   // A repeated "both" therefore retains its multiplicity rather than vanishing.
