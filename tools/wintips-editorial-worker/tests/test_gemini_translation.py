@@ -355,7 +355,7 @@ class GeminiTests(unittest.TestCase):
             config=replace(self.config, max_seconds=2), sleep=lambda _: self.fail('Wait cannot exceed deadline'))
         with self.assertRaises(TranslationRejected) as caught:
             translator.text(item()['summary']['fr'], item())
-        self.assertEqual(caught.exception.code, 'gemini_time_budget_exhausted')
+        self.assertEqual(caught.exception.code, 'gemini_retry_delay_exceeds_budget')
 
     def test_response_closed_schema_and_finished_candidate_required(self):
         good = response(['<div>Bonjour</div>'])
@@ -435,7 +435,7 @@ class GeminiTests(unittest.TestCase):
         failure = HTTPError('https://unused.invalid', 429, KEY, {'Retry-After': '999'}, io.BytesIO(KEY.encode()))
         with patch.object(transport.opener, 'open', side_effect=failure), self.assertRaises(gemini.GeminiFailure) as caught:
             transport(['x'], 10)
-        self.assertEqual(caught.exception.retry_after, 600)
+        self.assertEqual(caught.exception.retry_after, 999)
         self.assertNotIn(KEY, str(caught.exception))
         for failure in (URLError(KEY), TimeoutError(KEY), ValueError(KEY)):
             with patch.object(transport.opener, 'open', side_effect=failure), self.assertRaises(TranslationRejected) as caught:

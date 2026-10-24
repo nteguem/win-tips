@@ -1,0 +1,60 @@
+{
+  "scope": "Two exact rejected V5/2.5 Flash HTML candidates, negative fixtures only; source orphan3 is retained and not declared safe to remove",
+  "auditSha256": "da698c95eb0f8ccb83d53dacae62927c968df29d153ca432705bc9eec0c54f02",
+  "frenchPayloadSha256": "91f7162ceaa1a667c22429d071c41ad0f80d2df4ce0146f8491cbeb3b4850a15",
+  "source": "L'an passé, Arsenal a mis un terme à une longue disette en remportant la Premier League. Par ailleurs, la bande à Mikel Arteta a également brillé sur la scène européenne en atteignant la finale de la Ligue des Champions, battue par le PSG. Cette saison, la formation londonienne espère à nouveau bien figurer sur tous les tableaux. Vainqueur avec autorité du Community Shield l'opposant à Manchester City (3-0), Arsenal a ensuite remporté ses quatre premiers matchs de championnat. Si les Gunners ont subi un gros coup d'arrêt sur la pelouse de Brighton juste avant la coupure internationale (3-0) ils ont repris leur marche en avant depuis avec des succès acquis contre Leeds (2-1) et Nottingham Forest le week-end dernier (0-1)3 Ce qui leur permet de figure au 2ème rang de la Premier League avec 3 points de retard sur Manchester City. Cette semaine, Arsenal a ramené un bon point du Bayern Munich en Ligue des Champions (2-2).",
+  "item": {
+    "source": "rdj_football_analysis",
+    "sourceId": "5795485",
+    "sourceUrl": "https://www.ruedesjoueurs.com/pronostic/arsenal-everton-5795485.html",
+    "editionDate": "2026-10-24",
+    "kind": "match",
+    "title": {
+      "fr": "Arsenal — Everton"
+    },
+    "summary": {
+      "fr": "Victoire Arsenal"
+    },
+    "startsAtUtc": "2026-10-24T14:00:00Z",
+    "sport": {
+      "key": "football",
+      "name": "Football"
+    },
+    "competition": {
+      "name": "Premier League"
+    },
+    "teams": {
+      "home": {
+        "name": "Arsenal",
+        "logo": "https://img.ruedesjoueurs.com/img/9825-2.png"
+      },
+      "away": {
+        "name": "Everton",
+        "logo": "https://img.ruedesjoueurs.com/img/8668-2.png"
+      }
+    },
+    "analysis": {
+      "fr": [
+        {
+          "heading": "L’état de forme",
+          "paragraphs": [
+            "L'an passé, Arsenal a mis un terme à une longue disette en remportant la Premier League. Par ailleurs, la bande à Mikel Arteta a également brillé sur la scène européenne en atteignant la finale de la Ligue des Champions, battue par le PSG. Cette saison, la formation londonienne espère à nouveau bien figurer sur tous les tableaux. Vainqueur avec autorité du Community Shield l'opposant à Manchester City (3-0), Arsenal a ensuite remporté ses quatre premiers matchs de championnat. Si les Gunners ont subi un gros coup d'arrêt sur la pelouse de Brighton juste avant la coupure internationale (3-0) ils ont repris leur marche en avant depuis avec des succès acquis contre Leeds (2-1) et Nottingham Forest le week-end dernier (0-1)3 Ce qui leur permet de figure au 2ème rang de la Premier League avec 3 points de retard sur Manchester City. Cette semaine, Arsenal a ramené un bon point du Bayern Munich en Ligue des Champions (2-2).",
+            "A son avantage lors du précédent exercice, Everton n'était pas si loin de s'adjuger un strapontin européen. Toujours sous la houlette de David Moyes cette saison, le club basé à Liverpool compte bien poursuivre sa progression. Everton affiche de belles dispositions jusqu'à maintenant. En effet, les Toffees sont actuellement 8èmes de Premier League et ne concèdent que 3 unités de débours sur la 4ème place. Difficiles à manœuvrer, ils n'avaient perdu aucun de leurs six premiers matchs de championnat (2 victoires et 4 matchs nuls). En revanche, Everton a subi son premier accroc en s'inclinant à domicile face à Chelsea le week-end dernier (0-2). Avantage Arsenal sur la forme"
+          ]
+        }
+      ]
+    },
+    "selection": {
+      "label": {
+        "fr": "Victoire Arsenal"
+      },
+      "odds": 1.37,
+      "betType": "match_winner"
+    },
+    "status": "upcoming"
+  },
+  "candidateHtml": [
+    "<div>Last year, <span id=\"wt0\" class=\"notranslate\" translate=\"no\">Arsenal</span> ended a long drought by winning the Premier League. Furthermore, Mikel Arteta's squad also shone on the European stage by reaching the Champions League final, where they were defeated by <span id=\"wt1\" class=\"notranslate\" translate=\"no\">PSG</span>. This season, the London team hopes to perform well again on all fronts. Victorious with authority in the Community Shield against Manchester City (<span id=\"wt1\" class=\"notranslate\" translate=\"no\">3-0</span>), <span id=\"wt2\" class=\"notranslate\" translate=\"no\">Arsenal</span> then won their <span id=\"wt3\" class=\"notranslate\" translate=\"no\">four</span> first league matches. While the Gunners suffered a major setback on Brighton's pitch just before the international break (<span id=\"wt4\" class=\"notranslate\" translate=\"no\">3-0</span>), they have since resumed their progress with successes against Leeds (<span id=\"wt5\" class=\"notranslate\" translate=\"no\">2-1</span>) and Nottingham Forest last weekend (<span id=\"wt6\" class=\"notranslate\" translate=\"no\">0-1</span>)<span id=\"wt7\" class=\"notranslate\" translate=\"no\">3</span> This allows them to rank <span id=\"wt8\" class=\"notranslate\" translate=\"no\">2nd</span> in the Premier League with <span id=\"wt9\" class=\"notranslate\" translate=\"no\">3</span> points behind Manchester City. This week, <span id=\"wt10\" class=\"notranslate\" translate=\"no\">Arsenal</span> brought back a good point from Bayern Munich in the Champions League (<span id=\"wt11\" class=\"notranslate\" translate=\"no\">2-2</span>).</div>",
+    "<div>Last year, <span id=\"wt0\" class=\"notranslate\" translate=\"no\">Arsenal</span> ended a long drought by winning the Premier League. Furthermore, Mikel Arteta's squad also shone on the European stage by reaching the Champions League final, where they were defeated by PSG. This season, the London team hopes to perform well again on all fronts. Victorious with authority in the Community Shield against Manchester City (<span id=\"wt1\" class=\"notranslate\" translate=\"no\">3-0</span>), <span id=\"wt2\" class=\"notranslate\" translate=\"no\">Arsenal</span> then won their <span id=\"wt3\" class=\"notranslate\" translate=\"no\">four</span> first league matches. While the Gunners suffered a major setback on Brighton's pitch just before the international break (<span id=\"wt4\" class=\"notranslate\" translate=\"no\">3-0</span>), they have since resumed their progress with successes against Leeds (<span id=\"wt5\" class=\"notranslate\" translate=\"no\">2-1</span>) and Nottingham Forest last weekend (<span id=\"wt6\" class=\"notranslate\" translate=\"no\">0-1</span>). This allows them to rank <span id=\"wt8\" class=\"notranslate\" translate=\"no\">2nd</span> in the Premier League with <span id=\"wt9\" class=\"notranslate\" translate=\"no\">3</span> points behind Manchester City. This week, <span id=\"wt10\" class=\"notranslate\" translate=\"no\">Arsenal</span> brought back a good point from Bayern Munich in the Champions League (<span id=\"wt11\" class=\"notranslate\" translate=\"no\">2-2</span>).</div>"
+  ]
+}

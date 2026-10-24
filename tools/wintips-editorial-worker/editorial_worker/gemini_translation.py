@@ -11,6 +11,7 @@ import binascii
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from hashlib import sha256
+from html.parser import HTMLParser
 import json
 import os
 from pathlib import Path
@@ -194,9 +195,65 @@ def generation_options(config):
 
 
 class GeminiFailure(Exception):
-    def __init__(self, status, retry_after=0):
+    def __init__(self, status, retry_after=0, rate_limit=None):
         super().__init__('gemini_http_' + str(status))
-        self.status, self.retry_after = status, retry_after
+        self.status, self.retry_after = status, retry_after if type(retry_after) is int and retry_after >= 0 else 0
+        self.rate_limit = None
+        if isinstance(rate_limit, dict):
+            self.rate_limit = {key: value for key, value in rate_limit.items()
+                if key in {'retryAfterHeaderSeconds', 'retryInfoSeconds'} and type(value) is int and value >= 0}
+            types = rate_limit.get('quotaTypes') if isinstance(rate_limit.get('quotaTypes'), list) else []
+            self.rate_limit['quotaTypes'] = sorted({value for value in types
+                if isinstance(value, str) and value in {'RPM', 'RPD', 'TPM', 'TPD', 'unknown'}})
+            body_status = rate_limit.get('bodyStatus')
+            self.rate_limit['bodyStatus'] = body_status if isinstance(body_status, str) and body_status in {
+                'parsed', 'malformed', 'too_large', 'unavailable'} else 'unavailable'
+
+
+QUOTA_IDS = {
+    'GenerateRequestsPerMinutePerProjectPerModel-FreeTier': 'RPM',
+    'GenerateRequestsPerMinutePerProjectPerModel': 'RPM',
+    'GenerateRequestsPerDayPerProjectPerModel-FreeTier': 'RPD',
+    'GenerateRequestsPerDayPerProjectPerModel': 'RPD',
+    'GenerateContentInputTokensPerModelPerMinute-FreeTier': 'TPM',
+    'GenerateContentInputTokensPerModelPerDay-FreeTier': 'TPD',
+}
+
+
+def _rate_limit_metadata(raw, header, body_status='parsed'):
+    """Only closed enums and numeric delays escape the private HTTP error body."""
+    delay = 0
+    if isinstance(header, str) and re.fullmatch(r'\d+', header):
+        # Never shorten an enormous delay into a retry within our <=600s budget.
+        delay = int(header) if len(header) <= 12 else 10**12
+    result = {'retryAfterHeaderSeconds': delay, 'retryInfoSeconds': 0,
+        'quotaTypes': ['unknown'], 'bodyStatus': body_status}
+    try:
+        parsed = _closed_json(raw) if len(raw) <= 32768 else None
+        error = parsed.get('error') if isinstance(parsed, dict) else None
+        details = error.get('details') if isinstance(error, dict) else None
+        if not isinstance(details, list): raise ValueError()
+        quota_types = set()
+        for detail in details[:32]:
+            if not isinstance(detail, dict): continue
+            if detail.get('@type') == 'type.googleapis.com/google.rpc.RetryInfo':
+                value = detail.get('retryDelay')
+                match = re.fullmatch(r'(\d{1,12})(?:\.(\d{1,9}))?s', value) if isinstance(value, str) else None
+                if match:
+                    seconds = int(match[1]) + int(bool(match[2] and any(c != '0' for c in match[2])))
+                    result['retryInfoSeconds'] = max(result['retryInfoSeconds'], seconds)
+            if detail.get('@type') == 'type.googleapis.com/google.rpc.QuotaFailure':
+                violations = detail.get('violations')
+                if isinstance(violations, list):
+                    for violation in violations[:32]:
+                        if isinstance(violation, dict) and violation.get('quotaId') in QUOTA_IDS:
+                            quota_types.add(QUOTA_IDS[violation['quotaId']])
+                        else:
+                            quota_types.add('unknown')
+        if quota_types: result['quotaTypes'] = sorted(quota_types)
+    except (ValueError, TypeError, UnicodeError):
+        if body_status == 'parsed': result['bodyStatus'] = 'malformed'
+    return result
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -227,8 +284,21 @@ class GeminiTransport:
         except HTTPError as exc:
             retry = exc.headers.get('Retry-After', '') if exc.headers else ''
             status = exc.code
-            exc.close()
-            raise GeminiFailure(status, min(600, int(retry)) if re.fullmatch(r'\d{1,4}', retry) else 0) from None
+            metadata = None
+            try:
+                if status == 429:
+                    try:
+                        body = exc.read(32769)
+                        metadata = _rate_limit_metadata(body, retry, 'too_large' if len(body) > 32768 else 'parsed')
+                    except (OSError, ValueError, TypeError):
+                        metadata = _rate_limit_metadata(b'', retry, 'unavailable')
+            finally:
+                exc.close()
+            if metadata is not None:
+                pause = max(metadata['retryAfterHeaderSeconds'], metadata['retryInfoSeconds'])
+            else:
+                pause = _rate_limit_metadata(b'', retry)['retryAfterHeaderSeconds']
+            raise GeminiFailure(status, pause, metadata) from None
         except (URLError, TimeoutError, OSError):
             # Never include URLs, provider bodies, credentials or backend messages.
             raise TranslationRejected('gemini_transport_failed') from None
@@ -282,15 +352,53 @@ def response_texts(raw, count, fragment_ids=None):
     return [row['text'] for row in rows]
 
 
+def _span_diagnostics(anchors, html):
+    class Inventory(HTMLParser):
+        def __init__(self):
+            super().__init__(convert_charrefs=True)
+            self.rows, self.active = [], []
+        def handle_starttag(self, tag, attrs):
+            if tag == 'span':
+                row = {'id': dict(attrs).get('id'), 'value': '', 'length': 0, 'hash': sha256()}
+                self.rows.append(row); self.active.append(row)
+        def handle_data(self, value):
+            for row in self.active:
+                row['value'] = (row['value'] + value)[:161]
+                row['length'] += len(value)
+                row['hash'].update(value.encode('utf-8'))
+        def handle_endtag(self, tag):
+            if tag == 'span' and self.active: self.active.pop()
+    parser = Inventory(); parser.feed(html); parser.close()
+    expected = {a['id']: a for a in anchors}
+    result = {'missingSpans': [], 'duplicateSpans': [], 'mutatedSpans': [], 'unknownSpanCount': 0}
+    for key, anchor in expected.items():
+        found = [row for row in parser.rows if row['id'] == key]
+        required = {'id': key, 'requiredValue': anchor['value'][:160],
+            'requiredValueTruncated': len(anchor['value']) > 160}
+        if not found and len(result['missingSpans']) < 16: result['missingSpans'].append(required)
+        if len(found) > 1 and len(result['duplicateSpans']) < 16:
+            result['duplicateSpans'].append({**required, 'expectedOccurrences': 1, 'actualOccurrences': len(found)})
+        for row in found:
+            if row['hash'].digest() != sha256(anchor['value'].encode('utf-8')).digest() and len(result['mutatedSpans']) < 16:
+                result['mutatedSpans'].append({**required, 'actualValue': row['value'][:160],
+                    'actualValueTruncated': row['length'] > 160})
+    result['unknownSpanCount'] = sum(row['id'] not in expected for row in parser.rows)
+    return result
+
+
 def _repair_diagnostics(job, html):
     """Describe rejected free numbers; never alter the source or candidate."""
+    if len(html) > 200_000:
+        return {'diagnosticsTruncated': True, 'unprotectedNumbers': [], 'typedRelations': [],
+            'sourceProseUnchanged': False, 'missingSpans': [], 'duplicateSpans': [], 'mutatedSpans': [], 'unknownSpanCount': 0}
     anchors = job['identity']['anchors']
+    span_details = _span_diagnostics(anchors, html)
     parser = ProtectedText(anchors)
     try:
         parser.feed(html)
         parser.close()
     except TranslationRejected:
-        return {'unprotectedNumbers': [], 'typedRelations': [], 'sourceProseUnchanged': False}
+        return {'unprotectedNumbers': [], 'typedRelations': [], 'sourceProseUnchanged': False, **span_details}
     words = dict(zip(('zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven',
         'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen',
         'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty'), map(str, range(21))))
@@ -322,7 +430,7 @@ def _repair_diagnostics(job, html):
                 'rankSpanId': bound['rank'], 'sourceStart': match.start(), 'sourceEnd': match.end(),
                 'roleOrder': ['quantitySpan', 'points behind', 'rankSpan', 'place']})
     return {'unprotectedNumbers': numbers, 'typedRelations': relations,
-        'sourceProseUnchanged': _source_prose_unchanged(job['source'], job['item'], html)}
+        'sourceProseUnchanged': _source_prose_unchanged(job['source'], job['item'], html), **span_details}
 
 
 def _native_key(record):
@@ -482,10 +590,13 @@ class GeminiTranslator(AzureTranslator):
                 return
             except GeminiFailure as exc:
                 trace['status'] = 'http_' + str(exc.status)
+                if exc.rate_limit is not None: trace['rateLimit'] = exc.rate_limit
                 if exc.status not in {429, 500, 502, 503, 504} or attempt == self.config.retries:
                     raise TranslationRejected('gemini_http_' + str(exc.status)) from None
                 pause = max(exc.retry_after, 1 << attempt)
-                if pause >= self.remaining(): raise TranslationRejected('gemini_time_budget_exhausted') from None
+                trace['retryDelaySeconds'] = pause
+                if pause >= self.remaining(): raise TranslationRejected('gemini_retry_delay_exceeds_budget') from None
+                trace['retryScheduled'] = True
                 self.sleep(pause)
             except TranslationRejected as exc:
                 trace['status'] = _mapped(exc).code

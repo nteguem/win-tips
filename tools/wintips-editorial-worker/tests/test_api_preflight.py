@@ -171,6 +171,22 @@ class RunnerPreflightTests(unittest.TestCase):
         self.assertFalse(result['published'])
         self.assertEqual(len(api.calls), 1)
 
+    def test_http_success_ignored_is_not_reported_as_imported_or_published(self):
+        outcome = {'ignored': True, 'reason': 'category_inactive', 'imported': 0}
+        class Ignored(Api):
+            def request(self, route, payload=None):
+                if route.endswith('/import'):
+                    self.calls.append((route, deepcopy(payload)))
+                    return deepcopy(outcome)
+                return super().request(route, payload)
+        with tempfile.TemporaryDirectory() as directory:
+            api = Ignored()
+            result = self.run_case(directory, api, lambda *args: {'passed': True}, translator=TestTranslator())
+        self.assertFalse(result['sources'][0]['imported'])
+        self.assertFalse(result['published'])
+        self.assertEqual(result['sources'][0]['apiResult'], outcome)
+        self.assertEqual(sum(route.endswith('/import') for route, _ in api.calls), 1)
+
 
 class ApiHttpDiagnosticsTests(unittest.TestCase):
     def request_failure(self, status, body):

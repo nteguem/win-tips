@@ -7,10 +7,11 @@ import unittest
 
 VENDOR = Path(__file__).resolve().parents[1] / 'editorial_worker/vendor'
 UPSTREAM_COMMIT = 'add3ed09f0cd53a822524c0dd731ccd483096d94'
+COLLECTOR_COMMIT = 'e818ef45c46b2e5fd4b0bb59485d6cb1c87dfe4c'
 HISTORICAL_TRANSLATION_COMMIT = 'fed52531237c300d077df25766be022d9ed661c1'
 UPSTREAM = {
-    'rdj_collector.py': ('collector.py', 'fbfb90156859f97fef755f52fe86950f12a269c83806a32eb46fb0fa51b207f5',
-                         'cc78d9d78a2e23370cad2075f3722f076a25029d'),
+    'rdj_collector.py': ('collector.py', '4c1bf737fc706fbf2110b1a424484f1dd08717ff53a72909f20f935bf01bc1ba',
+                         'e488cda9d0324210e8980f649d746c6a15a019f6'),
     'timing.py': ('timing.py', '9b7e778a609990d9e719e0702002f5b29476fd8311c012f926e7dee162277df1',
                   '61615210a0766c16e3db8b27ad8d17d2397990de'),
 }
@@ -34,7 +35,7 @@ class VendorProvenanceTests(unittest.TestCase):
     def assert_current_port(self, name):
         row = self.row(name)
         upstream_file, upstream_digest, blob = UPSTREAM[name]
-        self.assertEqual(row['originCommit'], UPSTREAM_COMMIT)
+        self.assertEqual(row['originCommit'], COLLECTOR_COMMIT if name == 'rdj_collector.py' else UPSTREAM_COMMIT)
         self.assertEqual(row['upstreamPath'], 'tools/journal-parieur-worker/journal_worker/' + upstream_file)
         self.assertEqual(row['upstreamSha256'], upstream_digest)
         self.assertEqual(row['upstreamNormalizedUtf8Sha256'], upstream_digest)

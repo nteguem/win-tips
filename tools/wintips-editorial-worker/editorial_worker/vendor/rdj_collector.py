@@ -460,6 +460,28 @@ def _short_teaser(home: str, away: str, pick: str, expert: dict, source_url: str
     return label, proof
 
 
+def _canonical_analysis(paragraphs, source_url, source_html):
+    """One closed lexical typo only; raw source and every numeral stay intact."""
+    raw = list(paragraphs)
+    canonical, changes = [], []
+    pattern = re.compile(r'(?<![\w-])uns seul point(?![\w-])')
+    for index, paragraph in enumerate(raw):
+        delta = 0
+        for match in pattern.finditer(paragraph):
+            changes.append({'rule': 'uns_seul_point_v1', 'paragraphIndex': index,
+                'offset': match.start(), 'canonicalOffset': match.start() - delta,
+                'before': match[0], 'after': 'un seul point'})
+            delta += 1
+        canonical.append(pattern.sub('un seul point', paragraph))
+    if not changes:
+        return canonical, None
+    sha = lambda value: hashlib.sha256(value.encode('utf-8')).hexdigest()
+    return canonical, {'version': 'rdj-source-canonicalization-v1', 'sourceUrl': source_url,
+        'rawHtmlSha256': sha(source_html), 'offsetUnit': 'unicode_code_points_within_raw_paragraph',
+        'rawParagraphs': raw, 'canonicalParagraphs': canonical, 'changes': changes,
+        'rawAnalysisSha256': sha('\n\n'.join(raw)), 'canonicalAnalysisSha256': sha('\n\n'.join(canonical))}
+
+
 def _detail(page: FetchedPage) -> dict:
     root = Document(page.html).root
     match = one(find(root, lambda n: n.has_class("fichematch")), "fichematch")
@@ -485,6 +507,8 @@ def _detail(page: FetchedPage) -> dict:
     if only_date(headline) not in event_dates:
         raise SourceError("prediction_date_mismatch", "Prediction headline and event date disagree")
     analysis, paragraphs = _analysis(root)
+    paragraphs, normalization = _canonical_analysis(paragraphs, page.url, page.html)
+    analysis = '\n\n'.join(paragraphs)
     images = find(root, lambda n: n.tag == "meta" and n.attrs.get("property") == "og:image")
     image_url = one(images, "prediction artwork").attrs.get("content", "")
     image_parts = urlsplit(urljoin(page.url, image_url))
@@ -510,7 +534,8 @@ def _detail(page: FetchedPage) -> dict:
             "headline_fr": headline, "analysis_fr": analysis, "image_url": urlunsplit(image_parts),
             "kickoff": kickoff, "kickoff_raw": kickoff_raw, "analysis_paragraphs": paragraphs,
             "participant_logos": participant_logos, "detail_priced_markets": alternatives,
-            "expert_headline": _expert_headline(root)}
+            "expert_headline": _expert_headline(root),
+            **({'source_canonicalization_audit': normalization} if normalization is not None else {})}
 
 
 def _prediction_id(url: str) -> str | None:
@@ -820,6 +845,8 @@ def collect_edition(edition: str, fetcher=None, *, kickoff_resolver=None, now: d
                         "detail_priced_markets": detail["detail_priced_markets"]}}
                 fixture["teaser_fr"], fixture["provenance"]["teaser"] = _short_teaser(detail["home"], detail["away"], pick, detail["expert_headline"], page.url)
                 fixture["kickoff_utc"], fixture["provenance"]["kickoff_resolution"] = kickoff, kickoff_proof
+                if detail.get('source_canonicalization_audit') is not None:
+                    fixture['provenance']['source_canonicalization'] = detail['source_canonicalization_audit']
                 if resolution is not None:
                     fixture["provenance"]["prediction_link_resolution"] = resolution
                 fixtures.append(fixture)

@@ -1,0 +1,27 @@
+{
+  "description": "Exact full French analysis paragraphs extracted offline from archived 24 October RDJ HTML. Both anomalies are literal source text, not tags. No new HTTP/model or corrected source evidence.",
+  "cases": {
+    "lexical": {
+      "sourceUrl": "https://www.ruedesjoueurs.com/pronostic/saint-etienne-nantes-5803298.html",
+      "sourceCacheFile": "qa\\automation-reliability-20261024\\qualification-gemini-20261024T105502Z-evidence\\wintips\\http-cache\\66d89c10b862da1e8ac6de92c95b525e1888bc0b9c3a4fd41d2b6c43d227f165.json",
+      "sourceCacheSha256": "a7c161b9e4f5a39b4c22ba057edc89de9cb819e71a98dcab2f1f7ab490668616",
+      "sourceHtmlSha256": "6816058c5dd9c18767c48ad613e0f5d17d257393e736151453a7c65dc74d2c2a",
+      "rawParagraphs": [
+        "Il semble tr\u00e8s clairement y avoir l'AS Saint-Etienne et les autres cette saison dans ce championnat de Ligue 2. Absolument dominateurs, les hommes de Ian Castro n'ont perdu qu'un seul match cette ann\u00e9e et ils ont d\u00e9j\u00e0 remport\u00e9 7 victoires sur cette p\u00e9riode, s'affirmant plus que jamais comme l'immense favori pour le titre de champion.",
+        "Les joueurs du Forez avaient seulement connu un petit coup de mou avant la tr\u00eave internationale en s'inclinant \u00e0 la surprise g\u00e9n\u00e9rale du c\u00f4t\u00e9 de Dunkerque (2-1) puis en conc\u00e9dant le nul \u00e0 Metz (2-2). Mais les Verts ont vite repris leur marche en avant en l'emportant contre Rodez (2-0) puis du c\u00f4t\u00e9 du Red Star (0-1) le week-end dernier. Bien install\u00e9s en t\u00eate du classement, les St\u00e9phanois disposent de 5 points d'avance sur leur premier poursuivant.",
+        "Si Saint-Etienne marche sur l'eau en ce d\u00e9but de saison, on peut clairement pas en dire autant du FC Nantes qui se retrouve englu\u00e9 dans la seconde partie de tableau de cette Ligue 2, quelques mois apr\u00e8s sa rel\u00e9gation de l'\u00e9lite, avec uns seul point d'avance sur la zone rouge. Tr\u00e8s mal parti dans ce championnat, le club a d\u00e9j\u00e0 proc\u00e9d\u00e9 \u00e0 un changement d'entraineur, Gr\u00e9gory Poirier \u00e9tant venu remplacer Michel Der Zakarian d\u00e8s le mois d'ao\u00fbt.",
+        "Apr\u00e8s une petite \u00e9claircie au niveau des r\u00e9sultats avec notamment 2 victoires remport\u00e9es en 3 matchs jou\u00e9s avant la tr\u00eave internationale contre Nancy (1-0), Sochaux (d\u00e9faite 1-0) et Boulogne (1-2), les Canaris ont ensuite livr\u00e9 une prestation plut\u00f4t d\u00e9cevante contre Reims (0-0) avant de tomber la semaine derni\u00e8re \u00e0 domicile contre Dunkerque (2-3). Avantage Saint-Etienne sur la forme"
+      ]
+    },
+    "numeric": {
+      "sourceUrl": "https://www.ruedesjoueurs.com/pronostic/arsenal-everton-5795485.html",
+      "sourceCacheFile": "qa\\automation-reliability-20261024\\qualification-gemini-20261024T105502Z-evidence\\wintips\\http-cache\\038423b9535dca2d7c2e8398524d621d27742e43af397d4c6b954e7bfb5148bb.json",
+      "sourceCacheSha256": "8e75a9da6628bb247a76e70b701fc978baad9b14bb7a50d43ef5e2306eb54173",
+      "sourceHtmlSha256": "8d038c026ce2a4193bbf89a4527d8e182a61de6e531b0751d7f37404b0d8697b",
+      "rawParagraphs": [
+        "L'an pass\u00e9, Arsenal a mis un terme \u00e0 une longue disette en remportant la Premier League. Par ailleurs, la bande \u00e0 Mikel Arteta a \u00e9galement brill\u00e9 sur la sc\u00e8ne europ\u00e9enne en atteignant la finale de la Ligue des Champions, battue par le PSG. Cette saison, la formation londonienne esp\u00e8re \u00e0 nouveau bien figurer sur tous les tableaux. Vainqueur avec autorit\u00e9 du Community Shield l'opposant \u00e0 Manchester City (3-0), Arsenal a ensuite remport\u00e9 ses quatre premiers matchs de championnat. Si les Gunners ont subi un gros coup d'arr\u00eat sur la pelouse de Brighton juste avant la coupure internationale (3-0) ils ont repris leur marche en avant depuis avec des succ\u00e8s acquis contre Leeds (2-1) et Nottingham Forest le week-end dernier (0-1)3 Ce qui leur permet de figure au 2\u00e8me rang de la Premier League avec 3 points de retard sur Manchester City. Cette semaine, Arsenal a ramen\u00e9 un bon point du Bayern Munich en Ligue des Champions (2-2).",
+        "A son avantage lors du pr\u00e9c\u00e9dent exercice, Everton n'\u00e9tait pas si loin de s'adjuger un strapontin europ\u00e9en. Toujours sous la houlette de David Moyes cette saison, le club bas\u00e9 \u00e0 Liverpool compte bien poursuivre sa progression. Everton affiche de belles dispositions jusqu'\u00e0 maintenant. En effet, les Toffees sont actuellement 8\u00e8mes de Premier League et ne conc\u00e8dent que 3 unit\u00e9s de d\u00e9bours sur la 4\u00e8me place. Difficiles \u00e0 man\u0153uvrer, ils n'avaient perdu aucun de leurs six premiers matchs de championnat (2 victoires et 4 matchs nuls). En revanche, Everton a subi son premier accroc en s'inclinant \u00e0 domicile face \u00e0 Chelsea le week-end dernier (0-2). Avantage Arsenal sur la forme"
+      ]
+    }
+  }
+}

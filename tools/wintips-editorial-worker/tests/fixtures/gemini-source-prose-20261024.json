@@ -1,0 +1,69 @@
+{
+  "scope": "Exact observed V4 copied prose, not a new native response or a V5 accepted translation",
+  "projectionSha256": "38f556972b2f39a77516d42588d3348817a97796b1a7d7592b472b1123880f19",
+  "source": "Malgré des investissements conséquents, Tottenham déçoit grandement depuis quelques temps. L'an passé, la formation londonienne avait même dû attendre la dernière journée pour sauver sa tête au sein de l'élite. L'objectif est bien évidemment d'afficher un autre visage cette saison. Malheureusement pour elle et ses supporters, la bande à Roberto De Zerbi est reparti sur des bases préoccupantes. En effet, les Spurs n'ont remporté aucun de leurs six premiers matchs de championnats (3 matchs nuls et 3 défaites). Ils ont enfin affiché une réaction lundi dernier en prenant le dessus, à domicile, sur le promu Coventry (3-1). Ce succès permet à Tottenham de figurer aujourd'hui au 16ème rang de la premier League avec 1 point d'avance sur le premier relégable. Avantage Chelsea sur la forme",
+  "item": {
+    "source": "rdj_petit_journal",
+    "sourceId": "5795487",
+    "sourceUrl": "https://www.ruedesjoueurs.com/paris-sportifs/le-petit-journal/74782-le-petit-journal-du-parieur-samedi-24-octobre-2026.html",
+    "editionDate": "2026-10-24",
+    "kind": "match",
+    "title": {
+      "fr": "Chelsea — Tottenham",
+      "en": "Chelsea — Tottenham"
+    },
+    "summary": {
+      "fr": "Victoire Chelsea",
+      "en": "Chelsea to win"
+    },
+    "startsAtUtc": "2026-10-24T16:30:00Z",
+    "sport": {
+      "key": "football",
+      "name": "Football"
+    },
+    "competition": {
+      "name": "Premier League"
+    },
+    "teams": {
+      "home": {
+        "name": "Chelsea",
+        "logo": "https://img.ruedesjoueurs.com/img/8455-2.png"
+      },
+      "away": {
+        "name": "Tottenham",
+        "logo": "https://img.ruedesjoueurs.com/img/8586-2.png"
+      }
+    },
+    "analysis": {
+      "fr": [
+        {
+          "heading": "L’état de forme",
+          "paragraphs": [
+            "Pas au niveau attendu lors du précédent exercice, Chelsea avait dû se contenter d'une peu reluisante 10ème place en Premier League. La formation londonienne compte bien rejouer les premiers rôles cette saison. Pour cela, les dirigeants ont misé sur l'entraîneur Xabi Alonso cet été. Chelsea est actuellement 4ème de Premier League avec 13 points pris en 7 rencontres. Avant la trêve internationale, les Blues avaient inquiété leurs fans avec un enchaînement de trois matchs sans victoire (1 match nul et 2 défaites). En revanche, ils ont brillamment repris leur marche en avant par la suite. Chelsea a facilement disposé de Bournemouth (5-1) avant de s'imposer devant les fans d'Everton le week-end dernier (0-2).",
+            "Malgré des investissements conséquents, Tottenham déçoit grandement depuis quelques temps. L'an passé, la formation londonienne avait même dû attendre la dernière journée pour sauver sa tête au sein de l'élite. L'objectif est bien évidemment d'afficher un autre visage cette saison. Malheureusement pour elle et ses supporters, la bande à Roberto De Zerbi est reparti sur des bases préoccupantes. En effet, les Spurs n'ont remporté aucun de leurs six premiers matchs de championnats (3 matchs nuls et 3 défaites). Ils ont enfin affiché une réaction lundi dernier en prenant le dessus, à domicile, sur le promu Coventry (3-1). Ce succès permet à Tottenham de figurer aujourd'hui au 16ème rang de la premier League avec 1 point d'avance sur le premier relégable. Avantage Chelsea sur la forme"
+          ]
+        }
+      ],
+      "en": [
+        {
+          "heading": "Recent form",
+          "paragraphs": [
+            "Not at the expected level during the previous campaign, Chelsea had to settle for a lackluster 10th place in the Premier League. The London club definitely intends to play a leading role this season. To achieve this, the board brought in manager Xabi Alonso this summer. Chelsea is currently 4th in the Premier League with 13 points taken from 7 matches. Before the international break, the Blues had worried their fans with a streak of three matches without a win (1 draw and 2 defeats). On the other hand, they have brilliantly resumed their forward momentum since then. Chelsea easily disposed of Bournemouth (5-1) before winning in front of Everton's fans last weekend (0-2).",
+            "Malgré des investissements conséquents, Tottenham déçoit grandement depuis quelques temps. L'an passé, la formation londonienne avait même dû attendre la dernière journée pour sauver sa tête au sein de l'élite. L'objectif est bien évidemment d'afficher un autre visage cette saison. Malheureusement pour elle et ses supporters, la bande à Roberto De Zerbi est reparti sur des bases préoccupantes. En effet, les Spurs n'ont remporté aucun de leurs six premiers matchs de championnats (3 matchs nuls et 3 défaites). Ils ont enfin affiché une réaction lundi dernier en prenant le dessus, à domicile, sur le promu Coventry (3-1). Ce succès permet à Tottenham de figurer aujourd'hui au 16th rang de la premier League avec 1 point d'avance sur le premier relégable. Avantage Chelsea sur la forme"
+          ]
+        }
+      ]
+    },
+    "selection": {
+      "label": {
+        "fr": "Victoire Chelsea",
+        "en": "Chelsea to win"
+      },
+      "odds": 1.66,
+      "betType": "match_winner"
+    },
+    "status": "upcoming"
+  },
+  "observedCopiedEnglish": "Malgré des investissements conséquents, Tottenham déçoit grandement depuis quelques temps. L'an passé, la formation londonienne avait même dû attendre la dernière journée pour sauver sa tête au sein de l'élite. L'objectif est bien évidemment d'afficher un autre visage cette saison. Malheureusement pour elle et ses supporters, la bande à Roberto De Zerbi est reparti sur des bases préoccupantes. En effet, les Spurs n'ont remporté aucun de leurs six premiers matchs de championnats (3 matchs nuls et 3 défaites). Ils ont enfin affiché une réaction lundi dernier en prenant le dessus, à domicile, sur le promu Coventry (3-1). Ce succès permet à Tottenham de figurer aujourd'hui au 16th rang de la premier League avec 1 point d'avance sur le premier relégable. Avantage Chelsea sur la forme",
+  "candidateConstruction": "protect(source,item) reproduces the observed visible target; no raw native HTML is claimed by this fixture."
+}

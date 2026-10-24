@@ -1,7 +1,7 @@
 {
   "originRepository": "bigwin-api-v2",
   "schemaVersion": 2,
-  "originCommit": "add3ed09f0cd53a822524c0dd731ccd483096d94",
+  "originCommit": "e818ef45c46b2e5fd4b0bb59485d6cb1c87dfe4c",
   "initialSnapshotCommit": "fed52531237c300d077df25766be022d9ed661c1",
   "originCommitScope": "Current collector/timing port. Per-file originCommit is authoritative; historical translation metadata is retained independently and is not a new translation qualification.",
   "snapshotUnmodified": false,
@@ -9,13 +9,13 @@
   "files": [
     {
       "file": "rdj_collector.py",
-      "originCommit": "add3ed09f0cd53a822524c0dd731ccd483096d94",
+      "originCommit": "e818ef45c46b2e5fd4b0bb59485d6cb1c87dfe4c",
       "upstreamPath": "tools/journal-parieur-worker/journal_worker/collector.py",
-      "upstreamSha256": "fbfb90156859f97fef755f52fe86950f12a269c83806a32eb46fb0fa51b207f5",
-      "upstreamGitBlob": "cc78d9d78a2e23370cad2075f3722f076a25029d",
-      "sha256": "414676f3bfec5c86cc9ea4737fc99fdfbb93bb217a849d972fc1232e51a18889",
-      "localAdaptation": "Package Europe/Paris fallback; explicit VolleyballWorld scheduled-event and gender proof allowlist; bounded verified ESPN NBA following-night proof; volleyball sport alias. Port the 2026-10-24 bad journal-link correction: discover only actual RDJ links bound to ordered participant logos, verify unique sport/competition/date/kickoff and complete analysis, preserve journal pick/odds, and fail closed on ambiguity or unavailable candidates. At most one named competition index and eight candidate event IDs.",
-      "upstreamNormalizedUtf8Sha256": "fbfb90156859f97fef755f52fe86950f12a269c83806a32eb46fb0fa51b207f5",
+      "upstreamSha256": "4c1bf737fc706fbf2110b1a424484f1dd08717ff53a72909f20f935bf01bc1ba",
+      "upstreamGitBlob": "e488cda9d0324210e8980f649d746c6a15a019f6",
+      "sha256": "c0a661b755aa7d2ef7902210bccfeefa79cebf9b9929c68940c87f256eb51767",
+      "localAdaptation": "Package Europe/Paris fallback; explicit VolleyballWorld scheduled-event and gender proof allowlist; bounded verified ESPN NBA following-night proof; volleyball sport alias. Port the 2026-10-24 bad journal-link correction: discover only actual RDJ links bound to ordered participant logos, verify unique sport/competition/date/kickoff and complete analysis, preserve journal pick/odds, and fail closed on ambiguity or unavailable candidates. At most one named competition index and eight candidate event IDs. Closed source-quality normalization uns seul point -> un seul point with original/canonical paragraphs, offsets and hashes; retain raw HTML hash and private provenance, never change a numeral.",
+      "upstreamNormalizedUtf8Sha256": "4c1bf737fc706fbf2110b1a424484f1dd08717ff53a72909f20f935bf01bc1ba",
       "lineEndings": "LF"
     },
     {

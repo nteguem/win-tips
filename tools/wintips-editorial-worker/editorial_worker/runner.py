@@ -321,6 +321,13 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
                 write_json(file, payload)
                 row = {'source': source, 'status': result['status'], 'itemCount': len(result['items']),
                     'issues': list(result['issues']), 'payloadFile': str(file), 'imported': False}
+                if result.get('sourceCanonicalizationAudits'):
+                    from .azure_translation import _write_private
+                    audit_file = output / 'normalization-audits' / edition / (source + '.json')
+                    _write_private(audit_file, {'source': source, 'editionDate': edition,
+                        'audits': result['sourceCanonicalizationAudits']})
+                    row['sourceNormalizationAuditFile'] = str(audit_file)
+                    row['sourceNormalizationAuditSha256'] = hashlib.sha256(audit_file.read_bytes()).hexdigest()
                 if result['status'] == 'source_incomplete':
                     report['blocked'] = True
                 collected.append((source, payload, row))
@@ -399,7 +406,7 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
                     if row['apiPreflight'].get('passed') is not True:
                         raise ValueError('api_validator_rejected')
                     outcome = client.request('/api/internal/editorial/import', payload)
-                    row['imported'] = True
+                    row['imported'] = not bool(outcome.get('ignored', False))
                     row['apiResult'] = outcome
                     report['published'] = report['published'] or not outcome.get('ignored', False)
                     report['notificationsAccepted'] += int(outcome.get('notificationsSent', 0))

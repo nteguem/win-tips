@@ -221,7 +221,7 @@ def collect_petit(edition, fetcher, *, now, resolver, lead=30, limit=8):
     packet = rdj.collect_edition(edition, fetcher=fetcher.html, kickoff_resolver=resolver, now=now, max_index_pages=2)
     if packet["status"] != "ready":
         return {"status": packet["status"], "items": [], "issues": packet.get("issues", [])}
-    items = []
+    items, normalizations = [], []
     for fixture in packet["fixtures"]:
         p = fetcher.html(fixture["source_url"])
         detail = rdj._detail(p)
@@ -231,8 +231,10 @@ def collect_petit(edition, fetcher, *, now, resolver, lead=30, limit=8):
         if not eligible(item, edition, now, lead):
             return {"status": "outside_publication_window", "items": [], "issues": []}
         items.append(item)
+        if detail.get('source_canonicalization_audit') is not None:
+            normalizations.append(detail['source_canonicalization_audit'])
     checked(len(items) <= limit, "petit_card_limit")
-    return {"status": "ready", "items": items, "issues": []}
+    return {"status": "ready", "items": items, "issues": [], 'sourceCanonicalizationAudits': normalizations}
 
 
 def _fixture_links(root):
@@ -247,6 +249,15 @@ def _fixture_links(root):
     return out
 
 
+def _ambiguous_numeric_typos(paragraphs):
+    # An integer glued directly to a CLOSED score before a new French clause
+    # is not a provable sporting fact. Never guess a replacement or strip it.
+    # Explicit separated counts/ordinals and HTML footnote nodes are preserved.
+    pattern = re.compile(r'\(\d{1,3}\s*[-–−]\s*\d{1,3}\)\d{1,3}(?=\s+Ce\b)')
+    return [{'paragraphIndex': index, 'offset': match.start(), 'excerpt': match[0]}
+        for index, paragraph in enumerate(paragraphs) for match in pattern.finditer(paragraph)]
+
+
 def collect_football(edition, fetcher, *, now, resolver, lead=30, limit=6, exclude_ids=None):
     root = page_root(fetcher.html(SOURCES["rdj_football_analysis"]))
     # Prefer editorial analysis links. The live/results sidebar is outside this scope.
@@ -256,7 +267,7 @@ def collect_football(edition, fetcher, *, now, resolver, lead=30, limit=6, exclu
         href = source_url(n.attrs.get("href") or "")
         if MATCH_PATH.fullmatch(urlsplit(href).path) and href not in links:
             links.append(href)
-    issues, items = [], []
+    issues, items, normalizations = [], [], []
     for url in links[:20]:
         match_id = MATCH_PATH.fullmatch(urlsplit(url).path).group(1)
         if match_id in (exclude_ids or set()):
@@ -267,14 +278,21 @@ def collect_football(edition, fetcher, *, now, resolver, lead=30, limit=6, exclu
             detail = rdj._detail(p)
             if detail["sport"] != "football" or source_event_day(detail["kickoff"]).isoformat() != edition:
                 continue
+            numeric_typos = _ambiguous_numeric_typos(detail['analysis_paragraphs'])
+            if numeric_typos:
+                issues.append({'url': url, 'code': 'ambiguous_numeric_typo', 'locations': numeric_typos})
+                continue
             item = match_item(detail, p, "rdj_football_analysis", edition, resolver=resolver)
             if eligible(item, edition, now, lead):
                 items.append(item)
+                if detail.get('source_canonicalization_audit') is not None:
+                    normalizations.append(detail['source_canonicalization_audit'])
             if len(items) >= limit:
                 break
         except (ValueError, OSError) as exc:
             issues.append({"url": url, "code": getattr(exc, "code", str(exc)[:100])})
-    return {"status": "ready" if items else "source_absent", "items": items, "issues": issues}
+    return {"status": "ready" if items else "source_absent", "items": items, "issues": issues,
+        'sourceCanonicalizationAudits': normalizations}
 
 
 def _multisport_pick(detail, page):
