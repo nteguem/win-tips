@@ -1,0 +1,34 @@
+{
+  "schema": 1,
+  "sourceId": "5868107",
+  "sourceUrl": "https://www.ruedesjoueurs.com/pronostic/rayo-vallecano-elche-5868107.html",
+  "frenchPayloadSha256": "ad72e79cd56157bed333fd387523dc950f455a3e5ded10499efb8928b523fbb5",
+  "evidenceManifestSha256": "e5d89f77ee7f4bbdf580a34ddb00a6b14905b9d504c2bbd88c148dbdd8347489",
+  "purpose": "Exact public source/target excerpts from three actual responses; never an inference response cache.",
+  "responses": [
+    {
+      "nativeFile": "responses/3004049b61caa43f420fa1f33543ac8bd320273bea9112d64750a9bde4be5335.json",
+      "nativeSha256": "5db2f7081959b9753aa4c561a6aadc815e580aa11e4a8ad89ccc08c8e41b1d11",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "source": "Lundi soir, les joueurs du Rayo Vallecano sont allés prendre un point sur la pelouse de Getafe lors de la dernière journée (1-1).",
+      "target": "On Monday evening, the players from Rayo Vallecano went to Getafe to earn a point on the final matchday (1-1).",
+      "expectedPassedAfterFix": false
+    },
+    {
+      "nativeFile": "responses/39217c0126982739e8e242438fa0a0eb845952f0beaae43463151561f818810c.json",
+      "nativeSha256": "1d12bb62bd5b7ba1c9226a01071597504d2be5f67fca6bffc10f9fe8fba62991",
+      "model": "translategemma:4b",
+      "source": "Lundi soir, les joueurs du Rayo Vallecano sont allés prendre un point sur la pelouse de Getafe lors de la dernière journée (1-1).",
+      "target": "On Monday evening, the players from Rayo Vallecano went to Getafe to earn a point on the final matchday (1-1).",
+      "expectedPassedAfterFix": false
+    },
+    {
+      "nativeFile": "responses/6f49202ca815ace4fd1dff517b7fd498feeffd6373337e49cf08ce39a35b401d.json",
+      "nativeSha256": "3da8c34c52a2ac9e22c4b26da60e6c375b16093b918a9c9e075e637de313986a",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "source": "Lundi soir, les joueurs du Rayo Vallecano sont allés prendre un point sur la pelouse de Getafe lors de la dernière journée (1-1).",
+      "target": "On Monday evening, Rayo Vallecano's players went away to Getafe and took a point during the last matchday (1-1).",
+      "expectedPassedAfterFix": true
+    }
+  ]
+}

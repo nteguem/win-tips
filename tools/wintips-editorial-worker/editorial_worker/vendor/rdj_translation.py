@@ -22,7 +22,7 @@ import urllib.request
 
 
 PROMPT_VERSION = "fr-en-anchors-v8-sports-name-guidance"
-GUARD_VERSION = "ordered-anchors-v42-wintips-scoped-unfinished-match"
+GUARD_VERSION = "ordered-anchors-v43-wintips-away-points-recent-round"
 TOKEN_RE = re.compile(r"ZXQ[A-Z]+QXZ")
 NUMBER_RE = re.compile(r"(?<!\w)[+-]?\s*\d+(?:[.,:]\d+)*(?:\s*[%€$])?(?!\w)")
 FRENCH_WORDS = re.compile(r"\b(?:avec|dans|leurs|leur|pour|cette|ces|étaient|était|mais|donc|ainsi|lors|depuis|toujours|également|notamment|cependant|aujourd'hui)\b", re.I)
@@ -652,13 +652,70 @@ def _code(index: int) -> str:
             return "ZXQ" + letters + "QXZ"
 
 
+def _away_point_source_frame(source: str, fixture: dict):
+    """One finite past football-result frame; never a global anchor permutation."""
+    if str(fixture.get('sport', fixture.get('sport_key', ''))).casefold() not in {'football', 'foot', 'soccer'}:
+        return None
+    name = NAME_RE.pattern
+    pattern = (r'(?P<weekday>(?i:lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche))\s+'
+        r'(?P<period>(?i:soir|matin|après-midi)),\s+(?i:les\s+joueurs\s+(?:du|de|de\s+la|des))\s+'
+        r'(?P<actor>' + name + r')\s+(?P<predicate>(?i:sont\s+allés|sont\s+allées|est\s+allé|est\s+allée)\s+'
+        r'(?i:prendre)\s+(?P<count>(?i:un|trois)|1|3)\s+(?P<unit>(?i:points?))\s+'
+        r'(?i:sur\s+la\s+pelouse\s+(?:de|du|des|de\s+l[\'’]))\s+(?P<venue>' + name + r'))\s+'
+        r'(?P<recent>(?i:lors\s+de\s+la\s+dernière\s+journée))\s+\((?P<score>\d{1,3}-\d{1,3})\)\.?')
+    match = re.fullmatch(pattern, source)
+    if not match or not _is_fixture_team_name(match['actor'], fixture):
+        return None
+    quantity = {'un': 1, '1': 1, 'trois': 3, '3': 3}[match['count'].casefold()]
+    if (match['unit'].casefold() == 'point') != (quantity == 1):
+        return None
+    home, away = map(int, match['score'].split('-'))
+    if ((quantity == 1 and home != away) or (quantity == 3 and home >= away) or
+            _normalize(match['actor']) == _normalize(match['venue'])):
+        # This exception uses a home-to-away score. Three points must be an
+        # away win; an ambiguous/reversed source score keeps the normal guard.
+        return None
+    return match.span('predicate'), match.span('recent'), {
+        'rule': 'same_actor_away_points_past_result_and_recent_round', 'actor': match['actor'],
+        'venue': match['venue'], 'quantity': quantity, 'score': match['score'],
+        'weekday': LEXICON[match['weekday'].casefold()],
+        'period': {'soir': 'evening', 'matin': 'morning', 'après-midi': 'afternoon'}[match['period'].casefold()]}
+
+
+def _away_point_target_frames(raw: str, scope: dict):
+    actor, venue = re.escape(scope['actor']), re.escape(scope['venue'])
+    quantity = r'(?:a|one|1)\s+point' if scope['quantity'] == 1 else r'(?:three|3)\s+points'
+    positive = r'(?:took|earned|picked\s+up)'
+    predicate = ('(?:' + positive + r'\s+' + quantity + r'\s+(?:away\s+to|at)\s+' + venue +
+        r'|went\s+(?:away\s+)?to\s+' + venue + r'\s+and\s+' + positive + r'\s+' + quantity +
+        r'|went\s+to\s+' + venue + r'\s+to\s+(?:take|earn|pick\s+up)\s+' + quantity + ')')
+    subject = (r'(?:(?:the\s+)?players\s+(?:from|of)\s+(?:the\s+)?' + actor +
+        '|' + actor + r"['’]s\s+players|(?:the\s+)?" + actor + r'\s+players)')
+    # A complete affirmative grammatical frame binds the actor, obtained
+    # points, named away venue, most recent round and the exact directed score.
+    # Denials, another subject, another venue, an extra clause or a final-round
+    # assertion cannot be inserted between these parts.
+    period = r'(?:evening|night)' if scope['period'] == 'evening' else re.escape(scope['period'])
+    pattern = (r'\A\s*(?:on\s+)?' + re.escape(scope['weekday']) + r'\s+' + period +
+        r'\s*,?\s+' + subject + r'\s+(?P<predicate>' + predicate + r')\s+'
+        r'(?P<recent>(?:during|on|in)\s+the\s+(?:latest|most\s+recent|last)\s+matchday)\s+'
+        r'\(' + re.escape(scope['score']) + r'\)\.?\s*\Z')
+    return tuple(re.finditer(pattern, raw, re.I))
+
+
 def _protect(source: str, fixture: dict) -> tuple[str, list[dict]]:
     if TOKEN_RE.search(source):
         raise TranslationError("source_token_collision", "Source contains a reserved protection token")
     candidates = []
     unfinished_matches = {}
+    away_result = _away_point_source_frame(source, fixture)
     def add(start, end, target, kind, priority):
         candidates.append((priority, end - start, start, end, target, kind))
+    if away_result:
+        predicate, recent, scope = away_result
+        quantity = 'one point' if scope['quantity'] == 1 else 'three points'
+        add(*predicate, 'earned ' + quantity + ' away to ' + scope['venue'], 'away_point_result', 7)
+        add(*recent, 'during the latest matchday', 'recent_result_matchday', 7)
     initial_numbers = "|".join(re.escape(word) for word in sorted(NUMBER_WORDS, key=len, reverse=True) if word not in {"un", "une"})
     for match in re.finditer(r"\b(\d{1,3}|" + initial_numbers + r")\s+premi(?:ers|ères)\b", source, re.I):
         value = int(match[1]) if match[1].isdigit() else CARDINAL_VALUES.get(NUMBER_WORDS[match[1].lower()])
@@ -958,6 +1015,8 @@ def _protect(source: str, fixture: dict) -> tuple[str, list[dict]]:
         token = _code(index)
         result += [source[cursor:start], token]
         anchor = {"token": token, "source": source[start:end], "target": target, "kind": kind}
+        if kind in {'away_point_result', 'recent_result_matchday'}:
+            anchor['away_result_scope'] = away_result[2]
         if kind == 'unfinished_match':
             anchor['unfinished_match_scope'] = unfinished_matches[start]
         if kind == 'semantic' and target.casefold() == 'at home':
@@ -1053,6 +1112,10 @@ def _grammar_hint(anchor: dict) -> str:
         return "same ordinal basketball quarter and period unit, never a fraction or a different quarter"
     if kind == 'unfinished_match':
         return 'the same named match did not reach its end because of incidents; never normal completion or a different subject'
+    if kind == 'away_point_result':
+        return 'same affirmative past actor, obtained point quantity and named away venue; only this predicate can use either internal order'
+    if kind == 'recent_result_matchday':
+        return 'latest or most recent completed matchday in this past-result frame, never an asserted final matchday of the season'
     if kind == "name":
         return "proper name; keep its actor/opponent relationship"
     if kind in {"score_or_time", "number", "ordinal", "number_word"}:
@@ -1088,7 +1151,7 @@ def _prompt(masked: str, anchors: list[dict] | None = None) -> str:
     # never protection tokens or substituted English source prose.
     names = {anchor['source']: anchor['target'] for anchor in anchors if anchor['kind'] == 'name'}
     terms = {anchor['source']: anchor['target'] for anchor in anchors if anchor['kind'] in {
-        'semantic','both_sides','result_score','result_score_final','delay_destination','standing_gap','minimum_count','basket_team_possessor','basket_three_point_count','basket_three_point_made','basket_three_point_neutral','weekday_night','zero_defeats','score_margin','named_away_venue','table_gap','linked_defeat_count','quarter_ordinal','unfinished_match'}}
+        'semantic','both_sides','result_score','result_score_final','delay_destination','standing_gap','minimum_count','basket_team_possessor','basket_three_point_count','basket_three_point_made','basket_three_point_neutral','weekday_night','zero_defeats','score_margin','named_away_venue','table_gap','linked_defeat_count','quarter_ordinal','unfinished_match','away_point_result','recent_result_matchday'}}
     if names:
         guidance += 'Keep these proper names and club nicknames exactly in their canonical spellings: ' + json.dumps(names, ensure_ascii=False) + '.\n'
     if terms:
@@ -1280,6 +1343,11 @@ def _anchor_candidates(raw: str, anchor: dict, normalized_raw):
     for start, end in _literal_spans(raw, anchor["token"]):
         add(start, end, "token", "exact_token", anchor["token"])
     target, kind = anchor["target"], anchor["kind"]
+    if kind in {'away_point_result', 'recent_result_matchday'}:
+        group = 'predicate' if kind == 'away_point_result' else 'recent'
+        for frame in _away_point_target_frames(raw, anchor['away_result_scope']):
+            add(*frame.span(group), 'equivalent', 'same_closed_away_point_result_frame', frame[group])
+        return tuple(candidates.values())
     if kind == 'unfinished_match':
         scope = anchor['unfinished_match_scope']
         opponent = re.escape(scope['opponent'])
