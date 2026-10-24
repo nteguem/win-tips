@@ -223,6 +223,63 @@ class AcquisitionGeographyStadiumTests(unittest.TestCase):
                       'against Celta Vigo at home. Another match ended (0-0)'):
             self.check(row, target.replace('at home against Celta Vigo (0-0)', local), False)
 
+    def test_two_genuine_roma_targets_gain_only_the_source_proven_home_draw_adjective(self):
+        source = 'Par la suite, ils ont tenu en échec la Roma à domicile (0-0) et gagné sur le terrain de la Fiorentina le week-end dernier (1-3).'
+        item = {'sport': {'key': 'football'}, 'teams': {'home': {'name': 'Côme'}, 'away': {'name': 'Sassuolo'}}}
+        # Unchanged real Qwen 5489bfef... SHA1dad7519... and 934fb335...
+        # SHA168d7b38..., not synthetic replacements of either cached target.
+        targets = (
+            'Then, they held Roma to a home draw (0-0) and won away against Fiorentina last weekend (1-3).',
+            'Then, they held Roma to a home draw (0-0) and won at Fiorentina last weekend (1-3).',
+        )
+        for target in targets:
+            _, proof = validate_english_sentence(source, target, item)
+            self.assertTrue(proof['passed'], proof)
+            self.assertTrue(proof['remasking_proof']['scoped_home_draw_adjectives'][0]['passed'])
+            self.assertEqual(proof['remasking_proof']['source_token_order'], proof['remasking_proof']['accepted_token_order'])
+            self.assertFalse(any('_validation_home_draw_scope' in anchor for anchor in proof['anchors']))
+        target = targets[0]
+        for wrong in (target.replace('a home draw', 'an away draw'),
+                      target.replace('a home draw', 'a home win'),
+                      target.replace('a home draw', 'a home defeat'),
+                      target.replace('a home draw', 'a draw'),
+                      target.replace('held Roma', 'held Napoli'),
+                      target.replace('held Roma', 'did not hold Roma'),
+                      target.replace('they held', 'they denied that they held'),
+                      target.replace('they held', 'they claimed they held'),
+                      target.replace('held Roma to', 'Roma held them to'),
+                      target.replace('home draw (0-0)', 'home draw (1-0)'),
+                      target.replace('home draw (0-0)', 'home draw (1-1)'),
+                      target.replace('home draw (0-0)', 'home draw, another match ended (0-0)'),
+                      target.replace('Fiorentina', 'Roma'),
+                      target.replace('(1-3)', '(3-1)')):
+            _, proof = validate_english_sentence(source, wrong, item)
+            self.assertFalse(proof['passed'], (wrong, proof))
+
+    def test_home_draw_adjective_never_generalizes_to_other_source_results_or_units(self):
+        source = 'Par la suite, ils ont tenu en échec la Roma à domicile (0-0) et gagné sur le terrain de la Fiorentina le week-end dernier (1-3).'
+        target = 'Then, they held Roma to a home draw (0-0) and won away against Fiorentina last weekend (1-3).'
+        item = {'sport': {'key': 'football'}, 'teams': {'home': {'name': 'Côme'}, 'away': {'name': 'Sassuolo'}}}
+        masked, anchors = guard._protect(source, _fixture(item))
+        identity = json.dumps(anchors, ensure_ascii=False)
+        prompt = _prompt(masked, anchors)
+        guard._validate(masked, anchors, {'message': {'content': target}, 'done': True}, fixture=_fixture(item))
+        self.assertEqual(identity, json.dumps(anchors, ensure_ascii=False))
+        self.assertEqual(prompt, _prompt(masked, anchors))
+        for wrong_source in (source.replace('tenu en échec', 'battu'),
+                             source.replace('tenu en échec', 'perdu contre'),
+                             source.replace('(0-0)', '(1-0)'),
+                             source.replace('ils ont tenu', "ils n'ont pas tenu"),
+                             source.replace('ils ont tenu', "ils ont affirmé qu'ils ont tenu"),
+                             source.replace('ils ont tenu', "ils ont nié qu'ils ont tenu"),
+                             source.replace('ils ont tenu', "s'ils ont tenu")):
+            _, proof = validate_english_sentence(wrong_source, target, item)
+            self.assertFalse(proof['passed'], (wrong_source, proof))
+        away_masked, away_anchors = guard._protect(source.replace('à domicile', "à l'extérieur"), _fixture(item))
+        self.assertEqual(guard._validation_home_draw_scopes(away_masked, away_anchors, _fixture(item)), {})
+        _, proof = validate_english_sentence(source, target, {**item, 'sport': {'key': 'basketball'}})
+        self.assertFalse(proof['passed'])
+
     def test_all_original_french_is_reconstructed_byte_for_byte_in_model_prompt(self):
         for row in self.rows:
             masked, anchors = guard._protect(row['source'], _fixture(self.item(row)))

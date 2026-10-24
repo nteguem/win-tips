@@ -22,7 +22,7 @@ import urllib.request
 
 
 PROMPT_VERSION = "fr-en-anchors-v8-sports-name-guidance"
-GUARD_VERSION = "ordered-anchors-v46-wintips-counted-goalless-draws-stadium"
+GUARD_VERSION = "ordered-anchors-v47-wintips-adjectival-home-draw"
 TOKEN_RE = re.compile(r"ZXQ[A-Z]+QXZ")
 NUMBER_RE = re.compile(r"(?<!\w)[+-]?\s*\d+(?:[.,:]\d+)*(?:\s*[%€$])?(?!\w)")
 FRENCH_WORDS = re.compile(r"\b(?:avec|dans|leurs|leur|pour|cette|ces|étaient|était|mais|donc|ainsi|lors|depuis|toujours|également|notamment|cependant|aujourd'hui)\b", re.I)
@@ -1706,6 +1706,11 @@ def _anchor_candidates(raw: str, anchor: dict, normalized_raw):
         for variant in variants:
             for start, end in _literal_spans(raw, variant, True):
                 add(start, end, "equivalent", "semantic_whitelist" if len(variants) > 1 else "semantic_case_space", variant)
+        if target.casefold() == 'at home' and anchor.get('_validation_home_draw_scope'):
+            for start, end in _literal_spans(raw, 'home', True):
+                if (re.search(r'\ba\s+$', raw[:start], re.I) and
+                        re.match(r'\s+draw\b', raw[end:], re.I)):
+                    add(start, end, 'equivalent', 'source_explicit_named_home_draw_adjective', 'home')
         # Only this source infinitive permits the grammatical gerund after
         # "capable of". Completed past-result anchors never gain this form.
         if anchor.get('source', '').casefold() == 'faire tomber' and target.casefold() == 'beat':
@@ -1771,7 +1776,8 @@ def _named_team_groups(masked: str, anchors: list[dict], fixture: dict | None) -
     return groups
 
 
-def _remask_exact(raw: str, anchors: list[dict], *, named_team_groups: dict | None = None, fixture_team_names: tuple = ()) -> tuple[str, dict]:
+def _remask_exact(raw: str, anchors: list[dict], *, named_team_groups: dict | None = None,
+                  fixture_team_names: tuple = (), home_draw_scopes: dict | None = None) -> tuple[str, dict]:
     """Recover one ordered cover of exact or explicitly equivalent anchor values.
 
     Offsets are Unicode codepoint offsets into the unmodified response content.
@@ -1779,7 +1785,10 @@ def _remask_exact(raw: str, anchors: list[dict], *, named_team_groups: dict | No
     duplication. Nested literals are covered only by a selected larger span.
     """
     normalized_raw = _name_normalized(raw) if any(anchor["kind"] == "name" for anchor in anchors) else None
-    options = [_anchor_candidates(raw, anchor, normalized_raw) for anchor in anchors]
+    # This is validation-only grammar, never part of a model prompt or cache
+    # identity. Every use must also prove its complete local event below.
+    options = [_anchor_candidates(raw, {**anchor, '_validation_home_draw_scope': (home_draw_scopes or {}).get(anchor['token'])}, normalized_raw)
+               for anchor in anchors]
     grouped_name_indices={index+1 for index in (named_team_groups or {})}
     plural_fixture_team=False
     for index,anchor in enumerate(anchors):
@@ -1887,6 +1896,21 @@ def _remask_exact(raw: str, anchors: list[dict], *, named_team_groups: dict | No
         return raw, proof
     source_selected = list(zip(anchors, selected))
     by_token = {anchor["token"]: candidate for anchor, candidate in source_selected}
+    for token, scope in (home_draw_scopes or {}).items():
+        home = by_token[token]
+        if raw[home[0]:home[1]].casefold() != 'home':
+            continue
+        participant, score = by_token[scope['participant_token']], by_token[scope['score_token']]
+        # Only an affirmative, unqualified past result with this same named
+        # opponent and equal score gains the adjective. No clause is moved.
+        proven = (bool(re.fullmatch(r'\s*(?:(?:Then|Subsequently|Afterwards),?\s+)?they\s+held\s+', raw[:participant[0]], re.I)) and
+                  participant[1] <= home[0] < home[1] <= score[0] and
+                  bool(re.fullmatch(r'\s+to\s+a\s+', raw[participant[1]:home[0]], re.I)) and
+                  bool(re.fullmatch(r'\s+draw\s*\(\s*', raw[home[1]:score[0]], re.I)) and
+                  raw[score[1]:].startswith(')'))
+        proof.setdefault('scoped_home_draw_adjectives', []).append({**scope, 'token': token, 'passed': proven})
+        if not proven:
+            proof['errors'].append('source_named_home_draw_event_unproven')
     for scope in (named_team_groups or {}).values():
         role,name=by_token[scope['role_token']],by_token[scope['name_token']]
         proof['scoped_named_team_nouns'].append({**scope,'reordered':name[0]<role[0],
@@ -2029,11 +2053,38 @@ def _remask_exact(raw: str, anchors: list[dict], *, named_team_groups: dict | No
     return remasked, proof
 
 
+def _validation_home_draw_scopes(masked: str, anchors: list[dict], fixture: dict | None) -> dict:
+    """Prove one source result without changing persisted anchors or prompts."""
+    if str((fixture or {}).get('sport', (fixture or {}).get('sport_key', ''))).casefold() not in {'football', 'foot', 'soccer'}:
+        return {}
+    by_token = {anchor['token']: anchor for anchor in anchors}
+    pattern = (r'\A\s*(?:(?P<connector>' + TOKEN_RE.pattern + r'),\s+)?'
+        r'(?:ils|elles)\s+ont\s+tenu\s+en\s+échec\s+(?:le|la|les)\s+'
+        r'(?P<participant>' + TOKEN_RE.pattern + r')\s+(?P<home>' + TOKEN_RE.pattern +
+        r')\s*\(\s*(?P<score>' + TOKEN_RE.pattern + r')\s*\)')
+    scopes = {}
+    for match in re.finditer(pattern, masked, re.I):
+        if match['connector']:
+            connector = by_token[match['connector']]
+            if (connector['kind'] != 'semantic' or connector['source'].casefold() not in {'par la suite', 'ensuite', 'puis'} or
+                    connector['target'].casefold() != 'then'):
+                continue
+        participant, home, score = (by_token[match[name]] for name in ('participant', 'home', 'score'))
+        values = re.fullmatch(r'(\d+)-(\d+)', score['source'])
+        if (participant['kind'] == 'name' and home['kind'] == 'semantic' and
+                home['source'].casefold() == 'à domicile' and home['target'].casefold() == 'at home' and
+                score['kind'] == 'score_or_time' and values and int(values[1]) == int(values[2])):
+            scopes[home['token']] = {'rule': 'same_held_named_opponent_to_equal_score_home_draw',
+                'participant_token': participant['token'], 'score_token': score['token']}
+    return scopes
+
+
 def _validate(masked: str, anchors: list[dict], response: dict, *, fixture: dict | None = None) -> tuple[str, dict]:
     raw_content = str(response.get("message", {}).get("content", ""))
     named_groups=_named_team_groups(masked,anchors,fixture)
     team_names=tuple(a['target'] for a in anchors if a['kind']=='name' and _is_fixture_team_name(a['target'],fixture))
-    raw, remasking = _remask_exact(raw_content, anchors,named_team_groups=named_groups,fixture_team_names=team_names)
+    raw, remasking = _remask_exact(raw_content, anchors,named_team_groups=named_groups,fixture_team_names=team_names,
+        home_draw_scopes=_validation_home_draw_scopes(masked, anchors, fixture))
     raw = raw.strip()
     expected = [anchor["token"] for anchor in anchors]
     found = TOKEN_RE.findall(raw)
