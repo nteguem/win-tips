@@ -1,0 +1,62 @@
+Prix fixes manquants des deux forfaits WinTips — outil local et migration revue
+
+Sans argument, ce programme affiche uniquement son périmètre, sans connexion.
+Il n'importe pas l'application, dotenv, les jobs ou les fournisseurs de paiement.
+Il ne télécharge jamais de taux et ne crée ni produit Google ni paiement.
+
+Périmètre : les deux IDs Essentiel/Premium explicitement codés ; uniquement les
+sous-champs pricing.<devise absente> et leur pricingProvenance.<devise>.
+Les prix XAF/XOF 3500/7000, USD 10/21 et EUR 10.99/22.99 sont obligatoires et
+préservés. Toute autre valeur déjà explicite est conservée, même si elle diffère
+de la conversion. Catégories, 7/14 jours, SKU et tous les autres champs restent
+identiques. Aucune lecture de client/token et aucune écriture d'abonnement,
+transaction, ancien forfait, droit, configuration pays ou fournisseur.
+
+Référence PUBLIQUE gelée : https://open.er-api.com/v6/latest/XAF, fournisseur
+ExchangeRate-API, mise à jour 2026-10-24T00:02:31Z. Ce n'est pas une garantie de
+taux officiel ou de montant réellement encaissé par Google. SHA256 obligatoire :
+11e0e8576e61097de9b9194b0bfc26dce4a7241d7a2e9143150e4caa87a73a9c.
+La fixture publique tests/fixtures/xaf-exchange-reference-20261024.json conserve
+ses octets Git exacts (-text). Toute nouvelle référence exige une nouvelle revue.
+
+Conversion décimale entière BigInt, arrondi à l'unité la plus proche, demi-vers
+le haut. Chaque forfait est calculé depuis sa propre base CFA ; on ne double
+pas le montant déjà arrondi Essentiel. Aucun zéro ni conversion au paiement.
+Les prix ajoutés sont fixes jusqu'à une édition explicite et portent taux,
+base, source, date, SHA et règle d'arrondi. 19 codes BO sont couverts.
+
+Plan hors connexion depuis un instantané commercial complet au format EJSON :
+node tools/package-currency-prices.cjs --plan --state-file <snapshot.json> --rates-file <reference.json> --out <nouveau-plan-prive.json>
+Le snapshot est {databaseName:"wintips",packages:[documents complets]}.
+Un exemple de test n'est jamais un plan de production.
+
+Plan lecture seule depuis une URI expressément fournie par l'opérateur :
+WINTIPS_PRICING_MONGO_URI doit être défini en mémoire, sans imprimer sa valeur.
+node tools/package-currency-prices.cjs --plan --rates-file <reference.json> --out <nouveau-plan-prive.json>
+La base doit être exactement wintips, avec exactement les deux forfaits actifs.
+Le plan contient leurs avant/après complets et les SHA des autres forfaits ;
+il doit être gardé privé, revu et sauvegardé avant toute application.
+Planification et application sont limitées aux 48 heures suivant la référence.
+
+Application SEULEMENT après revue du plan frais et autorisation :
+node tools/package-currency-prices.cjs --apply --plan-file <plan.json> --confirm-sha256 <planHash> --confirm-price-mutation --out <nouveau-recu-prive.json>
+Mongo replica set ou mongos obligatoire. Transaction snapshot/majority, CAS de
+documents complets, vérification avant/après. Un drift bloque et ne doit pas
+être forcé. Les sorties sont réservées exclusivement (0600, dossier 0700)
+AVANT connexion ; une sortie existante interdit toute écriture en base.
+Sous Windows, ces modes POSIX ne remplacent pas les ACL privées de l'opérateur.
+
+En cas de perte du reçu après commit, conserver le fichier pending et le plan
+original : le même plan rejoué saute les documents après déjà exacts et produit
+un reçu contenant toujours le plan original complet, même avec zéro écriture.
+Ne pas recréer un plan vide pour prétendre annuler la première application.
+
+Rollback CAS, uniquement si les deux documents sont encore aux valeurs exactes :
+node tools/package-currency-prices.cjs --rollback --receipt-file <recu.json> --confirm-sha256 <receiptHash> --confirm-price-mutation --out <nouveau-rollback-prive.json>
+Il retire seulement les prix/provenances ajoutés, préserve les prix antérieurs
+et refuse toute édition concurrente. Un achat effectué entre-temps reste intact.
+
+La couverture tarifaire n'active aucun pays ni rail : le pays et son fournisseur
+doivent déjà être configurés, et les opérateurs doivent réellement prendre en
+charge la devise. Google affiche et facture son propre prix régional ; pricing
+est une référence explicite, jamais une preuve de somme encaissée.
