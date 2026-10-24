@@ -280,6 +280,163 @@ class AcquisitionGeographyStadiumTests(unittest.TestCase):
         _, proof = validate_english_sentence(source, target, {**item, 'sport': {'key': 'basketball'}})
         self.assertFalse(proof['passed'])
 
+    def initial_defeat_case(self):
+        source = 'Battus à Hambourg avant la trêve internationale (2-1), les hommes de Rene Wagner avaient ensuite pu réagir face à la lanterne rouge, le Borussia Mönchengladbach( 2-1).'
+        item = {'sport': {'key': 'football'}, 'teams': {'home': {'name': 'Cologne'}, 'away': {'name': 'Schalke 04'}}}
+        target = ('Beaten away at Hambourg before the international break (2-1), the men of Rene Wagner had then '
+                  'been able to respond against the bottom team, Borussia Mönchengladbach (2-1).')
+        return source, item, target
+
+    def test_initial_passive_defeat_rejects_reported_native_active_result_inversion(self):
+        source, item, good = self.initial_defeat_case()
+        # Exact text reported from native 7bef298d... while the zero-POST
+        # canonical run was still active. No cache is rewritten by this test.
+        bad = ('"Battus" defeated "Hambourg" before the international break (2-1); the team led by "Rene Wagner" '
+               'then managed to respond against the bottom team, "Borussia Mönchengladbach" (2-1).')
+        _, proof = validate_english_sentence(source, bad, item)
+        self.assertFalse(proof['passed'])
+        self.assertIn('initial_passive_defeat_left_as_untranslated_actor', proof['errors'])
+        for passive in ('Beaten away at Hambourg', 'Beaten at Hambourg', 'Defeated in Hambourg',
+                        'Defeated away to Hambourg', 'Beaten by Hambourg',
+                        'Having lost away at Hambourg', 'Having lost to Hambourg'):
+            target = good.replace('Beaten away at Hambourg', passive)
+            _, proof = validate_english_sentence(source, target, item)
+            self.assertTrue(proof['passed'], (target, proof))
+            self.assertTrue(proof['remasking_proof']['scoped_initial_passive_defeats'][0]['passed'])
+            self.assertEqual(proof['remasking_proof']['source_token_order'], proof['remasking_proof']['accepted_token_order'])
+
+    def test_initial_defeat_cannot_change_actor_polarity_venue_boundary_or_outer_facts(self):
+        source, item, target = self.initial_defeat_case()
+        for wrong in ('Defeated Hambourg', 'They defeated Hambourg', 'Not beaten at Hambourg',
+                      'Unbeaten at Hambourg', 'Having not lost at Hambourg', 'If beaten at Hambourg',
+                      'They denied being beaten at Hambourg', 'Allegedly beaten at Hambourg',
+                      'Beaten at Cologne', 'Beaten by Hambourg at home',
+                      'Beaten by Hambourg but won', 'Beaten at Hambourg and one victory',
+                      'Beaten at Hambourg, but this was denied', 'Beaten at Hambourg and Hambourg'):
+            _, proof = validate_english_sentence(source, target.replace('Beaten away at Hambourg', wrong), item)
+            self.assertFalse(proof['passed'], (wrong, proof))
+        for wrong in (target.replace('before', 'after'),
+                      target.replace('international break', 'next international break'),
+                      target.replace('international break', 'international break at home'),
+                      target.replace('international break', 'international break but this was denied'),
+                      target.replace('international break', 'international break after a victory'),
+                      target.replace('(2-1),', '(2-1) at home,', 1),
+                      target.replace('(2-1)', '(1-2)', 1),
+                      target.replace('Rene Wagner', 'Hambourg'),
+                      target.replace('Borussia Mönchengladbach', 'Schalke 04'),
+                      target.replace('Hambourg before', 'Hambourg before Rene Wagner'),
+                      target.replace('then', 'previously')):
+            _, proof = validate_english_sentence(source, wrong, item)
+            self.assertFalse(proof['passed'], (wrong, proof))
+
+    def test_initial_defeat_inflections_and_explicit_names_keep_separate_roles(self):
+        source, item, target = self.initial_defeat_case()
+        for participle in ('Battu', 'Battue', 'Battus', 'Battues'):
+            _, proof = validate_english_sentence(source.replace('Battus', participle, 1), target, item)
+            self.assertTrue(proof['passed'], (participle, proof))
+            initial = proof['anchors'][0]
+            self.assertEqual(initial['kind'], 'initial_passive_away_defeat')
+            self.assertEqual(initial['typed_scope']['venue'], 'Hambourg')
+        for fixture in ({**_fixture(item), 'home': 'Battus'},
+                        {**_fixture(item), 'protected_names': ['Battus']}):
+            _, anchors = guard._protect(source, fixture)
+            self.assertFalse(any(a['kind'] == 'initial_passive_away_defeat' for a in anchors))
+            self.assertTrue(any(a['kind'] == 'name' and a['source'] == 'Battus' for a in anchors))
+        for prefix in ('Si ', "Ils ont affirmé qu'ils étaient ", "Ils ont nié avoir été "):
+            _, anchors = guard._protect(prefix + source, _fixture(item))
+            self.assertFalse(any(a['kind'] == 'initial_passive_away_defeat' for a in anchors))
+        _, anchors = guard._protect(source, {**_fixture(item), 'sport_key': 'basketball'})
+        self.assertFalse(any(a['kind'] == 'initial_passive_away_defeat' for a in anchors))
+        home_source = source.replace('à Hambourg', 'à Cologne', 1)
+        for place, expected in (('at Cologne', True), ('away at Cologne', False), ('by Cologne', False)):
+            home_target = target.replace('away at Hambourg', place, 1)
+            _, proof = validate_english_sentence(home_source, home_target, item)
+            self.assertEqual(proof['passed'], expected, proof)
+
+    def test_initial_passive_defeat_guidance_keeps_the_verbatim_french_source(self):
+        source, item, _ = self.initial_defeat_case()
+        masked, anchors = guard._protect(source, _fixture(item))
+        prompt = _prompt(masked, anchors)
+        self.assertIn('suffered a defeat at "Hambourg"', prompt)
+        self.assertIn('never a proper name or a subject defeating that opponent', prompt)
+        self.assertEqual(prompt.rpartition('\n\n\n')[2].encode('utf-8'), source.encode('utf-8'))
+
+    def loss_twice_case(self):
+        source = "Mais la suite a été plus difficile pour les partenaires d'Edin Dzeko qui ont été accrochés par Elversberg (0-0) avant de perdre à 2 reprises, face à Fribourg (2-1) et à Mayence (0-1) le week-end dernier."
+        target = "But the situation proved more difficult for Edin Dzeko's team, who drew with Elversberg (0-0) before losing twice, against Fribourg (2-1) and Mayence (0-1) last weekend."
+        item = {'sport': {'key': 'football'}, 'teams': {'home': {'name': 'Cologne'}, 'away': {'name': 'Schalke 04'}}}
+        return source, item, target
+
+    def test_exact_native_two_losses_accepts_twice_without_changing_identity(self):
+        # cdbfd4a7... native SHA265957a8..., source/result bytes unchanged.
+        source, item, target = self.loss_twice_case()
+        masked, anchors = guard._protect(source, _fixture(item))
+        identity = json.dumps(anchors, ensure_ascii=False)
+        prompt = _prompt(masked, anchors)
+        _, proof = validate_english_sentence(source, target, item)
+        self.assertTrue(proof['passed'], proof)
+        self.assertTrue(proof['remasking_proof']['scoped_twice_loss_quantities'][0]['passed'])
+        self.assertEqual(proof['remasking_proof']['source_token_order'], proof['remasking_proof']['accepted_token_order'])
+        self.assertEqual(identity, json.dumps(anchors, ensure_ascii=False))
+        self.assertEqual(prompt, _prompt(masked, anchors))
+        self.assertFalse(any('_validation_loss_twice_scope' in a for a in proof['anchors']))
+
+    def test_twice_is_only_two_affirmative_losses_in_the_source_result_group(self):
+        source, item, target = self.loss_twice_case()
+        for wrong in (target.replace('losing twice', 'losing once'),
+                      target.replace('losing twice', 'losing three times'),
+                      target.replace('losing twice', 'winning twice'),
+                      target.replace('losing twice', 'not losing twice'),
+                      target.replace('before losing twice', 'before they denied losing twice'),
+                      target.replace('before losing twice', 'before allegedly losing twice'),
+                      target.replace('losing twice,', 'losing twice and one victory,'),
+                      target.replace('twice', 'twice twice'),
+                      target.replace('Fribourg', 'Elversberg'),
+                      target.replace('(2-1)', '(1-2)'),
+                      target.replace('Mayence', 'Mainz'),
+                      target.replace('last weekend', 'next weekend')):
+            _, proof = validate_english_sentence(source, wrong, item)
+            self.assertFalse(proof['passed'], (wrong, proof))
+        for wrong_source in (source.replace('à 2 reprises', 'à 1 reprise'),
+                             source.replace('à 2 reprises', 'à 3 reprises'),
+                             source.replace('perdre', 'gagner'),
+                             source.replace('perdre', 'ne pas perdre'),
+                             'Ils ont nié cette affirmation : ' + source,
+                             'Si cela était arrivé : ' + source):
+            _, proof = validate_english_sentence(wrong_source, target, item)
+            self.assertFalse(proof['passed'], (wrong_source, proof))
+
+    def test_multi_match_continuation_never_becomes_the_rest_of_one_match(self):
+        source, item, target = self.loss_twice_case()
+        for phrase in ('the rest of the match', 'the remainder of the match', 'the rest of this match'):
+            _, proof = validate_english_sentence(source, target.replace('the situation', phrase), item)
+            self.assertFalse(proof['passed'])
+            self.assertIn('multi_match_results_changed_to_remainder_of_one_match', proof['errors'])
+        # The recognizer never bans a real source about one match in general.
+        source_single = 'La suite du match a été difficile pour Elversberg.'
+        masked, anchors = guard._protect(source_single, _fixture(item))
+        self.assertEqual(guard._validation_loss_twice_scopes(masked, anchors, _fixture(item)), {})
+
+    def test_exact_native_charrette_means_general_relegation_not_a_playoff_spot(self):
+        source = 'Cette année encore, les locaux risquent de ne pas pouvoir jouer les premiers rôles et ils devraient sans doute veiller à rester hors de la charrette.'
+        # 3f4766da... native SHA9d8a9e5d... is a real factual error.
+        native = 'This year again, the locals risk not being able to play the leading roles and should likely aim to stay out of the relegation play-off spot.'
+        item = {'sport': {'key': 'football'}, 'teams': {'home': {'name': 'Cologne'}, 'away': {'name': 'Schalke 04'}}}
+        for phrase in ('stay clear of relegation', 'stay out of relegation', 'stay out of the relegation zone',
+                       'stay clear of the relegation zone', 'avoid relegation'):
+            target = native.replace('stay out of the relegation play-off spot', phrase)
+            _, proof = validate_english_sentence(source, target, item)
+            self.assertTrue(proof['passed'], (target, proof))
+        for phrase in ('stay out of the relegation play-off spot', 'stay clear of relegation play-offs',
+                       'avoid relegation and play-offs', 'reach the relegation zone', 'not avoid relegation',
+                       'cannot avoid relegation', "can't avoid relegation", 'can’t avoid relegation',
+                       "don't avoid relegation"):
+            _, proof = validate_english_sentence(source, native.replace('stay out of the relegation play-off spot', phrase), item)
+            self.assertFalse(proof['passed'], (phrase, proof))
+        _, proof = validate_english_sentence(source, native.replace(
+            'should likely aim to stay out of the relegation play-off spot', 'they cannot avoid relegation'), item)
+        self.assertFalse(proof['passed'])
+
     def test_all_original_french_is_reconstructed_byte_for_byte_in_model_prompt(self):
         for row in self.rows:
             masked, anchors = guard._protect(row['source'], _fixture(self.item(row)))

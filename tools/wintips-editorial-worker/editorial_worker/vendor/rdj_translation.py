@@ -22,7 +22,7 @@ import urllib.request
 
 
 PROMPT_VERSION = "fr-en-anchors-v8-sports-name-guidance"
-GUARD_VERSION = "ordered-anchors-v47-wintips-adjectival-home-draw"
+GUARD_VERSION = "ordered-anchors-v48-wintips-initial-passive-away-defeat"
 TOKEN_RE = re.compile(r"ZXQ[A-Z]+QXZ")
 NUMBER_RE = re.compile(r"(?<!\w)[+-]?\s*\d+(?:[.,:]\d+)*(?:\s*[%€$])?(?!\w)")
 FRENCH_WORDS = re.compile(r"\b(?:avec|dans|leurs|leur|pour|cette|ces|étaient|était|mais|donc|ainsi|lors|depuis|toujours|également|notamment|cependant|aujourd'hui)\b", re.I)
@@ -729,6 +729,17 @@ def _protect(source: str, fixture: dict) -> tuple[str, list[dict]]:
         if acquisition and not any(re.match(re.escape(name) + r'(?!\w)', source, re.I) for name in explicit_names):
             add(acquisition.start(), acquisition.end(), 'this was secured', 'deictic_acquisition', 7)
             typed_scopes[acquisition.start()] = {'rule': 'affirmative_singular_deictic_passive_acquisition'}
+        initial_defeat = re.match(r'Battu(?:s|e|es)?\s+à\s+(?P<venue>' + NAME_RE.pattern + r')', source)
+        if initial_defeat:
+            explicit_initial = next((match for name in sorted(explicit_names, key=len, reverse=True)
+                if (match := re.match(re.escape(name) + r'(?!\w)', source, re.I))), None)
+            if explicit_initial:
+                add(explicit_initial.start(), explicit_initial.end(), explicit_initial.group(), 'name', 7)
+            else:
+                venue_is_home = _is_fixture_team_name(initial_defeat['venue'], {**fixture, 'sport_key': sport, 'away': ''})
+                add(initial_defeat.start(), initial_defeat.end(), 'beaten at ' + initial_defeat['venue'], 'initial_passive_away_defeat', 7)
+                typed_scopes[initial_defeat.start()] = {'rule': 'initial_passive_loss_at_same_named_venue',
+                    'venue': initial_defeat['venue'], 'venue_is_fixture_home': venue_is_home}
         for survival in re.finditer(r"\bmaintien\s+acquis\s+à\s+l['’]arraché\s+contre\s+(?P<opponent>" + NAME_RE.pattern + r")", source):
             add(survival.start(), survival.end(), 'survival narrowly secured against ' + survival['opponent'], 'survival_without_asserted_win', 7)
             typed_scopes[survival.start()] = {'rule': 'league_survival_does_not_assert_match_victory', 'opponent': survival['opponent']}
@@ -856,6 +867,7 @@ def _protect(source: str, fixture: dict) -> tuple[str, list[dict]]:
             'un nul à domicile':'a draw at home',"à l'heure de jeu":"on the hour mark","à l’heure de jeu":"on the hour mark"})
     if sport in {'football','foot','soccer'}:
         semantic_glossary['zone rouge']='relegation zone'
+        semantic_glossary['rester hors de la charrette'] = 'stay clear of relegation'
         semantic_glossary.update({'ferme la marche au classement':'is bottom of the table',
             'premier non relégable':'first team outside the relegation zone','premier non-relégable':'first team outside the relegation zone'})
         for deficit in re.finditer(r'\b(\d{1,3})\s+unités?\s+de\s+débours\s+sur\b',source,re.I):
@@ -1042,8 +1054,19 @@ def _protect(source: str, fixture: dict) -> tuple[str, list[dict]]:
         token = _code(index)
         result += [source[cursor:start], token]
         anchor = {"token": token, "source": source[start:end], "target": target, "kind": kind}
-        if kind in {'deictic_acquisition', 'survival_without_asserted_win', 'geographic_landmark_side', 'counted_goalless_draws'}:
+        if kind in {'deictic_acquisition', 'survival_without_asserted_win', 'geographic_landmark_side', 'counted_goalless_draws', 'initial_passive_away_defeat'}:
             anchor['typed_scope'] = typed_scopes[start]
+        if kind == 'initial_passive_away_defeat' and index + 1 < len(chosen):
+            anchor['typed_scope']['following_token'] = _code(index + 1)
+            anchor['typed_scope']['source_gap'] = source[end:chosen[index + 1][0]]
+            if (index + 2 < len(chosen) and chosen[index + 1][2:] == ('before', 'semantic') and
+                    chosen[index + 2][2:] == ('international break', 'semantic') and
+                    re.fullmatch(r'\s+la\s+', source[chosen[index + 1][1]:chosen[index + 2][0]], re.I)):
+                anchor['typed_scope']['period_token'] = _code(index + 2)
+                if (index + 3 < len(chosen) and chosen[index + 3][3] == 'score_or_time' and
+                        re.fullmatch(r'\s*\(\s*', source[chosen[index + 2][1]:chosen[index + 3][0]]) and
+                        re.match(r'\s*\)\s*,', source[chosen[index + 3][1]:])):
+                    anchor['typed_scope']['score_token'] = _code(index + 3)
         if kind in {'away_point_result', 'recent_result_matchday'}:
             anchor['away_result_scope'] = away_result[2]
         if kind == 'unfinished_match':
@@ -1170,6 +1193,8 @@ def _grammar_hint(anchor: dict) -> str:
         return 'the other side of the same mountain range, the Alps; side is geographic, not another team'
     if kind == 'counted_goalless_draws':
         return 'exactly this number of goalless/scoreless draws; one group of draws, never draws plus additional draws or wins'
+    if kind == 'initial_passive_away_defeat':
+        return 'initial passive defeat at this same venue: the later subject lost, never a new actor named Battus defeating the opponent'
     if kind == "name":
         return "proper name; keep its actor/opponent relationship"
     if kind in {"score_or_time", "number", "ordinal", "number_word"}:
@@ -1205,7 +1230,7 @@ def _prompt(masked: str, anchors: list[dict] | None = None) -> str:
     # never protection tokens or substituted English source prose.
     names = {anchor['source']: anchor['target'] for anchor in anchors if anchor['kind'] == 'name'}
     terms = {anchor['source']: anchor['target'] for anchor in anchors if anchor['kind'] in {
-        'semantic','both_sides','result_score','result_score_final','delay_destination','standing_gap','minimum_count','basket_team_possessor','basket_three_point_count','basket_three_point_made','basket_three_point_neutral','weekday_night','zero_defeats','score_margin','named_away_venue','table_gap','linked_defeat_count','quarter_ordinal','unfinished_match','away_point_result','recent_result_matchday','deictic_acquisition','survival_without_asserted_win','geographic_landmark_side','counted_goalless_draws'}}
+        'semantic','both_sides','result_score','result_score_final','delay_destination','standing_gap','minimum_count','basket_team_possessor','basket_three_point_count','basket_three_point_made','basket_three_point_neutral','weekday_night','zero_defeats','score_margin','named_away_venue','table_gap','linked_defeat_count','quarter_ordinal','unfinished_match','away_point_result','recent_result_matchday','deictic_acquisition','survival_without_asserted_win','geographic_landmark_side','counted_goalless_draws','initial_passive_away_defeat'}}
     if names:
         guidance += 'Keep these proper names and club nicknames exactly in their canonical spellings: ' + json.dumps(names, ensure_ascii=False) + '.\n'
     if terms:
@@ -1217,6 +1242,11 @@ def _prompt(masked: str, anchors: list[dict] | None = None) -> str:
         guidance += ('Distinguish the source units: journées means matchdays, while matchs means matches or games. '
             'Do not turn a later count of matches into an additional count of matchdays.\n')
     for anchor in anchors:
+        if anchor['kind'] == 'initial_passive_away_defeat':
+            guidance += ('The initial French past participle states that the later main subject suffered a defeat at ' +
+                json.dumps(anchor['typed_scope']['venue'], ensure_ascii=False) + '. Use an initial passive clause '
+                '(Beaten at ... / Having lost at ...), preserving the venue and the later subject. '
+                'Battu/Battus/Battue/Battues is a loss predicate here, never a proper name or a subject defeating that opponent.\n')
         if anchor.get('home_result_scope'):
             guidance += ('This source event is at home against ' + json.dumps(anchor['source'], ensure_ascii=False) +
                 ' with the attached score. Keep the home role and opponent together; '
@@ -1407,6 +1437,18 @@ def _anchor_candidates(raw: str, anchor: dict, normalized_raw):
     for start, end in _literal_spans(raw, anchor["token"]):
         add(start, end, "token", "exact_token", anchor["token"])
     target, kind = anchor["target"], anchor["kind"]
+    if anchor.get('_validation_loss_twice_scope'):
+        for start, end in _literal_spans(raw, 'twice', True):
+            add(start, end, 'equivalent', 'source_explicit_two_loss_occurrences', 'twice')
+    if kind == 'initial_passive_away_defeat':
+        venue = re.escape(anchor['typed_scope']['venue'])
+        place = r'(?:at|in)' if anchor['typed_scope']['venue_is_fixture_home'] else r'(?:(?:away\s+)?(?:at|in)|away\s+to|by)'
+        loss_place = r'(?:at|in)' if anchor['typed_scope']['venue_is_fixture_home'] else r'(?:away\s+)?(?:at|in|to)'
+        passive = r'(?:beaten|defeated)\s+' + place + r'\s+'
+        loss = r'having\s+lost\s+' + loss_place + r'\s+'
+        for match in re.finditer(r'\A\s*(?:' + passive + '|' + loss + ')' + venue + r'(?!\w)', raw, re.I):
+            add(match.start(), match.end(), 'equivalent', 'same_initial_passive_defeat_and_named_venue', match.group())
+        return tuple(candidates.values())
     if kind == 'counted_goalless_draws':
         quantity = anchor['typed_scope']['quantity']
         for count in (str(quantity), _cardinal_word(quantity)):
@@ -1698,6 +1740,9 @@ def _anchor_candidates(raw: str, anchor: dict, normalized_raw):
             variants=('away to','on the ground of','away against')
         elif target.casefold()=='a draw at home':
             variants=('a draw at home','a home draw')
+        elif target.casefold() == 'stay clear of relegation' and anchor.get('source', '').casefold() == 'rester hors de la charrette':
+            variants = ('stay clear of relegation', 'stay out of relegation', 'stay out of the relegation zone',
+                'stay clear of the relegation zone', 'avoid relegation')
         elif target.casefold()=='on the hour mark':
             variants=('on the hour mark','at the hour mark','in the 60th minute','at the 60th minute')
         elif target.casefold() == 'at home' and anchor.get('home_match_scope', {}).get('rule') == 'source_explicit_match_at_home':
@@ -1777,7 +1822,8 @@ def _named_team_groups(masked: str, anchors: list[dict], fixture: dict | None) -
 
 
 def _remask_exact(raw: str, anchors: list[dict], *, named_team_groups: dict | None = None,
-                  fixture_team_names: tuple = (), home_draw_scopes: dict | None = None) -> tuple[str, dict]:
+                  fixture_team_names: tuple = (), home_draw_scopes: dict | None = None,
+                  loss_twice_scopes: dict | None = None) -> tuple[str, dict]:
     """Recover one ordered cover of exact or explicitly equivalent anchor values.
 
     Offsets are Unicode codepoint offsets into the unmodified response content.
@@ -1787,7 +1833,9 @@ def _remask_exact(raw: str, anchors: list[dict], *, named_team_groups: dict | No
     normalized_raw = _name_normalized(raw) if any(anchor["kind"] == "name" for anchor in anchors) else None
     # This is validation-only grammar, never part of a model prompt or cache
     # identity. Every use must also prove its complete local event below.
-    options = [_anchor_candidates(raw, {**anchor, '_validation_home_draw_scope': (home_draw_scopes or {}).get(anchor['token'])}, normalized_raw)
+    options = [_anchor_candidates(raw, {**anchor,
+                   '_validation_home_draw_scope': (home_draw_scopes or {}).get(anchor['token']),
+                   '_validation_loss_twice_scope': (loss_twice_scopes or {}).get(anchor['token'])}, normalized_raw)
                for anchor in anchors]
     grouped_name_indices={index+1 for index in (named_team_groups or {})}
     plural_fixture_team=False
@@ -1896,6 +1944,17 @@ def _remask_exact(raw: str, anchors: list[dict], *, named_team_groups: dict | No
         return raw, proof
     source_selected = list(zip(anchors, selected))
     by_token = {anchor["token"]: candidate for anchor, candidate in source_selected}
+    for token, scope in (loss_twice_scopes or {}).items():
+        quantity = by_token[token]
+        if raw[quantity[0]:quantity[1]].casefold() != 'twice':
+            continue
+        before, loss, following = (by_token[scope[key]] for key in ('before_token', 'loss_token', 'following_token'))
+        proven = (before[1] <= loss[0] < loss[1] <= quantity[0] < quantity[1] <= following[0] and
+            raw[before[1]:loss[0]].isspace() and raw[loss[1]:quantity[0]].isspace() and
+            bool(re.fullmatch(r'\s*,\s*', raw[quantity[1]:following[0]])))
+        proof.setdefault('scoped_twice_loss_quantities', []).append({**scope, 'token': token, 'passed': proven})
+        if not proven:
+            proof['errors'].append('source_two_losses_changed_or_detached_from_result')
     for token, scope in (home_draw_scopes or {}).items():
         home = by_token[token]
         if raw[home[0]:home[1]].casefold() != 'home':
@@ -1911,6 +1970,28 @@ def _remask_exact(raw: str, anchors: list[dict], *, named_team_groups: dict | No
         proof.setdefault('scoped_home_draw_adjectives', []).append({**scope, 'token': token, 'passed': proven})
         if not proven:
             proof['errors'].append('source_named_home_draw_event_unproven')
+    for anchor, initial in source_selected:
+        if anchor['kind'] != 'initial_passive_away_defeat':
+            continue
+        scope = anchor['typed_scope']
+        source_gap = scope.get('source_gap')
+        # The actual source's passive phrase is immediately followed by a
+        # chronological anchor. A second clause, home role or qualification
+        # cannot be inserted into this same closed gap.
+        if scope.get('following_token') and source_gap is not None and re.fullmatch(r'[\s,(]*', source_gap):
+            following = by_token[scope['following_token']]
+            proven = (initial[1] <= following[0] and
+                re.sub(r'\s+', '', raw[initial[1]:following[0]]) == re.sub(r'\s+', '', source_gap))
+            if scope.get('period_token'):
+                period = by_token[scope['period_token']]
+                proven = proven and bool(re.fullmatch(r'\s+(?:the\s+)?', raw[following[1]:period[0]], re.I))
+                if scope.get('score_token'):
+                    score = by_token[scope['score_token']]
+                    proven = (proven and bool(re.fullmatch(r'\s*\(\s*', raw[period[1]:score[0]])) and
+                        bool(re.match(r'\s*\)\s*,', raw[score[1]:])))
+            proof.setdefault('scoped_initial_passive_defeats', []).append({**scope, 'passed': proven})
+            if not proven:
+                proof['errors'].append('initial_passive_defeat_following_fact_boundary_unproven')
     for scope in (named_team_groups or {}).values():
         role,name=by_token[scope['role_token']],by_token[scope['name_token']]
         proof['scoped_named_team_nouns'].append({**scope,'reordered':name[0]<role[0],
@@ -2079,16 +2160,54 @@ def _validation_home_draw_scopes(masked: str, anchors: list[dict], fixture: dict
     return scopes
 
 
+def _validation_loss_twice_scopes(masked: str, anchors: list[dict], fixture: dict | None) -> dict:
+    """Two loss occurrences in an affirmative, multi-match result narrative."""
+    if str((fixture or {}).get('sport', (fixture or {}).get('sport_key', ''))).casefold() not in {'football', 'foot', 'soccer'}:
+        return {}
+    by_token = {anchor['token']: anchor for anchor in anchors}
+    token = TOKEN_RE.pattern
+    pattern = (r"\AMais\s+la\s+suite\s+a\s+été\s+plus\s+difficile\s+pour\s+les\s+partenaires\s+d['’]"
+        r'(?P<actor>' + token + r')\s+qui\s+ont\s+été\s+accrochés\s+par\s+(?P<opponent>' + token +
+        r')\s*\(\s*(?P<draw>' + token + r')\s*\)\s+(?P<before>' + token + r')\s+(?P<loss>' + token +
+        r')\s+à\s+(?P<quantity>' + token + r')\s+reprises,\s+(?P<following>' + token + r')')
+    match = re.match(pattern, masked, re.I)
+    if not match:
+        return {}
+    actor, opponent, draw, before, loss, quantity, following = (by_token[match[key]]
+        for key in ('actor', 'opponent', 'draw', 'before', 'loss', 'quantity', 'following'))
+    score = re.fullmatch(r'(\d+)-(\d+)', draw['source'])
+    if not (actor['kind'] == opponent['kind'] == 'name' and draw['kind'] == 'score_or_time' and
+            score and int(score[1]) == int(score[2]) and
+            before['kind'] == loss['kind'] == following['kind'] == 'semantic' and
+            before['source'].casefold() == 'avant de' and before['target'].casefold() == 'before' and
+            loss['source'].casefold() == 'perdre' and loss['target'].casefold() == 'losing' and
+            quantity['kind'] == 'number' and quantity['source'] == quantity['target'] == '2' and
+            following['source'].casefold() == 'face à' and following['target'].casefold() == 'against' and
+            sum(a['kind'] == 'score_or_time' for a in anchors) >= 3):
+        return {}
+    return {quantity['token']: {'rule': 'two_affirmative_losses_after_a_previous_draw_in_multiple_matches',
+        'before_token': before['token'], 'loss_token': loss['token'], 'following_token': following['token']}}
+
+
 def _validate(masked: str, anchors: list[dict], response: dict, *, fixture: dict | None = None) -> tuple[str, dict]:
     raw_content = str(response.get("message", {}).get("content", ""))
     named_groups=_named_team_groups(masked,anchors,fixture)
     team_names=tuple(a['target'] for a in anchors if a['kind']=='name' and _is_fixture_team_name(a['target'],fixture))
+    loss_twice_scopes = _validation_loss_twice_scopes(masked, anchors, fixture)
     raw, remasking = _remask_exact(raw_content, anchors,named_team_groups=named_groups,fixture_team_names=team_names,
-        home_draw_scopes=_validation_home_draw_scopes(masked, anchors, fixture))
+        home_draw_scopes=_validation_home_draw_scopes(masked, anchors, fixture), loss_twice_scopes=loss_twice_scopes)
     raw = raw.strip()
     expected = [anchor["token"] for anchor in anchors]
     found = TOKEN_RE.findall(raw)
     errors, warnings = list(remasking["errors"]), []
+    charrette_tokens = {a['token'] for a in anchors if a['kind'] == 'semantic' and
+        a['source'].casefold() == 'rester hors de la charrette'}
+    for span in remasking['spans']:
+        if (span['token'] in charrette_tokens and re.search(
+                r"\b(?:cannot|not|never|[a-z]+n['’]t|unable\s+to|failed\s+to|fails?\s+to)\s+(?:to\s+)?$", raw_content[:span['start']], re.I)):
+            errors.append('general_relegation_avoidance_polarity_changed')
+    if loss_twice_scopes and re.search(r'\b(?:rest|remainder)\s+of\s+(?:(?:the|this|that)\s+)?match\b', raw_content, re.I):
+        errors.append('multi_match_results_changed_to_remainder_of_one_match')
     if not raw or response.get("done_reason") == "length" or response.get("done") is False:
         errors.append("empty_or_truncated_translation")
     accepted_order = expected.copy()
@@ -2118,6 +2237,9 @@ def _validate(masked: str, anchors: list[dict], response: dict, *, fixture: dict
     named_target=TOKEN_RE.sub(lambda match:targets.get(match.group(),match.group()),raw)
     for anchor in anchors:
         scope = anchor.get('typed_scope', {})
+        if (anchor['kind'] == 'semantic' and anchor['source'].casefold() == 'rester hors de la charrette' and
+                re.search(r'\bplay[- ]?offs?\b', raw_content, re.I) and not re.search(r'\bbarrag\w*', original, re.I)):
+            errors.append('general_relegation_avoidance_changed_to_specific_playoff')
         if anchor['kind'] == 'deictic_acquisition':
             if (re.search(r'\b(?:lost|loss|losses|lose|defeat|defeated|beaten)\b', raw_content, re.I) and
                     not re.search(r'\b(?:défait\w*|battu\w*|perdu\w*|perd\w*|inclin\w*)\b', original, re.I)):
@@ -2134,6 +2256,12 @@ def _validate(masked: str, anchors: list[dict], response: dict, *, fixture: dict
             # a second uncounted group after an otherwise valid compound.
             if len(re.findall(r'\bdraws?\b', raw_content, re.I)) != len(re.findall(r'\bnuls?\b', original, re.I)):
                 errors.append('counted_draw_result_mention_count_changed')
+        elif anchor['kind'] == 'initial_passive_away_defeat':
+            if re.search(r'\bbattu(?:s|e|es)?\b', raw_content, re.I):
+                errors.append('initial_passive_defeat_left_as_untranslated_actor')
+            venue = scope['venue']
+            if len(tuple(_literal_spans(raw_content, venue, True))) != len(tuple(_literal_spans(original, venue, True))):
+                errors.append('initial_passive_defeat_venue_occurrence_count_changed')
     for group in named_groups.values():
         if sum(1 for _ in _literal_spans(named_target,group['name'],True))!=group['source_name_occurrences']:
             errors.append('protected_named_team_occurrence_count_changed')
