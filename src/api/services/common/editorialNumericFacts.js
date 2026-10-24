@@ -59,6 +59,22 @@ function normalizePairedForms(fr, en) {
       target = target.replace(english, 'paired qualitative expression');
     }
   }
+  // An opening N-event interval carries the quantity N, not a separate rank
+  // of one. License either English word order from that closed French frame;
+  // never erase first in a place/rank/finish label or an unrelated expression.
+  const countToken = '(?:\\d+|' + Object.keys(CARDINALS).sort((a, b) => b.length - a.length).join('|') + ')';
+  const eventFr = new RegExp('(?<![\\p{L}\\p{N}_])(' + countToken + ')\\s+premi(?:ers|ères)\\s+(matchs?|rencontres?|journées?)(?!\\p{L})', 'giu');
+  const eventEn = new RegExp('(?<![\\p{L}\\p{N}_])(?:first\\s+(' + countToken + ')|(' + countToken + ')\\s+first)\\s+(?:league\\s+)?(matches|games|fixtures|matchdays?)(?!\\p{L})', 'giu');
+  const intervalKey = (count, unit, language) => {
+    const token = count.toLowerCase(), value = Object.hasOwn(CARDINALS, token) ? String(CARDINALS[token]) : number(token);
+    const kind = language === 'fr' ? (unit.toLowerCase().startsWith('journée') ? 'day' : 'match') : (unit.toLowerCase().startsWith('matchday') ? 'day' : 'match');
+    return value + ':' + kind;
+  };
+  const sourceIntervals = [...source.matchAll(eventFr)].map(match => intervalKey(match[1], match[2], 'fr'));
+  const targetIntervals = [...target.matchAll(eventEn)].map(match => intervalKey(match[1] || match[2], match[3], 'en'));
+  if (targetIntervals.length && !equal(sourceIntervals, targetIntervals)) return { source, target, valid: false };
+  source = source.replace(eventFr, match => match.replace(/premi(?:ers|ères)/iu, 'opening'));
+  if (targetIntervals.length) target = target.replace(eventEn, match => match.replace(/\bfirst\b/iu, 'opening'));
   const openingFr = /(?<!\p{L})premières\s+performances(?!\p{L})/giu;
   const openingEn = /\b(?:early|initial)\s+performances\b/giu;
   const sourceOpenings = [...source.matchAll(openingFr)].length;
@@ -113,10 +129,6 @@ function normalize(value, language) {
   if (language === 'en') text = text.replace(/\b\d{1,3}(?:,\d{3})+\b/g, match => match.replace(/,/g, ''));
   text = text.replace(/\b\d{1,3}(?:[ \u00a0\u202f]\d{3})+\b/g, match => match.replace(/[ \u00a0\u202f]/g, ''));
   text = text.replace(cardinalPattern, match => String(CARDINALS[match]));
-  // "The first four matchdays" / "les 4 premières journées" expresses the
-  // same four-event interval, not a second standalone quantity of one.
-  text = text.replace(/\b(\d+)\s+premi(?:ères|ers)\b/gu, '$1 opening')
-    .replace(/\bfirst\s+(?=\d+\b|two\b|three\b|four\b|five\b|six\b|seven\b|eight\b|nine\b|ten\b)/gu, 'opening ');
   const ordinals = [];
   text = text.replace(numericOrdinal, (match, digits) => { ordinals.push(number(digits)); return digits; });
   text = text.replace(ordinalPattern, match => { const value = ORDINALS[match]; ordinals.push(String(value)); return String(value); });

@@ -18,6 +18,13 @@ const equivalent = [
   ['ordinal digit suffixes', '12ème et 14èmes', '12th and 14th'],
   ['plural ordinal interval', 'les 4 premières journées', 'the first four matchdays'],
   ['word ordinal interval', 'les quatre premières journées', 'the first four matchdays'],
+  ['opening match interval count before first', 'six premiers matchs de championnats', 'six first league matches'],
+  ['opening match interval first before count', 'six premiers matchs de championnats', 'first six league matches'],
+  ['opening match interval numeral count', 'les 6 premiers matchs', 'the 6 first games'],
+  ['opening fixture interval keeps quantity', 'les quatre premières rencontres', 'the first four fixtures'],
+  ['opening matchday interval reverse order', 'les quatre premières journées', 'the four first matchdays'],
+  ['opening intervals preserve multiplicity', '6 premiers matchs et 4 premières journées', 'six first league matches and first four matchdays'],
+  ['opening interval retains a separate first rank', '6 premiers matchs puis première place', 'first six league matches then first place'],
   ['competition name', 'Premier League, 3 victoires', 'Premier League, three wins'],
   ['leading-role idiom', 'jouer les premiers rôles avec 7 partants', 'play leading roles with 7 runners'],
   ['qualitative early performances', 'les premières performances du FCK après 6 journées', 'the early performances of FCK after 6 matchdays'],
@@ -59,6 +66,22 @@ const changed = [
   ['clock', '20h15', '20:51'],
   ['ordinal changed', '4e quart-temps', 'fifth quarter'],
   ['ordinal unit removed', '4e quart-temps', '4 quarters'],
+  ['opening interval changed count', 'six premiers matchs', 'five first league matches'],
+  ['opening interval changed numeric count', '6 premiers matchs', 'first 5 league matches'],
+  ['opening interval changed ordinal', 'six premiers matchs', 'six second league matches'],
+  ['opening interval explicit ordinal changed', 'six premiers matchs', 'six 2nd league matches'],
+  ['opening interval duplicate target', 'six premiers matchs', 'six first league matches and first six league matches'],
+  ['opening interval duplicate source', 'six premiers matchs et six premiers matchs', 'six first league matches'],
+  ['opening interval unrelated first place finishes', 'six premiers matchs', 'six first place finishes'],
+  ['opening interval hyphenated first-place finishes', 'six premiers matchs', 'six first-place finishes'],
+  ['opening interval first before counted places', 'six premiers matchs', 'first six place finishes'],
+  ['opening interval cannot erase real first place', 'six premiers matchs, 1ère place', 'six first league matches'],
+  ['opening interval cannot change another rank', 'six premiers matchs puis 4ème rang', 'first six league matches then fifth place'],
+  ['opening interval cannot change chapter rank', 'chapitre premier, six premiers matchs', 'chapter second, first six league matches'],
+  ['opening interval does not authorize an extra number', 'six premiers matchs', 'six first league matches and 3 goals'],
+  ['opening interval does not reverse directed score', 'six premiers matchs (3-1)', 'six first league matches (1-3)'],
+  ['opening interval cannot change event unit', 'six premières journées', 'six first league matches'],
+  ['opening interval cannot invent an interval without source', 'six matchs', 'first six league matches'],
   ['cardinal changed', '5 nuls', 'six draws'],
   ['repeat added', '3 points', '3 points and three goals'],
   ['relative defeat changed', '6 journées et autant de défaites', '6 matchdays and 7 defeats'],
@@ -139,6 +162,16 @@ const realGeminiParagraphs = [
     '6 - LE COLOMBAR – Récent vainqueur en steeple à Lyon, ce fils de Pastorius aborde ce Quinté+ avec des ambitions légitimes après avoir été supplémenté. Déjà compétitif à cette valeur et capable de s’adapter à l’état de la piste, il possède le profil pour jouer un premier rôle à l’arrivée.',
     "6 - LE COLOMBAR – A recent steeplechase winner at Lyon, this son of Pastorius approaches this Quinté+ with legitimate ambitions after being supplemented. Already competitive off this mark and capable of adapting to the track condition, he has the profile to play a leading role at the finish."],
 ];
+test("exact native V5 Tottenham opening interval preserves scores, ranks and quantities", () => {
+  const fr = "Malgr\u00e9 des investissements cons\u00e9quents, Tottenham d\u00e9\u00e7oit grandement depuis quelques temps. L'an pass\u00e9, la formation londonienne avait m\u00eame d\u00fb attendre la derni\u00e8re journ\u00e9e pour sauver sa t\u00eate au sein de l'\u00e9lite. L'objectif est bien \u00e9videmment d'afficher un autre visage cette saison. Malheureusement pour elle et ses supporters, la bande \u00e0 Roberto De Zerbi est reparti sur des bases pr\u00e9occupantes. En effet, les Spurs n'ont remport\u00e9 aucun de leurs six premiers matchs de championnats (3 matchs nuls et 3 d\u00e9faites). Ils ont enfin affich\u00e9 une r\u00e9action lundi dernier en prenant le dessus, \u00e0 domicile, sur le promu Coventry (3-1). Ce succ\u00e8s permet \u00e0 Tottenham de figurer aujourd'hui au 16\u00e8me rang de la premier League avec 1 point d'avance sur le premier rel\u00e9gable. Avantage Chelsea sur la forme";
+  const en = "Despite significant investments, Tottenham has been greatly disappointing for some time. Last year, the London team even had to wait until the final matchday to save their place in the elite. The objective is obviously to show a different face this season. Unfortunately for them and their supporters, Roberto De Zerbi's squad has started on a worrying note. Indeed, the Spurs have not won any of their six first league matches (3 draws and 3 defeats). They finally showed a reaction last Monday by overcoming newly promoted Coventry at home (3-1). This success allows Tottenham to currently sit in 16th place in the Premier League with 1 point ahead of the first relegation spot. Advantage Chelsea in terms of form";
+  assert.equal(equivalentNumericFacts(fr, en), true);
+  for (const mutation of [en.replace("six first league matches", "five first league matches"), en.replace("six first league matches", "six second league matches"), en.replace("16th", "15th"), en.replace("(3-1)", "(1-3)")]) {
+    assert.notEqual(mutation, en);
+    assert.equal(equivalentNumericFacts(fr, mutation), false);
+  }
+});
+
 for (const [label, fr, en] of realGeminiParagraphs) test('real Gemini V3 paragraph: ' + label, () => {
   assert.equal(equivalentNumericFacts(fr, en), true);
   const mutation = en.includes('5-point') ? en.replace('5-point', '6-point') : en.replace(/\b(?:2|6)\b/u, '7');
