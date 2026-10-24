@@ -46,12 +46,15 @@ function normalizePairedForms(fr, en) {
   // never suppress a standalone first/second or any other rank/quantity.
   const qualitativePairs = [
     [/(?<!\p{L})premier\s+poursuivant(?!\p{L})/giu, /\bclosest\s+pursuer\b/giu],
-    [/(?<!\p{L})seconde\s+partie\s+de\s+tableau(?!\p{L})/giu, /\blower\s+half\s+of\s+the\s+table\b/giu],
+    [/(?<!\p{L})seconde\s+partie\s+de\s+tableau(?!\p{L})/giu, /\b(?:lower|bottom)\s+half\s+of\s+the\s+table\b/giu],
     [/(?<!\p{L})un\s+premier\s+rôle(?!\p{L})/giu, /\ba\s+leading\s+role\b/giu],
+    [/(?<!\p{L})premier\s+match\s+de\s+la\s+saison(?!\p{L})/giu, /\bseason\s+opener\b/giu, true],
   ];
-  for (const [french, english] of qualitativePairs) {
+  for (const [french, english, requirePair] of qualitativePairs) {
     const count = [...source.matchAll(french)].length;
-    if (count && count === [...target.matchAll(english)].length) {
+    const translatedCount = [...target.matchAll(english)].length;
+    if (requirePair && translatedCount && count !== translatedCount) return { source, target, valid: false };
+    if (count && count === translatedCount) {
       source = source.replace(french, 'paired qualitative expression');
       target = target.replace(english, 'paired qualitative expression');
     }

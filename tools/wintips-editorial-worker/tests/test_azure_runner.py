@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from editorial_worker import runner, azure_translation, model_runtime, mt_translation
 from editorial_worker.translation import LocalTranslator, TranslationRejected
-from test_bilingual_runner import Api, TestTranslator, arguments, payload_item
+from test_bilingual_runner import Api, TestTranslator, arguments, payload_item, api_validation_fixture
 
 
 class AzureRunnerTests(unittest.TestCase):
@@ -46,7 +46,7 @@ class AzureRunnerTests(unittest.TestCase):
                 patch.object(model_runtime, 'managed_model', side_effect=self.trap):
             return runner.run(arguments(directory, **changes),
                 fetcher=type('Fetch', (), {'requests': 0, 'records': []})(),
-                api_client=api, translator=translator, now=instant, clock=lambda: instant)
+                api_client=api, translator=translator, now=instant, clock=lambda: instant, api_validator=api_validation_fixture)
 
     def test_cloud_preview_has_no_shared_admission_or_post_even_with_old_manage_flag(self):
         with TemporaryDirectory() as directory:

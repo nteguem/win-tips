@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from editorial_worker import model_runtime, runner
 from editorial_worker.calendar import paris_timezone
-from test_bilingual_runner import Api, TestTranslator, arguments, payload_item
+from test_bilingual_runner import Api, TestTranslator, arguments, payload_item, api_validation_fixture
 
 
 def utc(hour, minute, *, day=23, second=0):
@@ -123,7 +123,7 @@ class RunnerAdmissionTests(unittest.TestCase):
                 patch.object(runner, 'collect', return_value={'status': 'ready', 'items': [payload_item()], 'issues': []}):
             api = Api()
             report = runner.run(arguments(directory, publish=True), fetcher=object(), now=utc(8, 30),
-                                clock=lambda: utc(8, 30), api_client=api, translator=TestTranslator())
+                                clock=lambda: utc(8, 30), api_client=api, translator=TestTranslator(), api_validator=api_validation_fixture)
             self.assertTrue(report['published'])
             self.assertEqual([r for r, _ in api.calls], ['/api/internal/editorial/config', '/api/internal/editorial/import', '/api/internal/editorial/notifications/drain'])
 

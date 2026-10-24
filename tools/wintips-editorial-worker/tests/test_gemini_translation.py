@@ -22,9 +22,9 @@ KEY = 'testOnlyNotAGeminiCredential12345'
 NOW = datetime(2026, 10, 24, 8, tzinfo=timezone.utc)
 
 
-def response(texts):
+def response(texts, ids=None):
     return {'candidates': [{'finishReason': 'STOP', 'content': {'role': 'model', 'parts': [{'text':
-        json.dumps({'translations': [{'id': str(i), 'text': english_html(value)}
+        json.dumps({'translations': [{'id': str(i) if ids is None else ids[i], 'text': english_html(value)}
             for i, value in enumerate(texts)]})}]}}],
         'usageMetadata': {'promptTokenCount': 100, 'candidatesTokenCount': 80, 'totalTokenCount': 180}}
 
@@ -103,7 +103,7 @@ class GeminiTests(unittest.TestCase):
         self.assertEqual(wire['maxOutputTokens'], 8192)
         self.assertEqual(job['identity']['generation']['thinkingConfig'], wire['thinkingConfig'])
         self.assertNotIn('thinkingConfig', gemini.request_payload(self.config, [job['html']])['generationConfig'])
-        self.assertEqual(gemini.VERSION, 'gemini-html-facts-v3-sports-bounded-repair')
+        self.assertEqual(gemini.VERSION, 'gemini-html-facts-v4-rejected-subset-repair')
         for rule in ('latest/most recent matchday', 'not take on or face', 'entire top-N rank',
                 'last-season final', 'negation, inability or missed opportunity'):
             self.assertIn(rule, gemini.INSTRUCTIONS)
@@ -135,7 +135,7 @@ class GeminiTests(unittest.TestCase):
             def set_feedback(self, value): self.feedback = deepcopy(value)
             def __call__(self, texts, timeout):
                 self.calls.append((deepcopy(texts), deepcopy(self.feedback)))
-                raw = response(texts)
+                raw = response(texts, self.feedback['fragmentIds'] if self.feedback else None)
                 if len(self.calls) == 1:
                     rows = json.loads(raw['candidates'][0]['content']['parts'][0]['text'])
                     rows['translations'][-1]['text'] = rows['translations'][-1]['text'].replace('</div>', ' 3 points</div>')
@@ -148,15 +148,16 @@ class GeminiTests(unittest.TestCase):
         translator.prepare_batch(source)
         self.assertEqual(source, before)
         self.assertEqual(len(request.calls), 2)
-        self.assertEqual(request.calls[0][0], request.calls[1][0])
+        self.assertEqual(request.calls[1][0], [request.calls[0][0][1]])
         self.assertIsNone(request.calls[0][1])
         feedback = request.calls[1][1]
         self.assertTrue(feedback['candidateIsUntrusted'])
-        self.assertEqual(feedback['rejections'], [{'id': '1', 'code': 'gemini_unprotected_number_added'}])
-        self.assertIn('3 points', feedback['rejectedTranslations'][1]['text'])
+        self.assertEqual([(row['id'], row['code']) for row in feedback['rejections']], [('1', 'gemini_unprotected_number_added')])
+        self.assertIn('3 points', feedback['rejectedTranslations'][0]['text'])
         wire = gemini.request_payload(self.config, request.calls[1][0], feedback)
         data = json.loads(wire['contents'][0]['parts'][0]['text'])
-        self.assertEqual([row['text'] for row in data['fragments']], request.calls[0][0])
+        self.assertEqual([row['text'] for row in data['fragments']], request.calls[1][0])
+        self.assertEqual([row['id'] for row in data['fragments']], ['1'])
         self.assertEqual(data['contentRepairFeedback'], feedback)
         self.assertNotIn('3 points', wire['systemInstruction']['parts'][0]['text'])
         self.assertIsNone(request.feedback)
@@ -166,7 +167,7 @@ class GeminiTests(unittest.TestCase):
         self.assertEqual(translator.attempts[1]['contentRepairRound'], 1)
         usage = json.loads((self.root / 'quota/usage.json').read_bytes())
         self.assertEqual(usage['days']['2026-10-24'], sum(row['inputCharactersReserved'] for row in translator.attempts))
-        self.assertGreater(translator.attempts[1]['inputCharactersReserved'], translator.attempts[0]['inputCharactersReserved'])
+        self.assertGreater(translator.attempts[1]['inputCharactersReserved'], gemini._characters(request.calls[1][0][0]))
         self.assertTrue(any(json.loads(path.read_bytes())['repairFeedback'] is not None
             for path in (self.root / 'gemini/native').glob('*.json')))
 
@@ -174,7 +175,7 @@ class GeminiTests(unittest.TestCase):
         calls = []
         def bad(texts, timeout):
             calls.append(texts)
-            raw = response(texts)
+            raw = response(texts, ['1'] if len(calls) > 1 else None)
             rows = json.loads(raw['candidates'][0]['content']['parts'][0]['text'])
             rows['translations'][-1]['text'] += ' 7 goals'
             raw['candidates'][0]['content']['parts'][0]['text'] = json.dumps(rows)
@@ -186,11 +187,11 @@ class GeminiTests(unittest.TestCase):
         self.assertFalse((self.root / 'gemini/responses').exists())
         self.assertTrue(all(row['rejection']['candidateHtml'] for row in translator.attempts))
 
-    def test_repair_revalidates_previously_good_rows_and_cannot_ignore_a_new_defect(self):
+    def test_repair_new_defect_in_requested_subset_still_blocks_entire_batch(self):
         calls = []
         def request(texts, timeout):
             calls.append(texts)
-            raw = response(texts)
+            raw = response(texts, ['1'] if len(calls) > 1 else None)
             rows = json.loads(raw['candidates'][0]['content']['parts'][0]['text'])
             index = 1 if len(calls) == 1 else 0
             rows['translations'][index]['text'] = rows['translations'][index]['text'].replace('</div>', ' 9 wins</div>')
@@ -199,7 +200,7 @@ class GeminiTests(unittest.TestCase):
         translator = self.translator(request)
         with self.assertRaises(TranslationRejected): translator.prepare_batch({'items': [item()]})
         self.assertEqual(len(calls), 2)
-        self.assertEqual([row['rejection']['id'] for row in translator.attempts], ['1', '0'])
+        self.assertEqual([row['rejection']['id'] for row in translator.attempts], ['1', '1'])
         self.assertEqual(translator.prepared, {})
         self.assertFalse((self.root / 'gemini/responses').exists())
 
@@ -274,8 +275,10 @@ class GeminiTests(unittest.TestCase):
                 gemini._validated(source, item(), bad)
 
     def test_one_invalid_row_rejects_complete_response_and_retains_reason_raw(self):
+        calls = []
         def request(texts, timeout):
-            result = response(texts)
+            calls.append(texts)
+            result = response(texts, ['1'] if len(calls) > 1 else None)
             rows = json.loads(result['candidates'][0]['content']['parts'][0]['text'])
             rows['translations'][-1]['text'] = rows['translations'][-1]['text'].replace('>2<', '>9<')
             result['candidates'][0]['content']['parts'][0]['text'] = json.dumps(rows)

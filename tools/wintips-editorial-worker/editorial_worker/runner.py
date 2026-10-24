@@ -11,6 +11,7 @@ from pathlib import Path
 import re
 import sys
 from urllib.parse import urlsplit
+from urllib.error import HTTPError
 from urllib.request import Request, HTTPRedirectHandler, ProxyHandler, build_opener
 
 from .http import PublicFetcher
@@ -79,6 +80,37 @@ class NoRedirect(HTTPRedirectHandler):
         raise ValueError("api_redirect_forbidden")
 
 
+class ApiHttpError(ValueError):
+    """Only a status and a known short machine code may leave the HTTP layer."""
+    def __init__(self, status, api_code=None):
+        self.code = 'api_http_' + str(status)
+        self.http_diagnostic = {'status': status}
+        if api_code is not None:
+            self.http_diagnostic['apiCode'] = api_code
+        super().__init__(self.code)
+
+
+def api_http_error(error):
+    status = error.code if type(error.code) is int and 100 <= error.code <= 599 else 500
+    code = None
+    try:
+        raw = error.read(16_385)
+        if len(raw) <= 16_384:
+            body = json.loads(raw)
+            candidate = body.get('error', {}).get('code') if isinstance(body, dict) and isinstance(body.get('error'), dict) else None
+            known = {'VALIDATION_ERROR', 'AUTH_TOKEN_MISSING', 'AUTH_INVALID_TOKEN', 'FORBIDDEN',
+                'NOT_FOUND', 'SERVICE_UNAVAILABLE', 'INTERNAL_ERROR', 'SUBSCRIPTION_REQUIRED', 'RESOURCE_LOCKED'}
+            if isinstance(candidate, str) and re.fullmatch(r'[A-Z][A-Z0-9_]{1,48}', candidate) and candidate in known:
+                code = candidate
+            elif type(candidate) is int and candidate in {400, 401, 403, 404, 409, 422, 429, 500, 503, 11000}:
+                code = candidate
+    except Exception:
+        pass
+    finally:
+        error.close()
+    return ApiHttpError(status, code)
+
+
 class ApiClient:
     def __init__(self, base, token):
         u = urlsplit(base)
@@ -97,11 +129,14 @@ class ApiClient:
         request = Request(self.base + route, data=data, method="GET" if payload is None else "POST",
                           headers={"Authorization": "Bearer " + self.token, "Content-Type": "application/json",
                                    "Accept": "application/json", "User-Agent": "WinTipsEditorialWorker/0.1"})
-        with self.opener.open(request, timeout=140 if route.endswith('/notifications/drain') else 140 if payload is not None else 40) as response:
-            raw = response.read(4_000_001)
-            if len(raw) > 4_000_000:
-                raise ValueError("api_response_too_large")
-            result = json.loads(raw)
+        try:
+            with self.opener.open(request, timeout=140 if route.endswith('/notifications/drain') else 140 if payload is not None else 40) as response:
+                raw = response.read(4_000_001)
+                if len(raw) > 4_000_000:
+                    raise ValueError("api_response_too_large")
+                result = json.loads(raw)
+        except HTTPError as error:
+            raise api_http_error(error) from None
         if result.get("success") is not True or not isinstance(result.get("data"), dict):
             raise ValueError("worker_api_rejected")
         return result["data"]
@@ -209,7 +244,7 @@ def translation_failure_audit(error, translator, payload, first_record=0, first_
         'publicationAllowed': False}
 
 
-def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock=None):
+def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock=None, api_validator=None):
     instant = now or datetime.now(timezone.utc)
     edition = args.edition or edition_day(instant).isoformat()
     if date.fromisoformat(edition).isoformat() != edition or args.minimum_lead_minutes < 30:
@@ -359,6 +394,10 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
                         raise ValueError('edition_changed_during_collection')
                     for item in payload['items']:
                         validate_item(item, source, edition, check_clock, args.minimum_lead_minutes)
+                    from .api_preflight import validate_api_payload
+                    row['apiPreflight'] = (api_validator or validate_api_payload)(payload, check_clock)
+                    if row['apiPreflight'].get('passed') is not True:
+                        raise ValueError('api_validator_rejected')
                     outcome = client.request('/api/internal/editorial/import', payload)
                     row['imported'] = True
                     row['apiResult'] = outcome
@@ -367,6 +406,10 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
                 except Exception as exc:
                     row['status'] = 'import_blocked'
                     row['issues'].append(safe_reason(exc))
+                    if hasattr(exc, 'audit'):
+                        row['apiPreflight'] = exc.audit
+                    if isinstance(exc, ApiHttpError):
+                        row['apiHttpError'] = exc.http_diagnostic
                     report['blocked'] = True
         # Resume pending delivery even on a day/run with no new source item.
         # A preview never calls this POST route or any provider.
@@ -377,6 +420,8 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
                 report['notificationsAccepted'] += int(outcome.get('sent', 0))
             except Exception as exc:
                 report['notificationDrain'] = {'pending': True, 'reason': safe_reason(exc)}
+                if isinstance(exc, ApiHttpError):
+                    report['notificationDrain']['apiHttpError'] = exc.http_diagnostic
                 report['blocked'] = True
         report['notificationsSent'] = report['notificationsAccepted'] > 0
         report["publicRequests"] = getattr(fetched, "requests", None)
@@ -414,8 +459,9 @@ def main(argv=None):
         return 2 if report.get('blocked') else 0
     except Exception as exc:
         # Credentials and server response bodies are deliberately omitted.
+        diagnostic = {'apiHttpError': exc.http_diagnostic} if isinstance(exc, ApiHttpError) else {}
         print(json.dumps({"status": "blocked", "errorType": type(exc).__name__,
-                          "reason": str(exc)[:150], "notificationsSent": False}, ensure_ascii=True), file=sys.stderr)
+                          "reason": str(exc)[:150], "notificationsSent": False, **diagnostic}, ensure_ascii=True), file=sys.stderr)
         return 1
 
 

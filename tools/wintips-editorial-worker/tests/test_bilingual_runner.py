@@ -35,6 +35,11 @@ class TestTranslator:
         return 'Test selection'
 
 
+def api_validation_fixture(payload, now=None):
+    """Orchestration-only stub; these small payloads are not API-schema proofs."""
+    return {'passed': True}
+
+
 class Api:
     def __init__(self, active=True):
         self.calls = []
@@ -64,7 +69,7 @@ class BilingualRunnerTests(unittest.TestCase):
     def run_case(self, directory, api, translator, **changes):
         with patch.object(runner, 'collect', return_value={'status': 'ready', 'items': [payload_item()], 'issues': []}):
             return runner.run(arguments(directory, **changes), fetcher=type('Fetch', (), {'requests': 0, 'records': []})(),
-                now=self.clock(), clock=self.clock, api_client=api, translator=translator)
+                now=self.clock(), clock=self.clock, api_client=api, translator=translator, api_validator=api_validation_fixture)
 
     def test_translated_preview_adds_real_fields_without_any_post(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -139,7 +144,7 @@ class BilingualRunnerTests(unittest.TestCase):
                 with patch.object(runner, 'collect', side_effect=collect):
                     result = runner.run(arguments(directory, publish=True, source=['rdj_petit_journal', 'rdj_turf_quinte']),
                         fetcher=type('Fetch', (), {'requests': 0, 'records': []})(), now=self.clock(), clock=self.clock,
-                        api_client=api, translator=TestTranslator())
+                        api_client=api, translator=TestTranslator(), api_validator=api_validation_fixture)
                 self.assertEqual(result['sources'][0]['status'], 'source_blocked')
                 self.assertTrue(result['sources'][1]['imported'])
                 self.assertEqual(api.calls[-1][0], '/api/internal/editorial/notifications/drain')
