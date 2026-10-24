@@ -22,7 +22,7 @@ import urllib.request
 
 
 PROMPT_VERSION = "fr-en-anchors-v8-sports-name-guidance"
-GUARD_VERSION = "ordered-anchors-v43-wintips-away-points-recent-round"
+GUARD_VERSION = "ordered-anchors-v44-wintips-acquisition-geography-stadium"
 TOKEN_RE = re.compile(r"ZXQ[A-Z]+QXZ")
 NUMBER_RE = re.compile(r"(?<!\w)[+-]?\s*\d+(?:[.,:]\d+)*(?:\s*[%€$])?(?!\w)")
 FRENCH_WORDS = re.compile(r"\b(?:avec|dans|leurs|leur|pour|cette|ces|étaient|était|mais|donc|ainsi|lors|depuis|toujours|également|notamment|cependant|aujourd'hui)\b", re.I)
@@ -101,6 +101,9 @@ NAMES = {"Mayence": "Mainz", "Fribourg": "Freiburg", "Nimègue": "Nijmegen", "Ni
 # The club itself uses both forms: https://www.ga-eagles.nl/licja/
 NAME_EQUIVALENTS = (("GA Eagles", "Go Ahead Eagles"), ("Nijmegen", "Nimègue", "Nimégue"),
                    ("NEC Nijmegen", "NEC Nimègue", "NEC Nimégue"))
+# These are typed geographical/venue facts, never aliases for a team or player.
+ALPS_GEOGRAPHY_SOURCES = ("https://www.alpconv.org/fr/page-daccueil/", "https://www.alpconv.org/en/home")
+CERAMICA_STADIUM_SOURCE = "https://villarrealcf.es/en/datos-del-club/"
 NUMBER_WORDS = {"zéro": "zero", "un": "one", "une": "one", "deux": "two", "trois": "three", "quatre": "four",
                 "cinq": "five", "six": "six", "sept": "seven", "huit": "eight", "neuf": "nine", "dix": "ten"}
 STOP_NAMES = set("Le La Les Un Une Des Du De En Dans Pour Sur Avec Sans Après Avant Ils Il Elle Elles Ce Ces Cette Son Sa Ses Cest C'était Mais Et Malgré Lors Si Aussi Enfin Au Aux Tenu Tenus Opposé Opposés C Du côté Au-delà Pronostic Pronostics".casefold().split())
@@ -708,6 +711,7 @@ def _protect(source: str, fixture: dict) -> tuple[str, list[dict]]:
         raise TranslationError("source_token_collision", "Source contains a reserved protection token")
     candidates = []
     unfinished_matches = {}
+    typed_scopes = {}
     away_result = _away_point_source_frame(source, fixture)
     def add(start, end, target, kind, priority):
         candidates.append((priority, end - start, start, end, target, kind))
@@ -716,6 +720,23 @@ def _protect(source: str, fixture: dict) -> tuple[str, list[dict]]:
         quantity = 'one point' if scope['quantity'] == 1 else 'three points'
         add(*predicate, 'earned ' + quantity + ' away to ' + scope['venue'], 'away_point_result', 7)
         add(*recent, 'during the latest matchday', 'recent_result_matchday', 7)
+    sport = str(fixture.get('sport', fixture.get('sport_key', ''))).casefold()
+    if sport in {'football', 'foot', 'soccer'}:
+        explicit_names = tuple(name.strip() for name in
+            (fixture.get('home'), fixture.get('away'), *fixture.get('protected_names', []))
+            if isinstance(name, str) and name.strip())
+        acquisition = re.match(r"(?:Celle-ci|Celle-là)\s+a\s+été\s+(?:décrochée|obtenue|acquise)\b", source)
+        if acquisition and not any(re.match(re.escape(name) + r'(?!\w)', source, re.I) for name in explicit_names):
+            add(acquisition.start(), acquisition.end(), 'this was secured', 'deictic_acquisition', 7)
+            typed_scopes[acquisition.start()] = {'rule': 'affirmative_singular_deictic_passive_acquisition'}
+        for survival in re.finditer(r"\bmaintien\s+acquis\s+à\s+l['’]arraché\s+contre\s+(?P<opponent>" + NAME_RE.pattern + r")", source):
+            add(survival.start(), survival.end(), 'survival narrowly secured against ' + survival['opponent'], 'survival_without_asserted_win', 7)
+            typed_scopes[survival.start()] = {'rule': 'league_survival_does_not_assert_match_victory', 'opponent': survival['opponent']}
+        for geography in re.finditer(r"\bde\s+l['’]autre\s+côté\s+des\s+Alpes\b", source):
+            if not any(_normalize(name) == 'alpes' for name in explicit_names):
+                add(geography.start(), geography.end(), 'on the other side of the Alps', 'geographic_landmark_side', 7)
+                typed_scopes[geography.start()] = {'rule': 'same_geographic_mountain_range_not_team_side',
+                    'sourceName': 'Alpes', 'targetName': 'Alps', 'sources': list(ALPS_GEOGRAPHY_SOURCES)}
     initial_numbers = "|".join(re.escape(word) for word in sorted(NUMBER_WORDS, key=len, reverse=True) if word not in {"un", "une"})
     for match in re.finditer(r"\b(\d{1,3}|" + initial_numbers + r")\s+premi(?:ers|ères)\b", source, re.I):
         value = int(match[1]) if match[1].isdigit() else CARDINAL_VALUES.get(NUMBER_WORDS[match[1].lower()])
@@ -1015,6 +1036,8 @@ def _protect(source: str, fixture: dict) -> tuple[str, list[dict]]:
         token = _code(index)
         result += [source[cursor:start], token]
         anchor = {"token": token, "source": source[start:end], "target": target, "kind": kind}
+        if kind in {'deictic_acquisition', 'survival_without_asserted_win', 'geographic_landmark_side'}:
+            anchor['typed_scope'] = typed_scopes[start]
         if kind in {'away_point_result', 'recent_result_matchday'}:
             anchor['away_result_scope'] = away_result[2]
         if kind == 'unfinished_match':
@@ -1034,6 +1057,13 @@ def _protect(source: str, fixture: dict) -> tuple[str, list[dict]]:
                 re.search(r"\bdu côté de\s+$", source[:start], re.I) and
                 re.match(r"\s+entre\s+(?:deux|2)\s+équipes\b", source[end:], re.I)):
             anchor["venue_scope"] = {"rule": "source_venue_between_two_teams"}
+        if (kind == 'name' and sport in {'football', 'foot', 'soccer'} and
+                _normalize(source[start:end]) == 'ceramica' and
+                re.search(r'\bà\s+la\s+$', source[:start], re.I) and
+                index + 1 < len(chosen) and chosen[index + 1][2:] == ('Villarreal', 'name') and
+                re.fullmatch(r'\s+de\s+', source[end:chosen[index + 1][0]], re.I)):
+            anchor['venue_scope'] = {'rule': 'verified_stadium_location', 'sourceUrl': CERAMICA_STADIUM_SOURCE,
+                'owner': 'Villarreal', 'owner_token': _code(index + 1)}
         if kind == "draw_result_event":
             anchor["draw_result_event"] = draw_events[start]
         if kind == "semantic" and target.casefold() == "crowned champions":
@@ -1116,6 +1146,12 @@ def _grammar_hint(anchor: dict) -> str:
         return 'same affirmative past actor, obtained point quantity and named away venue; only this predicate can use either internal order'
     if kind == 'recent_result_matchday':
         return 'latest or most recent completed matchday in this past-result frame, never an asserted final matchday of the season'
+    if kind == 'deictic_acquisition':
+        return 'this/it/that was secured, earned or achieved: affirmative acquisition, never a loss or an untranslated French name'
+    if kind == 'survival_without_asserted_win':
+        return 'league survival secured against this opponent; the source does not assert winning that individual match'
+    if kind == 'geographic_landmark_side':
+        return 'the other side of the same mountain range, the Alps; side is geographic, not another team'
     if kind == "name":
         return "proper name; keep its actor/opponent relationship"
     if kind in {"score_or_time", "number", "ordinal", "number_word"}:
@@ -1151,7 +1187,7 @@ def _prompt(masked: str, anchors: list[dict] | None = None) -> str:
     # never protection tokens or substituted English source prose.
     names = {anchor['source']: anchor['target'] for anchor in anchors if anchor['kind'] == 'name'}
     terms = {anchor['source']: anchor['target'] for anchor in anchors if anchor['kind'] in {
-        'semantic','both_sides','result_score','result_score_final','delay_destination','standing_gap','minimum_count','basket_team_possessor','basket_three_point_count','basket_three_point_made','basket_three_point_neutral','weekday_night','zero_defeats','score_margin','named_away_venue','table_gap','linked_defeat_count','quarter_ordinal','unfinished_match','away_point_result','recent_result_matchday'}}
+        'semantic','both_sides','result_score','result_score_final','delay_destination','standing_gap','minimum_count','basket_team_possessor','basket_three_point_count','basket_three_point_made','basket_three_point_neutral','weekday_night','zero_defeats','score_margin','named_away_venue','table_gap','linked_defeat_count','quarter_ordinal','unfinished_match','away_point_result','recent_result_matchday','deictic_acquisition','survival_without_asserted_win','geographic_landmark_side'}}
     if names:
         guidance += 'Keep these proper names and club nicknames exactly in their canonical spellings: ' + json.dumps(names, ensure_ascii=False) + '.\n'
     if terms:
@@ -1343,6 +1379,21 @@ def _anchor_candidates(raw: str, anchor: dict, normalized_raw):
     for start, end in _literal_spans(raw, anchor["token"]):
         add(start, end, "token", "exact_token", anchor["token"])
     target, kind = anchor["target"], anchor["kind"]
+    if kind == 'deictic_acquisition':
+        for match in re.finditer(r'\A\s*(?:this|it|that)\s+(?:was|has\s+been)\s+(?:secured|achieved|earned|obtained)\b', raw, re.I):
+            add(match.start(), match.end(), 'equivalent', 'same_affirmative_deictic_acquisition', match.group())
+        return tuple(candidates.values())
+    if kind == 'survival_without_asserted_win':
+        opponent = re.escape(anchor['typed_scope']['opponent'])
+        pattern = r'\bsurvival\s+(?:narrowly\s+)?(?:secured|achieved|earned|obtained)(?:\s+(?:only|narrowly))?\s+against\s+' + opponent + r'(?!\w)'
+        for match in re.finditer(pattern, raw, re.I):
+            add(match.start(), match.end(), 'equivalent', 'same_survival_without_invented_match_result', match.group())
+        return tuple(candidates.values())
+    if kind == 'geographic_landmark_side':
+        for variant in ('on the other side of the Alps', 'on the other side of the Alpes'):
+            for start, end in _literal_spans(raw, variant, True):
+                add(start, end, 'equivalent', 'same_typed_geographic_side_and_mountain_range', variant)
+        return tuple(candidates.values())
     if kind in {'away_point_result', 'recent_result_matchday'}:
         group = 'predicate' if kind == 'away_point_result' else 'recent'
         for frame in _away_point_target_frames(raw, anchor['away_result_scope']):
@@ -1832,8 +1883,12 @@ def _remask_exact(raw: str, anchors: list[dict], *, named_team_groups: dict | No
         # The source explicitly places the event at this venue BETWEEN two
         # teams. It cannot become a third actor facing/playing those teams.
         # Unrelated grammatical "at" elsewhere is intentionally not counted.
-        proven = (bool(re.search(r"\b(?:at|in)\s+(?:the\s+)?$", raw[:venue[0]], re.I)) and
-                  bool(re.match(r"\s+between\s+(?:the\s+)?(?:two|2)\b", raw[venue[1]:], re.I)))
+        location_prefix = bool(re.search(r"\b(?:at|in)\s+(?:the\s+)?$", raw[:venue[0]], re.I))
+        if anchor['venue_scope']['rule'] == 'verified_stadium_location':
+            owner = by_token[anchor['venue_scope']['owner_token']]
+            proven = location_prefix and owner[0] >= venue[1] and bool(re.fullmatch(r'\s+(?:of|de)\s+', raw[venue[1]:owner[0]], re.I))
+        else:
+            proven = location_prefix and bool(re.match(r"\s+between\s+(?:the\s+)?(?:two|2)\b", raw[venue[1]:], re.I))
         proof["scoped_venues"].append({**anchor["venue_scope"], "token": anchor["token"], "passed": proven,
             "raw_venue_span": [venue[0], venue[1]]})
         if not proven:
@@ -1950,6 +2005,19 @@ def _validate(masked: str, anchors: list[dict], response: dict, *, fixture: dict
     # Count on the full restored target, including exact protection tokens.
     targets={anchor['token']:anchor['target'] for anchor in anchors}
     named_target=TOKEN_RE.sub(lambda match:targets.get(match.group(),match.group()),raw)
+    for anchor in anchors:
+        scope = anchor.get('typed_scope', {})
+        if anchor['kind'] == 'deictic_acquisition':
+            if (re.search(r'\b(?:lost|loss|losses|lose|defeat|defeated|beaten)\b', raw_content, re.I) and
+                    not re.search(r'\b(?:défait\w*|battu\w*|perdu\w*|perd\w*|inclin\w*)\b', original, re.I)):
+                errors.append('positive_acquisition_changed_to_unasserted_loss')
+        elif anchor['kind'] == 'geographic_landmark_side':
+            if len(re.findall(r'\b(?:Alpes|Alps)\b', raw_content, re.I)) != len(re.findall(r'\bAlpes\b', original, re.I)):
+                errors.append('typed_geographic_landmark_occurrence_count_changed')
+        elif anchor['kind'] == 'survival_without_asserted_win':
+            opponent = scope['opponent']
+            if len(tuple(_literal_spans(raw_content, opponent, True))) != len(tuple(_literal_spans(original, opponent, True))):
+                errors.append('survival_opponent_occurrence_count_changed')
     for group in named_groups.values():
         if sum(1 for _ in _literal_spans(named_target,group['name'],True))!=group['source_name_occurrences']:
             errors.append('protected_named_team_occurrence_count_changed')

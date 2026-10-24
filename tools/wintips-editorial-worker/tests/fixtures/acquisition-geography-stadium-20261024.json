@@ -1,0 +1,194 @@
+{
+  "provenanceManifestSha256": "8e8cb0abbc20568323a17eabc6e964b7d603dcb3331477891f1b3dabf8018f63",
+  "editionDate": "2026-10-24",
+  "officialTypedFacts": [
+    {
+      "role": "stadium",
+      "name": "Estadio de la Ceramica",
+      "owner": "Villarreal",
+      "url": "https://villarrealcf.es/en/datos-del-club/"
+    },
+    {
+      "role": "same_mountain_range",
+      "french": "Alpes",
+      "english": "Alps",
+      "urls": [
+        "https://www.alpconv.org/fr/page-daccueil/",
+        "https://www.alpconv.org/en/home"
+      ]
+    }
+  ],
+  "responses": [
+    {
+      "nativeFile": "dccf9f1e1df714bf4914b3a5e91d2466e037e310ec111f1076da333f8a4f2a90.json",
+      "nativeSha256": "d5b08500687a8ade1860100fdfb247b0d905a2483299b4144c602598e4ff3084",
+      "sourceId": "5749712",
+      "sourceUrl": "https://www.ruedesjoueurs.com/pronostic/como-sassuolo-5749712.html",
+      "teams": {
+        "home": {
+          "name": "Como",
+          "logo": "https://img.ruedesjoueurs.com/img/10171-4.png"
+        },
+        "away": {
+          "name": "Sassuolo",
+          "logo": "https://img.ruedesjoueurs.com/img/7943-4.png"
+        }
+      },
+      "source": "La formation lombarde a désormais l'ambition de s'affirmer de façon pérenne parmi les places fortes de l'autre côté des Alpes.",
+      "target": "The Lombard team now aims to establish itself permanently among the strong teams on the other side of the Alps.",
+      "expectedPassedAfterFix": true
+    },
+    {
+      "nativeFile": "1832e5a448c438fd22b9081de4a1ad89f71fcc18047382403b7a6b85c1dd0155.json",
+      "nativeSha256": "3ae92ff8308e63075d5e5b0214bd4aab3996ccbe5fc8ea65501ec8a3cbcb691a",
+      "sourceId": "5749712",
+      "sourceUrl": "https://www.ruedesjoueurs.com/pronostic/como-sassuolo-5749712.html",
+      "teams": {
+        "home": {
+          "name": "Como",
+          "logo": "https://img.ruedesjoueurs.com/img/10171-4.png"
+        },
+        "away": {
+          "name": "Sassuolo",
+          "logo": "https://img.ruedesjoueurs.com/img/7943-4.png"
+        }
+      },
+      "source": "La formation lombarde a désormais l'ambition de s'affirmer de façon pérenne parmi les places fortes de l'autre côté des Alpes.",
+      "target": "The Lombard team now aims to establish itself as a consistently strong force on the other side of the Alps.",
+      "expectedPassedAfterFix": true
+    },
+    {
+      "nativeFile": "e2d63034a4d9a49d944fb1d69ca46da91897127532a5afae0f8130ef1f64153f.json",
+      "nativeSha256": "98307d12c17a755f540380fddff73b8756d6b1ce8253c02785668204bf1b9359",
+      "sourceId": "5749712",
+      "sourceUrl": "https://www.ruedesjoueurs.com/pronostic/como-sassuolo-5749712.html",
+      "teams": {
+        "home": {
+          "name": "Como",
+          "logo": "https://img.ruedesjoueurs.com/img/10171-4.png"
+        },
+        "away": {
+          "name": "Sassuolo",
+          "logo": "https://img.ruedesjoueurs.com/img/7943-4.png"
+        }
+      },
+      "source": "La formation lombarde a désormais l'ambition de s'affirmer de façon pérenne parmi les places fortes de l'autre côté des Alpes.",
+      "target": "The Lombard team now aims to establish itself as a consistent force among the strong teams on the other side of the Alps.",
+      "expectedPassedAfterFix": true
+    },
+    {
+      "nativeFile": "a8723c6c9890de5e23f9611d255002ec7217b0276ffc86846d865ce8778369a3.json",
+      "nativeSha256": "097e8ca1a881b9682413a62ea582faab576f495bcec7246dca8c34caa95b1e09",
+      "sourceId": "5868107",
+      "sourceUrl": "https://www.ruedesjoueurs.com/pronostic/rayo-vallecano-elche-5868107.html",
+      "teams": {
+        "home": {
+          "name": "Rayo Vallecano",
+          "logo": "https://img.ruedesjoueurs.com/img/8370-8.png"
+        },
+        "away": {
+          "name": "Elche",
+          "logo": "https://img.ruedesjoueurs.com/img/10268-8.png"
+        }
+      },
+      "source": "Celle-ci a été décrochée sur la pelouse de l'Espanyol Barcelone avant la coupure internationale (1-3).",
+      "target": "This was secured on Espanyol Barcelone's pitch before the international break (1-3).",
+      "expectedPassedAfterFix": true
+    },
+    {
+      "nativeFile": "1fbca9d7f8f0d3ff4363872a131d84136d5df44ae908426d4d98c3998ceddbc8.json",
+      "nativeSha256": "8c2b7728bef2095043a863b1c1bf04d13a04c387b5850a6e5eb7944766d7b365",
+      "sourceId": "5868107",
+      "sourceUrl": "https://www.ruedesjoueurs.com/pronostic/rayo-vallecano-elche-5868107.html",
+      "teams": {
+        "home": {
+          "name": "Rayo Vallecano",
+          "logo": "https://img.ruedesjoueurs.com/img/8370-8.png"
+        },
+        "away": {
+          "name": "Elche",
+          "logo": "https://img.ruedesjoueurs.com/img/10268-8.png"
+        }
+      },
+      "source": "Celle-ci a été décrochée sur la pelouse de l'Espanyol Barcelone avant la coupure internationale (1-3).",
+      "target": "Celle-ci lost on the pitch at Espanyol Barcelone before the international break (1-3).",
+      "expectedPassedAfterFix": false
+    },
+    {
+      "nativeFile": "026bbc0d3b342e0edcb24d3d7f439da728c14baa745958c1b6330d2e14eca8f5.json",
+      "nativeSha256": "e3aedabfef300c5a12ff537894eac6f529ecfda1d3844e14faa9176b9d1dce25",
+      "sourceId": "5868107",
+      "sourceUrl": "https://www.ruedesjoueurs.com/pronostic/rayo-vallecano-elche-5868107.html",
+      "teams": {
+        "home": {
+          "name": "Rayo Vallecano",
+          "logo": "https://img.ruedesjoueurs.com/img/8370-8.png"
+        },
+        "away": {
+          "name": "Elche",
+          "logo": "https://img.ruedesjoueurs.com/img/10268-8.png"
+        }
+      },
+      "source": "Depuis le retour de trêve, les Franjiverdes ont paraphé deux matchs nuls et vierges face au Celta Vigo à la maison (0-0) et le week-end dernier à la Ceramica de Villarreal (0-0), ce qui reste, dans le fond, assez encourageant pour les coéquipiers de Thomas Lemar.",
+      "target": "Since the return from the break, the Franjiverdes have recorded two clean draws at home against Celta Vigo (0-0) and last weekend against the Ceramica of Villarreal (0-0), which remains quite encouraging for the teammates of Thomas Lemar.",
+      "expectedPassedAfterFix": false
+    },
+    {
+      "nativeFile": "3824e5587bf42ad631305409236f4f482e11c4335e5a380fa4f2957b877a6621.json",
+      "nativeSha256": "b9693cb6fe895d2f867afb9f4db9cd313fe503b4d22712cd3ec21d22eed2e908",
+      "sourceId": "5868107",
+      "sourceUrl": "https://www.ruedesjoueurs.com/pronostic/rayo-vallecano-elche-5868107.html",
+      "teams": {
+        "home": {
+          "name": "Rayo Vallecano",
+          "logo": "https://img.ruedesjoueurs.com/img/8370-8.png"
+        },
+        "away": {
+          "name": "Elche",
+          "logo": "https://img.ruedesjoueurs.com/img/10268-8.png"
+        }
+      },
+      "source": "Déjà en sursis la saison passée avec un maintien acquis à l'arraché contre Girona, Elche se retrouve aujourd'hui relégable, à la 18ème place, avec seulement une petite victoire à son actif.",
+      "target": "Already on precarious terms last season with survival secured only against Girona, Elche finds itself today in the relegation zone, in 18th place, with only one small win to its name.",
+      "expectedPassedAfterFix": true
+    },
+    {
+      "nativeFile": "9e5b581ce361971d73533d9652bb2e64e1b4dbd518d95ff2fcf2e551f9f092b0.json",
+      "nativeSha256": "c6cce38abbe3451ceabb63d57dc80a660fb5389f086b4127423e04df23c9bd83",
+      "sourceId": "5868107",
+      "sourceUrl": "https://www.ruedesjoueurs.com/pronostic/rayo-vallecano-elche-5868107.html",
+      "teams": {
+        "home": {
+          "name": "Rayo Vallecano",
+          "logo": "https://img.ruedesjoueurs.com/img/8370-8.png"
+        },
+        "away": {
+          "name": "Elche",
+          "logo": "https://img.ruedesjoueurs.com/img/10268-8.png"
+        }
+      },
+      "source": "Déjà en sursis la saison passée avec un maintien acquis à l'arraché contre Girona, Elche se retrouve aujourd'hui relégable, à la 18ème place, avec seulement une petite victoire à son actif.",
+      "target": "Having already been in a precarious position last season, narrowly avoiding relegation with a victory against Girona, Elche now finds itself in a relegation zone, in 18th place, with only one victory to its name.",
+      "expectedPassedAfterFix": false
+    },
+    {
+      "nativeFile": "c416efdfaede42ce691eea98077c70c609ecb48ab06adab968da847f3a402008.json",
+      "nativeSha256": "e6b7475af5fb829f7e43ac1879adaf373ca377daefc3e1cc27976c01da5f7043",
+      "sourceId": "5868107",
+      "sourceUrl": "https://www.ruedesjoueurs.com/pronostic/rayo-vallecano-elche-5868107.html",
+      "teams": {
+        "home": {
+          "name": "Rayo Vallecano",
+          "logo": "https://img.ruedesjoueurs.com/img/8370-8.png"
+        },
+        "away": {
+          "name": "Elche",
+          "logo": "https://img.ruedesjoueurs.com/img/10268-8.png"
+        }
+      },
+      "source": "Déjà en sursis la saison passée avec un maintien acquis à l'arraché contre Girona, Elche se retrouve aujourd'hui relégable, à la 18ème place, avec seulement une petite victoire à son actif.",
+      "target": "Already on life support last season, hanging on to survival with a win against Girona at the very end, Elche finds itself in the relegation zone today, in 18th place, with only a small victory to its name.",
+      "expectedPassedAfterFix": false
+    }
+  ]
+}
