@@ -383,7 +383,73 @@ def _runners(root, url):
     return result
 
 
-def parse_turf(page, edition):
+def _turf_analysis_url(root, course_url):
+    """Follow the course's authored analysis link, never a related-news search."""
+    links = []
+    for node in rdj.find(root, lambda n: n.tag == "a" and n.attrs.get("href")):
+        if not rdj.folded(node.plain()).startswith("analyse complete de la course"):
+            continue
+        href = source_url(node.attrs["href"], course_url)
+        checked(re.fullmatch(r"/turf/pronostic-turf/pronostics-quinte/\d+-[^/?#]+\.html", urlsplit(href).path), "race_analysis_url_invalid")
+        if href not in links:
+            links.append(href)
+    checked(bool(links), "analysis_missing")
+    checked(len(links) == 1, "race_analysis_link_ambiguous")
+    return links[0]
+
+
+def _turf_linked_analysis(page, course_root, course_url, edition, identity, race_name, racecourse, starts, runners, distance):
+    checked(page.url == _turf_analysis_url(course_root, course_url), "race_analysis_redirect_conflict")
+    root = page_root(page)
+    article = rdj.one(rdj.find(root, lambda n: n.tag == "article" and n.has_class("news-article")), "race analysis article")
+    title = rdj.folded(rdj.one(rdj.find(article, lambda n: n.tag == "h1"), "race analysis h1").plain())
+    title = re.sub(r"\s*[–—-]\s*", " - ", title)
+    match = re.fullmatch(r"pronostic quinte du (?:(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche) )?(\d{1,2})(?:er)? (" + "|".join(rdj.MONTHS) + r")(?: (\d{4}))? a (.+?) - (.+?) - r(\d+)c(\d+)", title)
+    checked(match is not None, "race_analysis_title_missing")
+    day = date.fromisoformat(edition)
+    checked(int(match[2]) == day.day and rdj.MONTHS[match[3]] == day.month
+            and (not match[4] or int(match[4]) == day.year)
+            and (not match[1] or match[1] == rdj.WEEKDAYS[day.weekday()]), "race_analysis_wrong_date")
+    checked(match[5] == rdj.folded(racecourse) and match[6] == rdj.folded(race_name)
+            and match[7] == identity[2] and match[8] == identity[3], "race_analysis_identity_conflict")
+    # This editorial backlink includes the full year and exact course slug;
+    # the article can legitimately have been published the previous day.
+    fiche = rdj.one(rdj.find(article, lambda n: n.has_class("news-fiche")), "race analysis course reference")
+    backlinks = [source_url(n.attrs["href"], page.url) for n in rdj.find(fiche, lambda n: n.tag == "a" and n.attrs.get("href"))]
+    checked(backlinks == [course_url], "race_analysis_course_reference_conflict")
+    body = rdj.one(rdj.find(article, lambda n: n.attrs.get("id") == "articleMainContent"), "race analysis body")
+    conditions = rdj.one(rdj.find(body, lambda n: n.has_class("course-block")), "race analysis conditions")
+    header = rdj.folded(rdj.one(rdj.find(conditions, lambda n: n.has_class("course-header")), "race analysis conditions header").plain())
+    header = re.sub(r"\s*[–—-]\s*", " - ", header)
+    expected_header = (rdj.folded(race_name) + " - " + rdj.folded(racecourse) + " - r" + identity[2] + "c" + identity[3]
+                       + " - " + starts.astimezone(paris_timezone()).strftime("%Hh%M"))
+    checked(header == expected_header, "race_analysis_conditions_conflict")
+    values = {}
+    for row in rdj.find(conditions, lambda n: n.has_class("course-row")):
+        label, separator, value = rdj.folded(row.plain()).partition(":")
+        checked(separator and label.strip() not in values, "race_analysis_conditions_ambiguous")
+        values[label.strip()] = value.strip()
+    checked(values.get("epreuve") == rdj.folded(race_name)
+            and values.get("partants") == str(len(runners))
+            and re.fullmatch(r"[\d ]+\s*m", values.get("distance", "")) is not None
+            and int(values["distance"].replace("m", "").replace(" ", "")) == distance, "race_analysis_conditions_conflict")
+    focus = rdj.one(rdj.find(body, lambda n: n.has_class("focus-block")), "race analysis focus")
+    texts, seen = [], set()
+    names = {row["number"]: rdj.folded(row["name"]) for row in runners}
+    for node in rdj.find(focus, lambda n: n.has_class("focus-item")):
+        text = node.plain()
+        match = re.fullmatch(r"(\d+)\s*[-–—]\s*(.+?)\s+[–—]\s+(.+)", text)
+        checked(match and len(match[3].split()) >= 12, "race_analysis_horse_text_missing")
+        number = int(match[1])
+        checked(number not in seen and names.get(number) == rdj.folded(match[2]), "race_analysis_runner_conflict")
+        checked(not any("sponsored" in (n.attrs.get("rel") or "") for n in node.walk()), "race_analysis_sponsored")
+        seen.add(number)
+        texts.append(text)
+    checked(bool(texts), "analysis_missing")
+    return texts
+
+
+def parse_turf(page, edition, *, analysis_page=None):
     root = page_root(page)
     identity = RACE_PATH.fullmatch(urlsplit(page.url).path)
     checked(identity is not None, "invalid_race_url")
@@ -416,6 +482,9 @@ def parse_turf(page, edition):
         if isinstance(node, rdj.Node) and node.tag == "p" and len(node.plain().split()) >= 12:
             if not any("sponsored" in (n.attrs.get("rel") or "") for n in node.walk()):
                 text.append(node.plain())
+    if not text and analysis_page is not None:
+        text = _turf_linked_analysis(analysis_page, root, page.url, edition, identity, label[3], racecourse,
+                                     starts, runners, int(distance[1].replace(" ", "")))
     return {"source": "rdj_turf_quinte", "sourceId": edition + "-R" + identity[2] + "C" + identity[3],
             "sourceUrl": page.url, "editionDate": edition, "kind": "horse_racing",
             "title": {"fr": label[3] + " · " + racecourse},
@@ -445,7 +514,18 @@ def collect_turf(edition, fetcher, *, now, resolver=None, lead=30, limit=1):
     if not links:
         return {"status": "source_absent", "items": [], "issues": []}
     checked(len(links) <= limit, "quinte_identity_ambiguous")
-    items = [parse_turf(fetcher.html(url), edition) for url in links]
+    items = []
+    for url in links:
+        page = fetcher.html(url)
+        checked(page.url == url, "race_redirect_conflict")
+        try:
+            item = parse_turf(page, edition)
+        except ParseError as exc:
+            if str(exc) != "analysis_missing":
+                raise
+            article_url = _turf_analysis_url(page_root(page), page.url)
+            item = parse_turf(page, edition, analysis_page=fetcher.html(article_url))
+        items.append(item)
     items = [item for item in items if eligible(item, edition, now, lead)]
     return {"status": "ready" if items else "outside_publication_window", "items": items, "issues": []}
 

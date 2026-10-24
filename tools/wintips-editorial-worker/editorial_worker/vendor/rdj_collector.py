@@ -513,6 +513,136 @@ def _detail(page: FetchedPage) -> dict:
             "expert_headline": _expert_headline(root)}
 
 
+def _prediction_id(url: str) -> str | None:
+    match = re.fullmatch(r"/pronostic/(?!statistiques/)[^/?#]+-(\d+)\.html", urlsplit(url).path)
+    return match[1] if match else None
+
+
+def _matching_prediction_links(page: FetchedPage, logos: list[str]) -> dict[str, str]:
+    """Discover only links visibly bound to the card's ordered participant logos.
+
+    A navigation ancestor containing many games is never a participant proof.
+    URL slugs and article IDs are read from RDJ, never constructed from names.
+    """
+    candidates = {}
+    for link in find(Document(page.html).root, lambda n: n.tag == "a" and bool(n.attrs.get("href"))):
+        try:
+            url = rdj_url(link.attrs["href"], page.url)
+        except SourceError:
+            continue
+        identity = _prediction_id(url)
+        if identity is None:
+            continue
+        scope = link
+        for _ in range(3):
+            identities = _logo_ids(scope)
+            if identities:
+                if identities == logos:
+                    candidates.setdefault(identity, url)
+                break
+            scope = scope.parent
+            if scope is None:
+                break
+    return candidates
+
+
+def _card_detail(page: FetchedPage, target: str, logos: list[str], competition: str,
+                 card_time: datetime, edition: date, journal_url: str, resolver,
+                 expected_sport: str | None = None) -> tuple[dict, str, dict]:
+    if _prediction_id(page.url) != _prediction_id(target):
+        raise SourceError("prediction_redirect_mismatch", "Linked prediction redirected to another event")
+    detail = _detail(page)
+    if len(logos) != 2 or logos != detail["participant_logos"]:
+        raise SourceError("participant_mismatch", "Journal and prediction participant logos do not agree in home/away order")
+    if folded(detail["competition"]) != folded(competition):
+        raise SourceError("competition_conflict", "Journal and detailed prediction name different competitions")
+    if expected_sport is not None and detail["sport"] != expected_sport:
+        raise SourceError("sport_conflict", "Replacement prediction belongs to another sport")
+    fixture = {"id": _prediction_id(target), "source_url": page.url, "journal_source_url": journal_url,
+               "kickoff_local": {"journal": card_time.isoformat(), "detail": detail["kickoff"].isoformat(), "timezone": None},
+               **{key: detail[key] for key in ("home", "away", "sport", "competition")}}
+    if "gender" in detail:
+        fixture["gender"] = detail["gender"]
+    kickoff, proof = _utc(fixture, card_time, detail["kickoff"], edition, resolver)
+    return detail, kickoff, proof
+
+
+def _resolve_card_detail(target: str, journal: FetchedPage, logos: list[str], competition: str,
+                         card_time: datetime, edition: date, resolver, fetcher, records: list):
+    """Repair a bad publisher link only with one fully verified RDJ event.
+
+    Search already-read pages first, then at most one explicitly named league
+    index. At most eight logo-bound candidate event IDs may be inspected. Any
+    unavailable candidate makes uniqueness unproven; no partial result escapes.
+    """
+    page = None
+    expected_sport = None
+    try:
+        page = _fetch(fetcher, target, records)
+        detail, kickoff, proof = _card_detail(page, target, logos, competition, card_time, edition, journal.url, resolver)
+        return page, detail, kickoff, proof, None
+    except SourceError as original:
+        # A missing/ambiguous card identity cannot be repaired by discovery.
+        if len(logos) != 2:
+            raise original
+        if page is not None:
+            try:
+                parsed = _detail(page)
+                expected_sport = parsed["sport"]
+                original.detail_clock = parsed["kickoff"].isoformat()
+            except SourceError:
+                pass
+        pages = [journal] + ([page] if page is not None else [])
+        candidates = {}
+        for document in pages:
+            candidates.update(_matching_prediction_links(document, logos))
+        candidates.pop(_prediction_id(target), None)
+        if not candidates:
+            indexes = set()
+            for document in pages:
+                for link in find(Document(document.html).root, lambda n: n.tag == "a" and bool(n.attrs.get("href"))):
+                    label = folded(link.plain())
+                    if label not in {folded(competition), "tous les matchs de la " + folded(competition)}:
+                        continue
+                    try:
+                        url = rdj_url(link.attrs["href"], document.url)
+                    except SourceError:
+                        continue
+                    if re.fullmatch(r"/pronostics/[^/?#]+\.html", urlsplit(url).path) and not urlsplit(url).query:
+                        indexes.add(url)
+            if len(indexes) == 1:
+                try:
+                    index = _fetch(fetcher, indexes.pop(), records)
+                except SourceError:
+                    raise original
+                candidates.update(_matching_prediction_links(index, logos))
+                candidates.pop(_prediction_id(target), None)
+        if not candidates:
+            raise original
+        if len(candidates) > 8:
+            raise SourceError("prediction_resolution_limit", "Too many logo-bound replacement events")
+        accepted, rejected = [], []
+        for identity, candidate in sorted(candidates.items()):
+            try:
+                candidate_page = _fetch(fetcher, candidate, records)
+            except SourceError as exc:
+                raise SourceError("prediction_resolution_incomplete", "Cannot verify every logo-bound replacement event") from exc
+            try:
+                candidate_detail, kickoff, proof = _card_detail(candidate_page, candidate, logos, competition,
+                    card_time, edition, journal.url, resolver, expected_sport)
+            except SourceError as exc:
+                rejected.append({"source_url": candidate, "code": exc.code})
+                continue
+            accepted.append((candidate_page, candidate_detail, kickoff, proof))
+        if len(accepted) > 1:
+            raise SourceError("prediction_resolution_ambiguous", "Several replacement events match the card facts")
+        if not accepted:
+            raise original
+        return (*accepted[0], {"method": "rdj_unique_participant_event", "original_source_url": target,
+            "original_error": original.code, "resolved_source_url": accepted[0][0].url,
+            "participant_logo_ids": logos, "candidate_count": len(candidates), "rejected_candidates": rejected})
+
+
 def _provider_proof(resolved: dict, parts, fixture: dict, edition: date) -> bool:
     """ESPN is a bounded provider proof, never an official league schedule."""
     match = re.fullmatch(r"/apis/site/v2/sports/(soccer/(fra\.[12]|eng\.1|esp\.1|ita\.1|ger\.1)|tennis/(atp|wta)|basketball/(nba))/scoreboard", parts.path)
@@ -656,9 +786,6 @@ def collect_edition(edition: str, fetcher=None, *, kickoff_resolver=None, now: d
                 target = rdj_url(one(links, "card complete-analysis link").attrs.get("href") or "", journal.url)
                 if not re.fullmatch(r"/pronostic/(?!statistiques/)[^?#]+-\d+\.html", urlsplit(target).path):
                     raise SourceError("prediction_link_invalid", "Card does not link to a supported prediction page")
-                if target in seen:
-                    raise SourceError("duplicate_card", "Several journal cards link to the same event")
-                seen.add(target)
                 competition = one(find(card, lambda n: n.tag == "h2"), "card competition").plain()
                 match_block = one(find(card, lambda n: folded(n.attrs.get("aria-label") or "") == "match"), "card event time block")
                 card_time, card_raw = _event_datetime(match_block)
@@ -668,22 +795,17 @@ def collect_edition(edition: str, fetcher=None, *, kickoff_resolver=None, now: d
                 if not any(0 <= (event_day - day).days <= 1 for event_day in event_dates):
                     raise SourceError("card_date_outside_edition", "Card is neither edition day nor its following night")
                 pick, odds = _card_market(card)
-                page = _fetch(fetcher, target, records)
-                requested_id = re.search(r"-(\d+)\.html$", urlsplit(target).path)[1]
-                final_id = re.search(r"-(\d+)\.html$", urlsplit(page.url).path)
-                if final_id is None or final_id[1] != requested_id:
-                    raise SourceError("prediction_redirect_mismatch", "Linked prediction redirected to another event")
-                detail = _detail(page)
-                source_clocks["detail"] = detail["kickoff"].isoformat()
                 card_logos = _logo_ids(match_block)
-                if len(card_logos) != 2 or card_logos != detail["participant_logos"]:
-                    raise SourceError("participant_mismatch", "Journal and prediction participant logos do not agree in home/away order")
-                if folded(detail["competition"]) != folded(competition):
-                    raise SourceError("competition_conflict", "Journal and detailed prediction name different competitions")
+                page, detail, kickoff, kickoff_proof, resolution = _resolve_card_detail(target, journal,
+                    card_logos, competition, card_time, day, kickoff_resolver, fetcher, records)
+                source_clocks["detail"] = detail["kickoff"].isoformat()
+                if _prediction_id(page.url) in seen:
+                    raise SourceError("duplicate_card", "Several journal cards resolve to the same event")
+                seen.add(_prediction_id(page.url))
                 summaries = [n.plain() for n in find(card, lambda n: n.tag == "p") if len(n.plain().split()) >= 15]
                 if not summaries:
                     raise SourceError("card_summary_missing", "No authentic journal teaser paragraph")
-                fixture = {"id": re.search(r"-(\d+)\.html$", urlsplit(target).path)[1],
+                fixture = {"id": _prediction_id(page.url),
                     **{key: detail[key] for key in ("home", "away", "sport", "competition", "headline_fr", "analysis_fr", "image_url", "gender")},
                     "pick_fr": pick, "odds": float(odds), "source_url": page.url, "journal_source_url": journal.url,
                     "card_summary_fr": "\n\n".join(summaries),
@@ -697,9 +819,13 @@ def collect_edition(edition: str, fetcher=None, *, kickoff_resolver=None, now: d
                         "participant_logo_ids": card_logos,
                         "detail_priced_markets": detail["detail_priced_markets"]}}
                 fixture["teaser_fr"], fixture["provenance"]["teaser"] = _short_teaser(detail["home"], detail["away"], pick, detail["expert_headline"], page.url)
-                fixture["kickoff_utc"], fixture["provenance"]["kickoff_resolution"] = _utc(fixture, card_time, detail["kickoff"], day, kickoff_resolver)
+                fixture["kickoff_utc"], fixture["provenance"]["kickoff_resolution"] = kickoff, kickoff_proof
+                if resolution is not None:
+                    fixture["provenance"]["prediction_link_resolution"] = resolution
                 fixtures.append(fixture)
             except (SourceError, OSError) as exc:
+                if getattr(exc, "detail_clock", None):
+                    source_clocks["detail"] = exc.detail_clock
                 result["issues"].append({"code": getattr(exc, "code", "source_unavailable"), "card_index": index,
                                          "detail": str(exc), "source_clocks": source_clocks})
         result["provenance"]["parsed_card_count"] = len(fixtures)

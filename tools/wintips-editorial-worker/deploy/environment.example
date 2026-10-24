@@ -1,18 +1,16 @@
 # Review the API origin before deployment. Real secrets stay outside Git.
 WINTIPS_EDITORIAL_API_BASE=https://api.wintips-expert.com
 WINTIPS_EDITORIAL_WORKER_TOKEN=
-# Preparation only: a dedicated Azure Translator resource must use F0.
-# No account/key is created here. Never put the real key in Git or a command.
-WINTIPS_EDITORIAL_TRANSLATOR=azure
-WINTIPS_EDITORIAL_AZURE_TIER=F0
-WINTIPS_EDITORIAL_AZURE_KEY=
-# Required for a regional resource; empty only for a global resource.
-WINTIPS_EDITORIAL_AZURE_REGION=
-# Conservative reservations include HTML markup and every retry.
-WINTIPS_EDITORIAL_AZURE_DAILY_CHARACTERS=100000
-WINTIPS_EDITORIAL_AZURE_MONTHLY_CHARACTERS=1800000
-# Shared by EVERY cache/preview using this resource; never reset on --output.
-WINTIPS_EDITORIAL_AZURE_QUOTA_DIR=/var/lib/wintips-editorial-worker/azure-quota
+# Explicit cloud provider. Put the credential in a private EnvironmentFile.
+# No account/key is created here. Never commit a real key.
+WINTIPS_EDITORIAL_TRANSLATOR=gemini
+WINTIPS_EDITORIAL_GEMINI_KEY=
+WINTIPS_EDITORIAL_GEMINI_MODEL=gemini-3.5-flash-lite
+# Shared budget across BOTH workers using the same Google project/key.
+WINTIPS_EDITORIAL_GEMINI_DAILY_CHARACTERS=100000
+WINTIPS_EDITORIAL_GEMINI_MONTHLY_CHARACTERS=3000000
+WINTIPS_EDITORIAL_GEMINI_QUOTA_DIR=/var/lib/rdj-gemini-quota
+# Install the reviewed Gemini service drop-in granting this shared path.
 # Cloud mode ignores local-model settings and never falls back to them.
 WINTIPS_EDITORIAL_MANAGE_MODEL=false
 # The following flags belong to the API environment, NOT this worker file:

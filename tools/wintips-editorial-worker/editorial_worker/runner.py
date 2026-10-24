@@ -146,6 +146,10 @@ def validate_item(item, source, edition, now, lead):
 
 def make_translator(args, output, resources):
     mode = os.environ.get('WINTIPS_EDITORIAL_TRANSLATOR', 'ollama')
+    if mode == 'gemini':
+        from .gemini_translation import create_translator_from_env
+        return create_translator_from_env(cache_dir=output / 'translation-cache',
+            max_seconds=min(getattr(args, 'translation_max_seconds', 1200), 600))
     if mode == 'azure':
         from .azure_translation import create_translator_from_env
         return create_translator_from_env(cache_dir=output / 'translation-cache',
@@ -176,6 +180,33 @@ def make_translator(args, output, resources):
 def safe_reason(error):
     code = getattr(error, 'code', None)
     return code if isinstance(code, str) and re.fullmatch(r'[A-Za-z0-9_]{1,100}', code) else type(error).__name__
+
+
+def translation_failure_audit(error, translator, payload, first_record=0, first_attempt=0):
+    """Retain content/guard evidence; never serialize exception/provider messages.
+
+    Audit artifacts belong to the private worker state, not the API payload.
+    Bounds prevent a malformed external response from making reports unbounded.
+    """
+    def safe(value, depth=0):
+        if depth > 12: return {'auditLimit': 'depth'}
+        if isinstance(value, str): return value if len(value) <= 30_000 else value[:30_000] + '[audit truncated]'
+        if value is None or type(value) in (bool, int): return value
+        if type(value) is float: return value if value == value and abs(value) != float('inf') else None
+        if isinstance(value, list): return [safe(row, depth + 1) for row in value[:500]]
+        if isinstance(value, dict):
+            return {str(key): safe(row, depth + 1) for key, row in list(value.items())[:500]
+                if isinstance(key, str) and not re.search(r'api.?key|authorization|bearer|secret|password|credential|^token$', key, re.I)}
+        return type(value).__name__
+    details = safe(getattr(error, 'audit', {}))
+    return {'status': 'rejected', 'reason': safe_reason(error),
+        'source': payload.get('source'), 'editionDate': payload.get('editionDate'),
+        'payloadSha256': hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True,
+            separators=(',', ':'), allow_nan=False).encode('utf-8')).hexdigest(),
+        'provider': getattr(translator, 'provider', 'local'),
+        'details': details, 'records': safe(getattr(translator, 'records', [])[first_record:]),
+        'cloudAttempts': safe(getattr(translator, 'attempts', [])[first_attempt:]),
+        'publicationAllowed': False}
 
 
 def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock=None):
@@ -267,7 +298,7 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
         # safely before BigWin, defer the complete delivery phase without waiting
         # for, acquiring, or keeping any shared model lock.
         if (bilingual and os.environ.get('WINTIPS_EDITORIAL_MANAGE_MODEL') == 'true' and
-                os.environ.get('WINTIPS_EDITORIAL_TRANSLATOR', 'ollama') != 'azure'):
+                os.environ.get('WINTIPS_EDITORIAL_TRANSLATOR', 'ollama') not in {'azure', 'gemini'}):
             from .model_runtime import RuntimeDeferred, require_admission
             try:
                 require_admission(clock() if clock else datetime.now(timezone.utc), getattr(args, 'translation_max_seconds', 1200))
@@ -281,6 +312,8 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
                 row['status'] = 'deferred_shared_window'
                 row['issues'].append(report['deferred']['reason'])
                 continue
+            first_record = len(getattr(translator, 'records', []))
+            first_attempt = len(getattr(translator, 'attempts', []))
             try:
                 if bilingual:
                     from .translation import translate_batch, require_bilingual
@@ -295,12 +328,21 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
                     row['bilingual'] = True
                 prepared.append((source, payload, row))
             except Exception as exc:
-                if os.environ.get('WINTIPS_EDITORIAL_TRANSLATOR', 'ollama') != 'azure':
+                if os.environ.get('WINTIPS_EDITORIAL_TRANSLATOR', 'ollama') not in {'azure', 'gemini'}:
                     from .model_runtime import RuntimeDeferred
                     if isinstance(exc, RuntimeDeferred):
                         report['deferred'] = {'reason': exc.code, **exc.window}
                 row['status'] = 'translation_blocked' if bilingual else 'source_blocked'
                 row['issues'].append(safe_reason(exc))
+                if bilingual:
+                    failure_file = output / 'translation-audits' / edition / (source + '.failed.json')
+                    try:
+                        from .azure_translation import _write_private
+                        _write_private(failure_file, translation_failure_audit(exc, translator, payload,
+                            first_record, first_attempt))
+                        row['translationFailureAuditFile'] = str(failure_file)
+                    except Exception as audit_error:
+                        row['translationFailureAuditError'] = safe_reason(audit_error)
                 report['blocked'] = True
         # Do not keep model RAM/shared locks during database writes or FCM waits.
         try:

@@ -1,0 +1,5 @@
+# Install as a service drop-in only after Gemini qualification and operator GO.
+# This file contains no credential and does not activate a timer or publication.
+[Service]
+EnvironmentFile=/etc/journal-parieur-worker/gemini.env
+ReadWritePaths=/var/lib/rdj-gemini-quota

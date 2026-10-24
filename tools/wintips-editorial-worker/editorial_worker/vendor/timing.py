@@ -144,15 +144,21 @@ class OfficialKickoffs:
                 day = target + timedelta(days=offset)
                 url = ESPN_BASE + route + '/scoreboard?dates=' + day.strftime('%Y%m%d')
                 if url in self.provider_errors:
-                    raise ValueError('ESPN scoreboard unavailable during this resolver run')
+                    if offset == 0:
+                        raise ValueError('ESPN edition-day scoreboard unavailable during this resolver run')
+                    continue
                 try:
                     data = self._load(url)
                 except (OSError, ValueError, TypeError):
                     self.provider_errors.add(url)
-                    raise
+                    if offset == 0:
+                        raise
+                    continue
                 if not isinstance(data, dict) or not isinstance(data.get('events'), list):
                     self.provider_errors.add(url)
-                    raise ValueError('Unexpected ESPN scoreboard schema')
+                    if offset == 0:
+                        raise ValueError('Unexpected ESPN edition-day scoreboard schema')
+                    continue
                 yield url, data
     @staticmethod
     def _provider_unique(candidates):

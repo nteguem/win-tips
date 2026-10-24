@@ -1,2 +1,3 @@
 # Fixture hashes bind exact bytes on Windows and Linux; preserve canonical LF.
 *.html text eol=lf
+rdj-petit-20261024-excerpt.json text eol=lf

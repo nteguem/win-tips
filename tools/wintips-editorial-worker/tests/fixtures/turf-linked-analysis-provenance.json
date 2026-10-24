@@ -1,0 +1,22 @@
+[
+  {
+    "file": "turf-2026-10-24-course.html",
+    "sourceUrl": "https://www.ruedesjoueurs.com/turf/pronostic-turf/course/24-10-2026/R1/C3/prix-de-beaune.html",
+    "fixtureSha256": "c52f78021a284ffa3e9d6bbb5765e149a54e65179fd27ba21c0d1ba81591e301",
+    "bytes": 179929,
+    "sourceSnapshotSha256": "fbe7d67f7ce9305dcf3478c9567cbdf4c865a706209cacc4b3afd128440c3bdd",
+    "sourceSnapshotBytes": 180317,
+    "fixtureTransform": "CRLF to LF only, per tests/fixtures/.gitattributes; original authorized snapshot unchanged under qa/manual-journal-20261024/wintips/sources",
+    "readAtUtc": "2026-10-24T07:33:02.814259+00:00"
+  },
+  {
+    "file": "turf-2026-10-24-analysis.html",
+    "sourceUrl": "https://www.ruedesjoueurs.com/turf/pronostic-turf/pronostics-quinte/74776-pronostic-quinte-du-samedi-24-octobre-a-compiegne-prix-de-beaune-r1c3.html",
+    "fixtureSha256": "6e8299bc773e5047dd7380a8b779dbedefc5b143adf542eae859082152f41ecf",
+    "bytes": 140332,
+    "sourceSnapshotSha256": "ea4fc0b0d48ec1888437d00d35cc96da3513540ad3b2b5dc69b1a2286887be05",
+    "sourceSnapshotBytes": 141153,
+    "fixtureTransform": "CRLF to LF only, per tests/fixtures/.gitattributes; original authorized snapshot unchanged under qa/manual-journal-20261024/wintips/sources",
+    "readAtUtc": "2026-10-24T07:33:05.597295+00:00"
+  }
+]

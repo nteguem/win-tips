@@ -1,0 +1,4 @@
+# Production-only drop-in after explicit publication GO.
+# Keep the unarmed installer template non-persistent.
+[Timer]
+Persistent=true

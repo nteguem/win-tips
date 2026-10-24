@@ -752,7 +752,7 @@ def translate_batch(payload, translator):
         raise TranslationRejected("french_or_structural_fact_changed")
     audit = {"version": getattr(translator, 'version', VERSION), "records": translator.records[before:],
              "frAndStructuralFactsPreserved": True, "languageReviewRequired": True}
-    if getattr(translator, 'provider', None) == 'azure':
-        audit['provider'] = 'azure'
+    if getattr(translator, 'provider', None) in {'azure', 'gemini'}:
+        audit['provider'] = translator.provider
         audit['cloudAttempts'] = deepcopy(translator.attempts[first_attempt:])
     return result, audit
