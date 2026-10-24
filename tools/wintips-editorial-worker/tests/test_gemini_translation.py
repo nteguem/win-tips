@@ -93,6 +93,29 @@ class GeminiTests(unittest.TestCase):
         changed['analysis']['en'] = ['Old English ignored']
         self.assertEqual(translator.job(source, changed)['key'], original)
 
+    def test_sports_contract_and_38_low_thinking_are_bound_to_wire_and_cache(self):
+        settings = replace(self.config, model='gemini-3.8-flash')
+        translator = self.translator(config=settings)
+        source = item()['summary']['fr']
+        job = translator.job(source, item())
+        wire = gemini.request_payload(settings, [job['html']])['generationConfig']
+        self.assertEqual(wire['thinkingConfig'], {'thinkingLevel': 'LOW'})
+        self.assertEqual(wire['maxOutputTokens'], 8192)
+        self.assertEqual(job['identity']['generation']['thinkingConfig'], wire['thinkingConfig'])
+        self.assertNotIn('thinkingConfig', gemini.request_payload(self.config, [job['html']])['generationConfig'])
+        self.assertEqual(gemini.VERSION, 'gemini-html-facts-v2-sports-domain')
+        for rule in ('latest/most recent matchday', 'not take on or face', 'entire top-N rank',
+                'last-season final', 'negation, inability or missed opportunity'):
+            self.assertIn(rule, gemini.INSTRUCTIONS)
+        for forbidden in ('Rayo', 'Philadelphie', 'MON PETIT PRINCE', '6014367'):
+            self.assertNotIn(forbidden, gemini.INSTRUCTIONS)
+        original = job['key']
+        with patch.object(gemini, 'VERSION', 'gemini-html-facts-v1'):
+            self.assertNotEqual(translator.job(source, item())['key'], original)
+        with patch.object(gemini, 'generation_options', return_value={
+                'temperature': 0, 'candidateCount': 1, 'maxOutputTokens': 8192}):
+            self.assertNotEqual(translator.job(source, item())['key'], original)
+
     def test_cache_saved_passed_cannot_override_fact_revalidation(self):
         source = item()['analysis']['fr'][0]['paragraphs'][0]
         self.translator().text(source, item())

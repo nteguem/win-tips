@@ -40,11 +40,13 @@ CARDINALS = {
     'seize': 'sixteen', 'dix-sept': 'seventeen', 'dix-huit': 'eighteen',
     'dix-neuf': 'nineteen', 'vingt': 'twenty',
 }
-NUMBERS = re.compile(r'(?<!\w)[+\-−]?\s*\d+(?:[.,:/\-–−]\d+)*(?:er|re|ème|eme|e|st|nd|rd|th)?(?:\s*[%€$])?(?!\w)', re.I)
+NUMBERS = re.compile(r'(?<!\w)[+\-−]?\s*\d+(?:[.,:/\-–−]\d+)*(?:ers?|res?|èmes?|emes?|es?|st|nd|rd|th)?(?:\s*[%€$])?(?!\w)', re.I)
 WRITTEN = re.compile(r'(?<![\w-])(?:' + '|'.join(sorted(CARDINALS, key=len, reverse=True)) + r')(?![\w-])', re.I)
 NUMBER_UNIT = re.compile(r'^\s+(?:(?:derniers?|dernières?|premiers?|premières?|autres?|petits?|seuls?|seules?)\s+)*(?:points?|buts?|victoires?|défaites?|matchs?|matches|rencontres?|parties?|équipes?|joueurs?|hommes?|chevaux|partants?|tirs?|rebonds?|titres?|saisons?|ans?|années?|jours?|journées?|mois|minutes?|secondes?|quarts?[- ]temps|sets?|reprises?|fois|podiums?|sorties?|courses?|départs?|participations?|accessits?|places?)\b', re.I)
 RANK_UNIT = re.compile(r'^\s+(?:premiers|premières)\b', re.I)
 RANK_PREFIX = re.compile(r'\b(?:dans|parmi)\s+les\s*$', re.I)
+RANK_NUMBER = re.compile(r'(?<![\w-])(?P<count>\d+|' + '|'.join(sorted(CARDINALS, key=len, reverse=True)) +
+    r')\s+(?:premiers|premières)\b(?=\s*(?:$|[.,;:!?)])|\s+(?:du|des|de)\b|\s+à\s+l[\'’]arrivée\b)', re.I)
 ALPHANUMERIC_FACT = re.compile(r'(?<!\w)[+\-−]?(?=[\w-]*\d)[\w-]+(?!\w)')
 ONE = re.compile(r'\b(?:un|une)(?=\s+(?:(?:seul|seule|petit|petite)\s+)*(?:point|but|victoire|défaite|match|rencontre|titre|saison|an|année|jour)\b)', re.I)
 EXTRA_NUMBER = re.compile(r'\d|\b(?:' + '|'.join(CARDINALS.values()) + r')\b', re.I)
@@ -187,7 +189,7 @@ class Quota:
 
 
 def _number_display(value):
-    ordinal = re.fullmatch(r'(\d+)(?:er|re|ème|eme|e|st|nd|rd|th)', value, re.I)
+    ordinal = re.fullmatch(r'(\d+)(?:ers?|res?|èmes?|emes?|es?|st|nd|rd|th)', value, re.I)
     if ordinal:
         n = int(ordinal[1])
         suffix = 'th' if 10 < n % 100 < 14 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')
@@ -205,6 +207,13 @@ def protect(source, item):
     for name in _names(item):
         for match in re.finditer(r'(?<!\w)' + re.escape(name) + r'(?!\w)', source):
             add(match.start(), match.end(), match[0], 'verified_name')
+    # Preserve the complete nominal finish rank, including "top". Do not turn
+    # chronological "les cinq premiers matchs/courses" into a top-five ranking.
+    for match in RANK_NUMBER.finditer(source):
+        if RANK_PREFIX.search(source[:match.start()]):
+            count = match['count']
+            display = CARDINALS.get(count.casefold(), count)
+            add(match.start(), match.end(), 'top ' + display, 'rank_number')
     for match in NUMBERS.finditer(source):
         add(match.start(), match.end(), _number_display(match[0]), 'number')
     # Attached source units/IDs (21h00, R1C4, 2850m) remain exact too.

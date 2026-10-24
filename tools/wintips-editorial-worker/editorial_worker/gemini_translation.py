@@ -24,7 +24,7 @@ from .azure_translation import (AzureTranslator, Quota, _characters, _json_bytes
 from .translation import TranslationRejected, _walk
 
 
-VERSION = 'gemini-html-facts-v1'
+VERSION = 'gemini-html-facts-v2-sports-domain'
 ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/'
 INSTRUCTIONS = (
     'Translate each French HTML fragment into natural English sports journalism. '
@@ -33,6 +33,17 @@ INSTRUCTIONS = (
     'all span tags, attributes and span contents byte for byte. Translate only '
     'unprotected prose, never add facts or quantities. Preserve actors, result '
     'polarity, home/away and venue/opponent roles, chronology and uncertainty. '
+    'Use the full paragraph to resolve sporting idioms and references. A completed '
+    'victory must remain a victory, not a fixture or an intention; a defeat must '
+    'remain a defeat. French s\u2019offrir/s\'offrir an opponent means beat/defeat that '
+    'opponent in a completed sporting result, not take on or face them; keep any '
+    'negation, inability or missed opportunity in the source. In an ongoing '
+    'season, derni\u00e8re journ\u00e9e refers to the latest/most recent matchday, not '
+    'the final matchday of the season. Use final only when the source explicitly '
+    'establishes the end of that competition/season; a stated last-season final '
+    'day remains a final day. A protected top-N finishing rank must remain the '
+    'entire top-N rank, never a bare count. Preserve plural rank values when '
+    'normalizing French ordinal spelling into natural English ordinals. '
     'Do not summarize, omit, embellish or translate proper names. Do not output '
     'Markdown. Each text value must contain exactly the translated HTML fragment.'
 )
@@ -110,9 +121,16 @@ def request_payload(config, texts):
     return {'systemInstruction': {'parts': [{'text': INSTRUCTIONS}]},
         'contents': [{'role': 'user', 'parts': [{'text': _json_bytes({'fragments': [
             {'id': str(index), 'text': text} for index, text in enumerate(texts)]}).decode('utf-8')}]}],
-        'generationConfig': {'temperature': 0, 'candidateCount': 1,
-            'maxOutputTokens': config.max_output_tokens, 'responseMimeType': 'application/json',
+        'generationConfig': {**generation_options(config), 'responseMimeType': 'application/json',
             'responseJsonSchema': schema}}
+
+
+def generation_options(config):
+    options = {'temperature': 0, 'candidateCount': 1, 'maxOutputTokens': config.max_output_tokens}
+    if config.model == 'gemini-3.8-flash':
+        # Documented Gemini 3.8 level; MINIMAL is unsupported. No thought output.
+        options['thinkingConfig'] = {'thinkingLevel': 'LOW'}
+    return options
 
 
 class GeminiFailure(Exception):
@@ -228,7 +246,7 @@ class GeminiTranslator(AzureTranslator):
             if isinstance(row.get('selection', {}).get('label'), dict): row['selection']['label'].pop('en', None)
         identity = {'schema': 1, 'provider': self.provider, 'version': VERSION,
             'endpoint': ENDPOINT, 'model': self.config.model, 'instructions': INSTRUCTIONS,
-            'generation': {'temperature': 0, 'maxOutputTokens': self.config.max_output_tokens,
+            'generation': {**generation_options(self.config),
                 'responseContract': 'translations-id-text-v1'},
             'source': source, 'html': html, 'anchors': anchors,
             'factContextSha256': sha256(_json_bytes(facts)).hexdigest()}
