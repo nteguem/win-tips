@@ -1,17 +1,20 @@
 # Review the API origin before deployment. Real secrets stay outside Git.
 WINTIPS_EDITORIAL_API_BASE=https://api.wintips-expert.com
 WINTIPS_EDITORIAL_WORKER_TOKEN=
-# Existing read-only model/runtime; no downloads happen in the worker.
-WINTIPS_EDITORIAL_TRANSLATOR=marian
-# Compatibility provider name: free-form text starts with Qwen, never MT.
-WINTIPS_EDITORIAL_QWEN_PRIMARY=true
-WINTIPS_EDITORIAL_MT_ROOT=/opt/journal-parieur-rdj-20261022
-WINTIPS_EDITORIAL_MT_DEPS=/opt/journal-parieur-rdj-20261022/mt-deps
-WINTIPS_EDITORIAL_MODEL_ENDPOINT=http://127.0.0.1:11439/api/
-WINTIPS_EDITORIAL_MODEL=qwen2.5:7b-instruct-q4_K_M
-# Fallback after Qwen content rejection; an empty value disables this level.
-WINTIPS_EDITORIAL_FALLBACK_MODEL=translategemma:4b
-WINTIPS_EDITORIAL_MANAGE_MODEL=true
+# Preparation only: a dedicated Azure Translator resource must use F0.
+# No account/key is created here. Never put the real key in Git or a command.
+WINTIPS_EDITORIAL_TRANSLATOR=azure
+WINTIPS_EDITORIAL_AZURE_TIER=F0
+WINTIPS_EDITORIAL_AZURE_KEY=
+# Required for a regional resource; empty only for a global resource.
+WINTIPS_EDITORIAL_AZURE_REGION=
+# Conservative reservations include HTML markup and every retry.
+WINTIPS_EDITORIAL_AZURE_DAILY_CHARACTERS=100000
+WINTIPS_EDITORIAL_AZURE_MONTHLY_CHARACTERS=1800000
+# Shared by EVERY cache/preview using this resource; never reset on --output.
+WINTIPS_EDITORIAL_AZURE_QUOTA_DIR=/var/lib/wintips-editorial-worker/azure-quota
+# Cloud mode ignores local-model settings and never falls back to them.
+WINTIPS_EDITORIAL_MANAGE_MODEL=false
 # The following flags belong to the API environment, NOT this worker file:
 # WINTIPS_EDITORIAL_IMPORT_ENABLED=false until the publication GO
 # WINTIPS_EDITORIAL_NOTIFICATIONS_ENABLED=false until the notification GO

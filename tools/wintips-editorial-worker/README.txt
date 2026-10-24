@@ -14,7 +14,9 @@ standard : pas de navigateur, requests ou BeautifulSoup. Europe/Paris est résol
 par ZoneInfo ; le petit TZif IANA fourni avec provenance/licences sert uniquement
 de repli quand la base système manque, notamment sous Windows.
 
-La publication exige un vrai contenu bilingue. Le mode Marian int8 nécessite
+La publication exige un vrai contenu bilingue. Azure F0 utilise la bibliothèque
+standard et une clé privée, sans modèle local : lire AZURE-F0.txt. Les modes
+locaux suivants sont historiques et optionnels. Le mode Marian int8 nécessite
 CTranslate2 et SentencePiece déjà installés dans le répertoire opérateur, plus les
 poids locaux vérifiés par editorial_worker/assets/mt/opus-mt-fr-en-20200226-int8.json.
 Le paquet ne les installe, ne les convertit ni ne les télécharge. Le manifeste
@@ -25,9 +27,9 @@ garder la limite 1 Gio du worker et contrôler son RSS réel avant activation.
 Les dépendances ne sont pas
 installées par requirements.txt, limité à la collecte standard-library.
 
-Les secours Qwen et TranslateGemma utilisent uniquement le runtime Ollama local
+Dans les modes locaux historiques, les secours Qwen et TranslateGemma utilisent le runtime Ollama local
 existant. Il faut vérifier leurs modèles préinstallés, l'endpoint local, le service et les
-deux verrous partagés avant déploiement. Aucun fournisseur IA payant n'est appelé.
+deux verrous partagés avant déploiement. Aucun compte cloud n'est créé par ce paquet.
 
 EXÉCUTION EXPLICITE
 Depuis tools/wintips-editorial-worker :
@@ -70,7 +72,7 @@ LES TROIS PHASES D'UN TOUR
    les lots FR. La collecte HTTP se termine avant l'inférence : le temps de
    traduction ne consomme pas son budget de quatre minutes.
 2. Traduire et valider les lots complets FR/EN, conserver les audits privés et
-   libérer le runtime Qwen détenu par cette tâche avant les imports et l'attente FCM.
+   libérer un éventuel runtime local détenu avant les imports et l'attente FCM.
    Une source absente ne publie rien. Une source invalide ou traduction rejetée
    est bloquée sans envoyer son lot FR seul ; les autres sources restent isolées.
 3. Revalider l'édition courante et le délai avant chaque POST import. L'API
@@ -82,7 +84,22 @@ Une interruption ne déclenche pas une publication de la veille. Un refus conser
 son motif dans le rapport. Les fichiers FR/EN, cache et audits restent privés dans
 le répertoire d'état ; ils ne doivent pas entrer dans Git ni être exposés sur HTTP.
 
-TRADUCTION QWEN PRIORITAIRE, SECOURS TRANSLATEGEMMA PARESSEUX
+TRADUCTION AZURE F0 PRÉPARÉE, ACTIVATION SÉPARÉE
+WINTIPS_EDITORIAL_TRANSLATOR=azure sélectionne l'adaptateur cloud indépendant.
+Paragraphes entiers, requêtes groupées, HTML construit/notranslate pour les noms
+structurés et valeurs présentes, sortie texte simple, FR/faits inchangés. Les
+marchés et libellés connus restent déterministes. Le garde lexical/ordre global
+du LLM local n'est pas utilisé dans ce mode. Aucune qualité sémantique parfaite
+n'est garantie : une première vraie revue reste nécessaire après réception d'une clé.
+30 secondes/requête, 180 secondes globales, quotas durables UTC jour/mois avant
+chaque tentative, markup et retries inclus ; maximum mensuel autorisé 2000000.
+Sans clé, pas d'appel. Sans quota, pas de repli local ni import FR seul. Le mode
+Azure ne prend aucun verrou BigWin et ignore l'admission du modèle local, même
+si une ancienne configuration contient MANAGE_MODEL=true. Lire AZURE-F0.txt
+pour les paramètres privés, le cache, les limites et les prérequis du tarif F0.
+Les exemples d'environnement/unité choisissent Azure et restent non armés.
+
+MODES LOCAUX HISTORIQUES — QWEN / TRANSLATEGEMMA
 WINTIPS_EDITORIAL_TRANSLATOR=marian conserve le nom historique du provider.
 WINTIPS_EDITORIAL_QWEN_PRIMARY=true est obligatoire dans cette factory : toute
 phrase libre commence désormais par Qwen, y compris une analyse dont un ancien
@@ -137,7 +154,8 @@ le secours (par défaut translategemma:4b, valeur vide pour le désactiver).
 Avant de changer de modèle local, la cascade décharge seulement le précédent
 qu'elle a demandé, afin de ne pas garder deux modèles en RAM. Chaque cache est
 lié à l'identité exacte de son modèle et revalidé. Le mode explicite ollama
-reste possible ; voir translation.example.json et deploy/environment.example.
+reste possible ; voir translation.example.json. Il nécessite une revue séparée
+des chemins de verrous ReadWritePaths ; l'unité exemple Azure n'en a pas besoin.
 
 WINTIPS_EDITORIAL_MANAGE_MODEL=true permet au superviseur de prendre les deux
 verrous existants, vérifier le job partagé inactif, puis démarrer le service modèle
@@ -328,7 +346,7 @@ modèles et dépendances existants, droits et restrictions. Le service exemple f
 horaire ne sont faits qu'après GO. La tâche est du VPS, indépendante des apps et
 du navigateur. Elle ne laisse pas un modèle chargé entre ses tours.
 
-Le timer est à *:30 UTC, sans rattrapage Persistent. En mode runtime géré
+Le timer est à *:30 UTC, sans rattrapage Persistent. En mode LOCAL runtime géré
 (WINTIPS_EDITORIAL_MANAGE_MODEL=true), après la collecte HTTP légère et avant
 toute traduction/import/reprise de notification, un garde UTC exige que le budget
 de traduction complet plus 300 secondes pour démarrage/cleanup tiennent avant le

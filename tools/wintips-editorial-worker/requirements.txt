@@ -1,5 +1,6 @@
 # Python 3.10+: collection-only previews and offline tests use the standard library.
-# Bilingual publication also needs an operator-provisioned local translator.
+# Azure F0 bilingual mode also uses only the standard library; key required.
+# Optional legacy local modes need an operator-provisioned local translator.
 # Marian mode requires existing CTranslate2 + SentencePiece and hash-verified weights.
 # Ollama/Qwen/TranslateGemma fallbacks need existing local models and shared-job locks.
 # This file installs no models, optional runtime packages or new dependencies.

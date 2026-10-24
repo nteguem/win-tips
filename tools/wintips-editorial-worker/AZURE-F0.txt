@@ -1,0 +1,115 @@
+AZURE TRANSLATOR F0 — ADAPTATEUR PRÉPARÉ, NON ACTIVÉ
+
+Le choix WINTIPS_EDITORIAL_TRANSLATOR=azure ne nécessite aucun modèle local.
+Marian, Qwen, TranslateGemma, Ollama, leurs fichiers et les deux verrous BigWin
+ne sont pas utilisés. L'admission avant le créneau BigWin est ignorée même si
+une ancienne config conserve MANAGE_MODEL=true. Aucun fallback local implicite.
+Les autres modes locaux restent disponibles seulement sur choix explicite.
+
+PRÉREQUIS COMPTE, CLÉ ET GRATUITÉ
+Créer seulement après accord une ressource Azure Translator DÉDIÉE de niveau F0,
+pas S1 et pas de passage automatique à un tarif payant. Le code exige la
+déclaration AZURE_TIER=F0 mais la clé Translator ne permet pas de vérifier le
+tarif réel du compte : l'opérateur doit vérifier F0 et son quota dans le portail.
+Le plafond annoncé est de 2 millions de caractères/mois. Aucun compte, clé,
+achat ou appel réel n'est créé par l'installation ni par les tests simulés.
+
+Les valeurs réelles restent dans /etc/wintips-editorial-worker.env, mode 0600 :
+  WINTIPS_EDITORIAL_TRANSLATOR=azure
+  WINTIPS_EDITORIAL_AZURE_TIER=F0
+  WINTIPS_EDITORIAL_AZURE_KEY=<clé saisie directement dans le fichier privé>
+  WINTIPS_EDITORIAL_AZURE_REGION=<région de la ressource>
+  WINTIPS_EDITORIAL_AZURE_DAILY_CHARACTERS=100000
+  WINTIPS_EDITORIAL_AZURE_MONTHLY_CHARACTERS=1800000
+  WINTIPS_EDITORIAL_AZURE_QUOTA_DIR=/var/lib/wintips-editorial-worker/azure-quota
+  WINTIPS_EDITORIAL_MANAGE_MODEL=false
+Une ressource globale peut laisser REGION vide. Ne pas saisir de clé dans une
+commande, un rapport, Git, une capture ou un journal. L'installateur conserve
+toujours l'environnement privé existant ; ce changement de provider nécessite
+donc une configuration opérateur explicite sur une installation existante.
+
+Le seul endpoint autorisé est https://api.cognitive.microsofttranslator.com.
+POST /translate?api-version=3.0&from=fr&to=en&textType=html. Clé uniquement en
+en-tête ; aucun proxy d'environnement ni redirection. Sans clé, aucune requête.
+
+TEXTES, NOMS, CHIFFRES, HTML
+Les paragraphes entiers sont envoyés avec leurs phrases, sans les découper.
+Les champs sont groupés par 25 et 20000 caractères HTML au maximum. Marchés,
+titres connus et libellés fixes restent déterministes et ne consomment pas Azure.
+Le HTML envoyé est construit depuis le texte échappé, jamais extrait brut de la
+page source. Les fragments notranslate protègent les noms des participants,
+chevaux, jockeys, entraîneurs fournis par les données structurées, et les
+chiffres réellement présents. Les cardinaux simples devant une unité sportive
+prouvée et les suffixes ordinaux numériques ont une conversion déterministe de
+même valeur ; « effectif neuf » ne devient pas neuf joueurs. Aucun nom propre
+n'est déduit de la seule majuscule d'un mot tel que Battus ou Offensivement.
+
+La réponse doit garder chaque fragment protégé une fois, intact. Les noms
+vérifiés ne peuvent pas être dupliqués ; un nouveau chiffre est refusé. Les
+balises/attributs inattendus, scripts, commentaires et réponses tronquées sont
+refusés. Seul le texte Unicode est extrait et enregistré. Un caractère « < »
+présent dans le texte source reste du TEXTE ; les consommateurs doivent
+continuer à l'échapper lors de tout export HTML.
+
+Le français et les faits structurés ne changent pas : identité, horaires UTC,
+équipes, cotes et tickets sont vérifiés avant/après traduction. L'ordre global
+des mots/ancres lexicales du LLM local n'est pas exigé en cloud. Ce contrôle ne
+prouve pas tous les résultats, relations ou nuances d'un récit ; une première
+vraie revue complète Azure est nécessaire avant généralisation. Les noms non
+présents dans les données structurées ne sont pas une reconnaissance NER vérifiée.
+Une traduction imparfaite n'autorise ni une analyse tronquée ni un import FR seul.
+
+QUOTAS DURABLES ET DÉLAIS
+30 secondes/requête, budget global 180 secondes vérifié avant/après chaque
+appel et avant reprise, au plus 12 tentatives/tour. Deux reprises maximum sur
+429/500/502/503/504, Retry-After borné à 10 secondes. Authentification, quota,
+format, réseau ou protection invalides ne déclenchent aucun autre moteur.
+Le timeout réseau est borné à 30 secondes ; les temps observés dépendent aussi
+du fournisseur et de la connexion. Aucun corps d'erreur Azure contenant des
+métadonnées privées n'est recopié dans les motifs du rapport.
+
+/var/lib/wintips-editorial-worker/azure-quota/usage.json réserve atomiquement les caractères HTML
+complets AVANT chaque tentative, même échouée ou dont la réponse est perdue,
+et pour chaque retry. Les unités UTF-16 sont comptées conservativement ; markup
+compris. Aucun remboursement local incertain. Un verrou quota séparé est pris
+seulement pendant la réservation, jamais pendant l'attente réseau/backoff.
+Les compteurs UTC jour/mois survivent aux reprises. Le maximum mensuel est
+plafonné dans le code à 2000000, défaut1800000 pour garder une marge. Un état
+invalide bloque sans remise à zéro. Le premier plafond atteint bloque les
+nouveaux appels ; les réponses valides déjà cachées restent réutilisables.
+
+Ce ledger est indépendant du cache et de --output : les prévisualisations et la
+production partagent donc le même quota. Ne pas l'effacer ni changer QUOTA_DIR
+sans migrer les compteurs, ou partager la ressource avec d'autres applications
+non comptabilisées. L'utilisation effective du portail Azure reste l'autorité pour la
+ressource. Le budget mensuel peut être atteint avant la fin du mois ; aucun
+tarif payant ni achat complémentaire n'est activé par le worker.
+
+CACHE, API ET EXPLOITATION
+Cache Azure séparé des caches locaux. Identité : provider, langues, texte FR
+entier, HTML/noms/valeurs protégés, région, version et faits FR de l'item. La clé
+privée n'y figure pas. Toute réponse de cache est revalidée ; un ancien passed
+ne suffit jamais. Les audits identifient azure et les réservations/tentatives,
+sans assimiler les tests simulés à une réponse réelle du fournisseur.
+
+Une source échouée n'importe aucun de ses items incomplets ; les autres sources
+valides restent indépendantes. Les réponses déjà obtenues peuvent être reprises
+au tour suivant sans nouveau coût local. Le verrou propre au worker, le serveur,
+les réservations Duo/Buts, les droits VIP, le calendrier Europe/Paris, l'avance
+minimum de30minutes et l'idempotence de notification sont conservés. Aucun
+changement de timer, flag API, mapping BO ou publication n'est fait par ce code.
+
+TESTS ET PASSAGE RÉEL
+Depuis le dossier worker : python -B -m unittest discover -s tests -v
+Les tests Azure injectent uniquement des transports simulés : pas de clé, HTTP,
+compte ni mesure réelle de qualité/latence. Après configuration autorisée : faire
+d'abord --dry-run --translate --source <source active> sur un état privé durable,
+contrôler FR/EN et l'API hors import, puis décider séparément du déploiement et
+de l'activation. Un dry-run avec --translate ET une vraie clé consomme le quota
+Azure ; sans --translate, la collecte FR seule ne fait aucun appel cloud.
+
+DOCUMENTATION OFFICIELLE CONSULTÉE
+https://learn.microsoft.com/en-us/azure/ai-services/translator/text-translation/reference/v3/translate
+https://learn.microsoft.com/en-us/azure/ai-services/translator/text-translation/how-to/prevent-translation
+https://learn.microsoft.com/en-us/azure/ai-services/translator/text-translation/reference/authentication
+https://learn.microsoft.com/en-us/azure/ai-services/translator/service-limits

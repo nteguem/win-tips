@@ -18,11 +18,11 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true
 ProtectSystem=strict
-ReadWritePaths=/var/lib/wintips-editorial-worker /var/lib/journal-parieur-worker/worker.lock /var/lib/journal-parieur-worker/daily-run/worker.lock
+ReadWritePaths=/var/lib/wintips-editorial-worker
 RestrictSUIDSGID=true
 MemoryMax=1G
 CPUQuota=100%
 TimeoutStartSec=2400
-# Qwen uses its existing, separately bounded 6.5GiB/2CPU service only on demand.
-# root is required by the existing root-owned shared locks and systemd control;
-# the worker has read-only system files and only the state/lock paths above writable.
+# Azure needs no local model, systemd model control or BigWin lock path.
+# The state directory/credential file remain root-owned and private.
+# Explicit legacy local mode needs its separately reviewed lock-path drop-in.

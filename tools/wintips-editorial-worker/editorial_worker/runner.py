@@ -145,6 +145,11 @@ def validate_item(item, source, edition, now, lead):
 
 
 def make_translator(args, output, resources):
+    mode = os.environ.get('WINTIPS_EDITORIAL_TRANSLATOR', 'ollama')
+    if mode == 'azure':
+        from .azure_translation import create_translator_from_env
+        return create_translator_from_env(cache_dir=output / 'translation-cache',
+            max_seconds=min(getattr(args, 'translation_max_seconds', 1200), 180))
     from .translation import LocalTranslator, TranslationConfig
     started = False
     def ensure_fallback_ready():
@@ -153,7 +158,6 @@ def make_translator(args, output, resources):
             from .model_runtime import managed_model
             resources.enter_context(managed_model(translation_seconds=getattr(args, 'translation_max_seconds', 1200)))
         started = True
-    mode = os.environ.get('WINTIPS_EDITORIAL_TRANSLATOR', 'ollama')
     if mode == 'marian':
         from .mt_translation import create_translator_from_env
         return create_translator_from_env(cache_dir=output / 'translation-cache', max_seconds=getattr(args, 'translation_max_seconds', 1200), ensure_fallback_ready=ensure_fallback_ready)
@@ -262,7 +266,8 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
         # Public HTTP surveillance remains light. If generation cannot finish
         # safely before BigWin, defer the complete delivery phase without waiting
         # for, acquiring, or keeping any shared model lock.
-        if bilingual and os.environ.get('WINTIPS_EDITORIAL_MANAGE_MODEL') == 'true':
+        if (bilingual and os.environ.get('WINTIPS_EDITORIAL_MANAGE_MODEL') == 'true' and
+                os.environ.get('WINTIPS_EDITORIAL_TRANSLATOR', 'ollama') != 'azure'):
             from .model_runtime import RuntimeDeferred, require_admission
             try:
                 require_admission(clock() if clock else datetime.now(timezone.utc), getattr(args, 'translation_max_seconds', 1200))
@@ -290,9 +295,10 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
                     row['bilingual'] = True
                 prepared.append((source, payload, row))
             except Exception as exc:
-                from .model_runtime import RuntimeDeferred
-                if isinstance(exc, RuntimeDeferred):
-                    report['deferred'] = {'reason': exc.code, **exc.window}
+                if os.environ.get('WINTIPS_EDITORIAL_TRANSLATOR', 'ollama') != 'azure':
+                    from .model_runtime import RuntimeDeferred
+                    if isinstance(exc, RuntimeDeferred):
+                        report['deferred'] = {'reason': exc.code, **exc.window}
                 row['status'] = 'translation_blocked' if bilingual else 'source_blocked'
                 row['issues'].append(safe_reason(exc))
                 report['blocked'] = True

@@ -721,6 +721,10 @@ def require_bilingual(payload):
 
 def translate_batch(payload, translator):
     """No partial result is returned if even one paragraph/leg is rejected."""
+    first_attempt = len(getattr(translator, 'attempts', []))
+    prepare = getattr(translator, 'prepare_batch', None)
+    if prepare is not None:
+        prepare(payload)
     result = deepcopy(payload)
     before = len(translator.records)
     for top in result.get("items", []):
@@ -746,6 +750,9 @@ def translate_batch(payload, translator):
             item["selection"]["label"].pop("en", None)
     if restored != original:
         raise TranslationRejected("french_or_structural_fact_changed")
-    return result, {"version": VERSION, "records": translator.records[before:],
-                    "frAndStructuralFactsPreserved": True,
-                    "languageReviewRequired": True}
+    audit = {"version": getattr(translator, 'version', VERSION), "records": translator.records[before:],
+             "frAndStructuralFactsPreserved": True, "languageReviewRequired": True}
+    if getattr(translator, 'provider', None) == 'azure':
+        audit['provider'] = 'azure'
+        audit['cloudAttempts'] = deepcopy(translator.attempts[first_attempt:])
+    return result, audit
