@@ -75,6 +75,10 @@ function normalizePairedForms(fr, en) {
   if (targetIntervals.length && !equal(sourceIntervals, targetIntervals)) return { source, target, valid: false };
   source = source.replace(eventFr, match => match.replace(/premi(?:ers|ères)/iu, 'opening'));
   if (targetIntervals.length) target = target.replace(eventEn, match => match.replace(/\bfirst\b/iu, 'opening'));
+  // A top-N finish also carries N, not a second rank of one. Retain this
+  // previously supported quantity in its explicit French ranking context.
+  const topFr = new RegExp('\\b(?:dans|parmi)\\s+les\\s+(' + countToken + ')\\s+premi(?:ers|ères)(?!\\p{L})', 'giu');
+  source = source.replace(topFr, match => match.replace(/premi(?:ers|ères)/iu, 'ranked'));
   const openingFr = /(?<!\p{L})premières\s+performances(?!\p{L})/giu;
   const openingEn = /\b(?:early|initial)\s+performances\b/giu;
   const sourceOpenings = [...source.matchAll(openingFr)].length;
