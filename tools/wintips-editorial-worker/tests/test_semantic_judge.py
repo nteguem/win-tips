@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from editorial_worker.translation import (CascadeTranslator, LocalTranslator, TranslationConfig,
     TranslationRejected, SEMANTIC_JUDGE_INSTRUCTIONS, SEMANTIC_JUDGE_SCHEMA,
-    validate_english_sentence)
+    SEMANTIC_JUDGE_VERSION, validate_english_sentence)
 
 
 SOURCE = 'Brest a gagné trois matchs contre Nice.'
@@ -137,6 +137,26 @@ class SemanticJudgeTests(unittest.TestCase):
         with patch('editorial_worker.translation.SEMANTIC_JUDGE_INSTRUCTIONS', SEMANTIC_JUDGE_INSTRUCTIONS + ' Contract changed.'):
             e = translator.judge_candidate(SOURCE, SOURCE, GOOD, ITEM)
         self.assertNotEqual(e['cacheKey'], a['cacheKey'])
+
+    def test_v2_scoped_examples_change_identity_without_reusing_or_rewriting_v1_verdict(self):
+        calls=[]
+        translator=self.local(lambda *args:calls.append(args) or verdict())
+        with patch('editorial_worker.translation.SEMANTIC_JUDGE_VERSION','wintips-contextual-faithfulness-v1'):
+            old=translator.judge_candidate(SOURCE,SOURCE,GOOD,ITEM)
+        old_path=self.cache/'semantic-judge'/(old['cacheKey']+'.json')
+        old_bytes=old_path.read_bytes()
+        current=translator.judge_candidate(SOURCE,SOURCE,GOOD,ITEM)
+        self.assertEqual(len(calls),2)
+        self.assertNotEqual(current['cacheKey'],old['cacheKey'])
+        self.assertEqual(old_path.read_bytes(),old_bytes)
+        self.assertIn('v2',SEMANTIC_JUDGE_VERSION)
+        self.assertIn('Compare uniquement sourceSegmentFr et candidateEn',SEMANTIC_JUDGE_INSTRUCTIONS)
+        self.assertIn("leur absence n'est PAS une erreur",SEMANTIC_JUDGE_INSTRUCTIONS)
+        self.assertEqual(SEMANTIC_JUDGE_INSTRUCTIONS.count('Contexte :'),2)
+        self.assertIn('3. Phrase FR',SEMANTIC_JUDGE_INSTRUCTIONS)
+        self.assertNotIn('Celle-ci lost on the pitch',SEMANTIC_JUDGE_INSTRUCTIONS)
+        self.assertNotIn('Ceramica',SEMANTIC_JUDGE_INSTRUCTIONS)
+        self.assertNotIn('Girona',SEMANTIC_JUDGE_INSTRUCTIONS)
 
     def test_cache_is_reparsed_and_stale_acceptance_metadata_never_overrides_raw_rejection(self):
         first = self.local(lambda *a: verdict())
