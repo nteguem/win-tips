@@ -22,7 +22,7 @@ import urllib.request
 
 
 PROMPT_VERSION = "fr-en-anchors-v8-sports-name-guidance"
-GUARD_VERSION = "ordered-anchors-v41-wintips-percentage-value-unit"
+GUARD_VERSION = "ordered-anchors-v42-wintips-scoped-unfinished-match"
 TOKEN_RE = re.compile(r"ZXQ[A-Z]+QXZ")
 NUMBER_RE = re.compile(r"(?<!\w)[+-]?\s*\d+(?:[.,:]\d+)*(?:\s*[%€$])?(?!\w)")
 FRENCH_WORDS = re.compile(r"\b(?:avec|dans|leurs|leur|pour|cette|ces|étaient|était|mais|donc|ainsi|lors|depuis|toujours|également|notamment|cependant|aujourd'hui)\b", re.I)
@@ -656,6 +656,7 @@ def _protect(source: str, fixture: dict) -> tuple[str, list[dict]]:
     if TOKEN_RE.search(source):
         raise TranslationError("source_token_collision", "Source contains a reserved protection token")
     candidates = []
+    unfinished_matches = {}
     def add(start, end, target, kind, priority):
         candidates.append((priority, end - start, start, end, target, kind))
     initial_numbers = "|".join(re.escape(word) for word in sorted(NUMBER_WORDS, key=len, reverse=True) if word not in {"un", "une"})
@@ -672,6 +673,28 @@ def _protect(source: str, fixture: dict) -> tuple[str, list[dict]]:
     for match in re.finditer(r"\b(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\s+(\d{1,2})\s+(janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre)\s+(\d{4})\b", source, re.I):
         add(match.start(), match.end(), f"{LEXICON[match[1].lower()]} {match[2]} {LEXICON[match[3].lower()]} {match[4]}", "calendar_date", 6)
     sport = str(fixture.get('sport', fixture.get('sport_key', ''))).casefold()
+    if sport in {'football', 'foot', 'soccer'}:
+        for stopped in re.finditer(r'\bne\s+pas\s+aller\s+à\s+son\s+terme\b', source, re.I):
+            # A named match, not its fans/coach, did not reach its end because
+            # of incidents. Keep this lexical negative local to that event;
+            # every other ne/pas/sans in the sentence remains independently
+            # checked by the residual negation guard.
+            prefix = source[:stopped.start()]
+            matches = list(re.finditer(r"\bmatch\s+(?:contre|face\s+à)\s+(?:l['’]|(?:le|la|les)\s+)?", prefix, re.I))
+            cause = re.match(r'\s+(?:suite\s+aux?|en\s+raison\s+des|à\s+cause\s+des)\s+incidents\b', source[stopped.end():], re.I)
+            if matches and cause:
+                match = matches[-1]
+                opponent = prefix[match.end():].strip()
+                lead = prefix[:match.start()]
+                frame = ('before_seeing_its_match' if re.search(r'\bavant\s+de\s+voir\s+son\s+$', lead, re.I) else
+                         'direct_named_match' if re.fullmatch(r'\s*(?:le|son|leur|ce)\s+', lead, re.I) else None)
+                supporters = bool(re.match(r'\s+survenus?\s+par\s+le\s+biais\s+des\s+supporters\b',
+                    source[stopped.end() + cause.end():], re.I))
+                if NAME_RE.fullmatch(opponent) and frame:
+                    add(stopped.start(), stopped.end(), 'cut short', 'unfinished_match', 6)
+                    unfinished_matches[stopped.start()] = {'rule': 'named_match_unfinished_due_to_incidents',
+                        'opponent': opponent, 'sourceMatchStart': match.start(), 'sourceCause': cause.group().strip(),
+                        'frame': frame, 'supporterIncidents': supporters}
     if sport in {'football', 'basketball', 'foot', 'soccer', 'basket', 'volleyball', 'tennis', 'horse_racing'}:
         explicit_names = tuple(name.strip() for name in
             (*NAMES, fixture.get('home'), fixture.get('away'), *fixture.get('protected_names', []))
@@ -935,6 +958,13 @@ def _protect(source: str, fixture: dict) -> tuple[str, list[dict]]:
         token = _code(index)
         result += [source[cursor:start], token]
         anchor = {"token": token, "source": source[start:end], "target": target, "kind": kind}
+        if kind == 'unfinished_match':
+            anchor['unfinished_match_scope'] = unfinished_matches[start]
+        if kind == 'semantic' and target.casefold() == 'at home':
+            home_match = re.search(r'\b(matchs?)\s+$', source[:start], re.I)
+            if home_match:
+                anchor['home_match_scope'] = {'rule': 'source_explicit_match_at_home',
+                    'plural': home_match[1].casefold() == 'matchs'}
         # A basketball period is an ordinal followed by its source unit, not
         # the mathematical fraction "a quarter". Keep this exception scoped to
         # the source span; bare ordinals/cardinals keep the fraction guard.
@@ -1021,6 +1051,8 @@ def _grammar_hint(anchor: dict) -> str:
         return "explicit count of basketball periods, never a mathematical fraction"
     if kind == "quarter_ordinal":
         return "same ordinal basketball quarter and period unit, never a fraction or a different quarter"
+    if kind == 'unfinished_match':
+        return 'the same named match did not reach its end because of incidents; never normal completion or a different subject'
     if kind == "name":
         return "proper name; keep its actor/opponent relationship"
     if kind in {"score_or_time", "number", "ordinal", "number_word"}:
@@ -1056,7 +1088,7 @@ def _prompt(masked: str, anchors: list[dict] | None = None) -> str:
     # never protection tokens or substituted English source prose.
     names = {anchor['source']: anchor['target'] for anchor in anchors if anchor['kind'] == 'name'}
     terms = {anchor['source']: anchor['target'] for anchor in anchors if anchor['kind'] in {
-        'semantic','both_sides','result_score','result_score_final','delay_destination','standing_gap','minimum_count','basket_team_possessor','basket_three_point_count','basket_three_point_made','basket_three_point_neutral','weekday_night','zero_defeats','score_margin','named_away_venue','table_gap','linked_defeat_count','quarter_ordinal'}}
+        'semantic','both_sides','result_score','result_score_final','delay_destination','standing_gap','minimum_count','basket_team_possessor','basket_three_point_count','basket_three_point_made','basket_three_point_neutral','weekday_night','zero_defeats','score_margin','named_away_venue','table_gap','linked_defeat_count','quarter_ordinal','unfinished_match'}}
     if names:
         guidance += 'Keep these proper names and club nicknames exactly in their canonical spellings: ' + json.dumps(names, ensure_ascii=False) + '.\n'
     if terms:
@@ -1248,6 +1280,29 @@ def _anchor_candidates(raw: str, anchor: dict, normalized_raw):
     for start, end in _literal_spans(raw, anchor["token"]):
         add(start, end, "token", "exact_token", anchor["token"])
     target, kind = anchor["target"], anchor["kind"]
+    if kind == 'unfinished_match':
+        scope = anchor['unfinished_match_scope']
+        opponent = re.escape(scope['opponent'])
+        # Both actual English constructions are allowed: "its match ... was
+        # cut short" and "seeing its match ... cut short". The subject, named
+        # opponent, affirmative interruption and causal incidents must form a
+        # single contiguous event; merely saying cut short elsewhere fails.
+        frame = (r'\bbefore\s+(?:seeing\s+)?(?:its|their)\s+match' if scope['frame'] == 'before_seeing_its_match' else
+                 r'\A\s*(?:the|its|their|this)\s+match')
+        event_pattern = (frame + r'\s+against\s+(?:the\s+)?' + opponent +
+            r'\s+(?:was\s+)?(?P<stopped>cut\s+short)\s+(?:due\s+to|because\s+of|following)\s+(?:the\s+)?incidents\b')
+        if scope['supporterIncidents']:
+            event_pattern += r'\s+(?:involving|caused\s+by)\s+(?:the\s+)?(?:fans|supporters)\b'
+        for event in re.finditer(event_pattern, raw, re.I):
+            # A closed chronological/declarative frame cannot contain an
+            # allegation or denial. Nor can a following full stop hide an
+            # explicit completion contradiction about this match.
+            prior = raw[:event.start()]
+            unasserted = re.search(r'\b(?:deny|denies|denied|denying|allege|alleges|alleged|allegedly|falsely|false|untrue|refuted|disputed)\b', prior, re.I)
+            tail = raw[event.end():]
+            if not unasserted and not re.search(r'\b(?:ended|finished|completed|normally|unrelated|uninvolved)\b', tail, re.I):
+                add(*event.span('stopped'), 'equivalent', 'same_named_match_cut_short_due_to_incidents', event['stopped'])
+        return tuple(candidates.values())
     if kind=='linked_defeat_count':
         value=int(target.split()[0])
         for variant in ('as many defeats','as many losses',str(value)+' defeats',str(value)+' losses',_cardinal_word(value)+' defeats',_cardinal_word(value)+' losses'):
@@ -1485,6 +1540,9 @@ def _anchor_candidates(raw: str, anchor: dict, normalized_raw):
             variants=('a draw at home','a home draw')
         elif target.casefold()=='on the hour mark':
             variants=('on the hour mark','at the hour mark','in the 60th minute','at the 60th minute')
+        elif target.casefold() == 'at home' and anchor.get('home_match_scope', {}).get('rule') == 'source_explicit_match_at_home':
+            units = ('matches', 'games', 'fixtures') if anchor['home_match_scope']['plural'] else ('match', 'game', 'fixture')
+            variants = ('at home',) + tuple('home ' + unit for unit in units)
         for variant in variants:
             for start, end in _literal_spans(raw, variant, True):
                 add(start, end, "equivalent", "semantic_whitelist" if len(variants) > 1 else "semantic_case_space", variant)

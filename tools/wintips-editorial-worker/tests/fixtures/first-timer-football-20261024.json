@@ -1,0 +1,70 @@
+{
+  "schema": 1,
+  "capturedAtUtc": "2026-10-24T01:20:53Z",
+  "sourceUrl": "https://www.ruedesjoueurs.com/pronostic/rayo-vallecano-elche-5868107.html",
+  "frenchPayloadSha256": "ad72e79cd56157bed333fd387523dc950f455a3e5ded10499efb8928b523fbb5",
+  "evidenceManifestSha256": "2a7208791146b1e85b9664df25769634b2dc3bbfd91eaa933fdeeea1765a38c8",
+  "purpose": "Minimal immutable public source/target excerpts from six real model responses; never used as an inference cache.",
+  "responses": [
+    {
+      "sourceId": "5868107",
+      "nativeFile": "responses/2d3b96ad9057adc9a4c8ea12d81def6094877631afcc71e936fefb6bd4299f31.json",
+      "nativeSha256": "0bf4860f048aea8ab6e93078b1f959083f3fc5d688dd2617ba3f80fbc1659820",
+      "source": "Lors de cette période, le club de la banlieue madrilène a su rester invaincu en tenant en échec Alaves (1-1) et en s'offrant le Racing Santander (3-2) et l'Espanyol de Barcelone (2-1), avant de voir son match contre l'Athletic Bilbao ne pas aller à son terme suite aux incidents survenus par le biais des supporters.",
+      "target": "During this period, the Madrid suburb club managed to remain unbeaten by holding Alaves to a 1-1 draw and defeating Racing Santander (3-2) and Espanyol de Barcelona (2-1), before its match against Athletic Bilbao was cut short due to incidents involving the fans.",
+      "model": "translategemma:4b",
+      "oldPassed": false,
+      "expectedPassedAfterFix": false
+    },
+    {
+      "sourceId": "5868107",
+      "nativeFile": "responses/4fa818998e0ea487578a90ff384bf61f533b5f4055b86487d248cb295a9b58b1.json",
+      "nativeSha256": "523af97fcc1520c0ff3d6af2ccbc8f5505ef0ca61e230b28ed97d5d7302b7522",
+      "source": "Le Rayo Vallecano jouait ses matchs à domicile à Butarque le temps des rénovations en urgence au sein du Vallecas.",
+      "target": "The Rayo Vallecano were playing their home matches at Butarque while Vallecas underwent urgent renovations.",
+      "model": "translategemma:4b",
+      "oldPassed": false,
+      "expectedPassedAfterFix": true
+    },
+    {
+      "sourceId": "5868107",
+      "nativeFile": "responses/588cc4a96efca115781327fdeabe60facb3008be2b88da1a3772b324c28e09d6.json",
+      "nativeSha256": "8a5ad3bd6ffe73e4d0a4c69676f6ae9c38059f43a75882b5a02e8e4b182135bf",
+      "source": "Le Rayo Vallecano jouait ses matchs à domicile à Butarque le temps des rénovations en urgence au sein du Vallecas.",
+      "target": "Rayo Vallecano was playing its home matches at Butarque while urgent renovations were taking place in Vallecas.",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "oldPassed": false,
+      "expectedPassedAfterFix": true
+    },
+    {
+      "sourceId": "5868107",
+      "nativeFile": "responses/6b6d11fe64a314cfd521cfc5d5eadb3e072152bd30448eb571bb45f2c78abb96.json",
+      "nativeSha256": "e4adbdf0d3fbbb365f8e976ca4c022faf1b58d9575b689f570fe08374752431c",
+      "source": "Le Rayo Vallecano jouait ses matchs à domicile à Butarque le temps des rénovations en urgence au sein du Vallecas.",
+      "target": "Le Rayo Vallecano was playing its matches at home at Butarque while Vallecas underwent urgent renovations.",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "oldPassed": true,
+      "expectedPassedAfterFix": true
+    },
+    {
+      "sourceId": "5868107",
+      "nativeFile": "responses/94f072e64af60b08f4f17631321152e1ada64cb212d096845711cecb3a9bf891.json",
+      "nativeSha256": "9a11bf232e370e723f3342348190ee14d965ba78713184f983c4a464f7704446",
+      "source": "Lors de cette période, le club de la banlieue madrilène a su rester invaincu en tenant en échec Alaves (1-1) et en s'offrant le Racing Santander (3-2) et l'Espanyol de Barcelone (2-1), avant de voir son match contre l'Athletic Bilbao ne pas aller à son terme suite aux incidents survenus par le biais des supporters.",
+      "target": "During this period, the Madrid suburb club managed to remain unbeaten by holding Alaves to a 1-1 draw and defeating Racing Santander (3-2) and Espanyol de Barcelone (2-1), before its match against Athletic Bilbao was cut short due to incidents involving the fans.",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "oldPassed": false,
+      "expectedPassedAfterFix": true
+    },
+    {
+      "sourceId": "5868107",
+      "nativeFile": "responses/d886d3b5d515ce32a4cb422c5a0347073ffe50f003d1c333a0884c457b7a833d.json",
+      "nativeSha256": "7b580c0834957a502effcd97dd7bf842537d882af9f8285bbab91b5e9a4804d5",
+      "source": "Lors de cette période, le club de la banlieue madrilène a su rester invaincu en tenant en échec Alaves (1-1) et en s'offrant le Racing Santander (3-2) et l'Espanyol de Barcelone (2-1), avant de voir son match contre l'Athletic Bilbao ne pas aller à son terme suite aux incidents survenus par le biais des supporters.",
+      "target": "During this period, the Madrid suburb club managed to remain unbeaten by holding Alaves to a draw (1-1) and defeating Racing Santander (3-2) and Espanyol of Barcelone (2-1), before seeing its match against Athletic Bilbao cut short due to incidents involving the supporters.",
+      "model": "qwen2.5:7b-instruct-q4_K_M",
+      "oldPassed": false,
+      "expectedPassedAfterFix": true
+    }
+  ]
+}
