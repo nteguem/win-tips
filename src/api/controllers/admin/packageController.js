@@ -245,6 +245,21 @@ exports.deletePackage = catchAsync(async (req, res, next) => {
     return next(new AppError('Package non trouvé', 404, ErrorCodes.NOT_FOUND));
   }
 
+  // Raw collection lookup deliberately includes expired/cancelled history:
+  // Subscription.find middleware filters expired records out automatically.
+  const Subscription = require('../../models/common/Subscription');
+  const linkedSubscription = await Subscription.collection.findOne(
+    { package: package._id },
+    { projection: { _id: 1 }, maxTimeMS: 5000 }
+  );
+  if (linkedSubscription) {
+    return next(new AppError(
+      'Ce forfait est lié à des abonnements actifs ou historiques. Désactivez-le pour le retirer de la vente sans supprimer les droits achetés.',
+      409,
+      ErrorCodes.OPERATION_NOT_ALLOWED
+    ));
+  }
+
   await Package.findByIdAndDelete(req.params.id);
 
   res.status(200).json({

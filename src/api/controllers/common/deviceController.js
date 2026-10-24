@@ -16,7 +16,7 @@ class DeviceController {
    * l'app, ce n'est pas un chemin critique cote client.
    */
   ackNotification = catchAsync(async (req, res) => {
-    const { msgId, deviceId } = req.body;
+    const { msgId, deviceId } = req.body || {};
     await deviceService.ackDelivery({ msgId, deviceId }).catch(() => null);
     res.status(204).send();
   });

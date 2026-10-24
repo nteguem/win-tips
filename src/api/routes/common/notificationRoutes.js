@@ -1,8 +1,10 @@
 // src/api/routes/common/notificationRoutes.js
 const express = require('express');
 const notificationController = require('../../controllers/common/notificationController');
+const adminAuth = require('../../middlewares/admin/adminAuth');
 
 const router = express.Router();
+router.use(adminAuth.protect);
 
 /**
  * @route POST /api/notifications/send

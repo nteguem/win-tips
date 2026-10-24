@@ -24,11 +24,15 @@ class DeviceService {
    * Marque une notification comme reellement recue par l'appareil.
    * FCM ne le dit jamais : il confirme l'acceptation, pas l'affichage.
    */
-  async ackDelivery({ msgId, deviceId }) {
-    if (!msgId) return null;
+  async ackDelivery(data = {}) {
+    const { msgId, deviceId } = data || {};
+    const identifier = (value, max) => typeof value === 'string' &&
+      value.length > 0 && value.length <= max && value.trim() === value;
+    if (!identifier(msgId, 128) || !identifier(deviceId, 256)) return null;
     const PushDelivery = require('../../models/common/PushDelivery');
+    const appId = require('../push/appContext').appId();
     return PushDelivery.findOneAndUpdate(
-      { msgId },
+      { msgId, deviceId, appId },
       { $set: { status: 'acked', ackAt: new Date() } },
       { new: true }
     );
