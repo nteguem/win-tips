@@ -41,6 +41,21 @@ const ONE_UNITS = {
 
 function normalizePairedForms(fr, en) {
   let source = String(fr).normalize('NFC'), target = String(en).normalize('NFC');
+  // These complete sporting expressions have faithful qualitative English
+  // equivalents without a numeric ordinal. Pair their exact multiplicities;
+  // never suppress a standalone first/second or any other rank/quantity.
+  const qualitativePairs = [
+    [/(?<!\p{L})premier\s+poursuivant(?!\p{L})/giu, /\bclosest\s+pursuer\b/giu],
+    [/(?<!\p{L})seconde\s+partie\s+de\s+tableau(?!\p{L})/giu, /\blower\s+half\s+of\s+the\s+table\b/giu],
+    [/(?<!\p{L})un\s+premier\s+rôle(?!\p{L})/giu, /\ba\s+leading\s+role\b/giu],
+  ];
+  for (const [french, english] of qualitativePairs) {
+    const count = [...source.matchAll(french)].length;
+    if (count && count === [...target.matchAll(english)].length) {
+      source = source.replace(french, 'paired qualitative expression');
+      target = target.replace(english, 'paired qualitative expression');
+    }
+  }
   const openingFr = /(?<!\p{L})premières\s+performances(?!\p{L})/giu;
   const openingEn = /\b(?:early|initial)\s+performances\b/giu;
   const sourceOpenings = [...source.matchAll(openingFr)].length;

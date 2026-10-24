@@ -22,6 +22,10 @@ const equivalent = [
   ['leading-role idiom', 'jouer les premiers rôles avec 7 partants', 'play leading roles with 7 runners'],
   ['qualitative early performances', 'les premières performances du FCK après 6 journées', 'the early performances of FCK after 6 matchdays'],
   ['qualitative initial performances', 'les premières performances du FCK', 'the initial performances of FCK'],
+  ['closest pursuer with unchanged lead', '5 points d’avance sur leur premier poursuivant', 'a 5-point lead over their closest pursuer'],
+  ['qualitative lower half', 'dans la seconde partie de tableau de cette Ligue 2', 'in the lower half of the table in this Ligue 2'],
+  ['qualitative singular leading role', 'jouer un premier rôle à l’arrivée avec 6 partants', 'play a leading role at the finish with 6 runners'],
+  ['qualitative pairs keep identical multiplicity', 'un premier rôle et un premier rôle', 'a leading role and a leading role'],
   ['numbered early performances preserve count', 'les 2 premières performances', 'the 2 early performances'],
   ['two losses as twice', 'perdre à 2 reprises', 'losing twice'],
   ['two written losses as twice', 'perdre à deux reprises', 'losing twice'],
@@ -68,6 +72,23 @@ const changed = [
   ['early form is not second performance', 'les premières performances', 'the second performances'],
   ['early form is not third performance', 'les premières performances', 'the third performances'],
   ['early form duplicate', 'les premières performances', 'early performances and initial performances'],
+  ['closest pursuer never removes second ordinal', '5 points devant leur second poursuivant', '5 points ahead of their closest pursuer'],
+  ['closest pursuer never removes third ordinal', '5 points devant leur troisième poursuivant', '5 points ahead of their closest pursuer'],
+  ['closest pursuer preserves lead count', '5 points devant leur premier poursuivant', '6 points ahead of their closest pursuer'],
+  ['closest pursuer target duplicate', 'leur premier poursuivant', 'their closest pursuer and closest pursuer'],
+  ['closest pursuer source duplicate', 'leur premier poursuivant et premier poursuivant', 'their closest pursuer'],
+  ['closest pursuer cannot lose a separate ordinal', 'premier poursuivant, 2ème place', 'closest pursuer, 3rd place'],
+  ['lower half does not remove third part', 'dans la troisième partie de tableau', 'in the lower half of the table'],
+  ['lower half does not remove explicit second place', 'à la seconde place du tableau', 'in the lower half of the table'],
+  ['lower half does not remove upper half rank', 'dans la première partie de tableau', 'in the lower half of the table'],
+  ['lower half preserves league numeral', 'seconde partie de tableau de Ligue 2', 'lower half of the table in Ligue 1'],
+  ['lower half target duplicate', 'seconde partie de tableau', 'lower half of the table and lower half of the table'],
+  ['leading role is not a second role', 'jouer un second rôle', 'play a leading role'],
+  ['leading role is not a third role', 'jouer un troisième rôle', 'play a leading role'],
+  ['leading role is not first rank', 'occuper le premier rang', 'play a leading role'],
+  ['leading role target duplicate', 'un premier rôle', 'a leading role and a leading role'],
+  ['leading role source duplicate', 'un premier rôle et un premier rôle', 'a leading role'],
+  ['leading role retains other rank and number', 'un premier rôle, 8ème sur 12', 'a leading role, 9th out of 12'],
   ['one loss is not twice', 'perdre à 1 reprise', 'losing twice'],
   ['three losses are not twice', 'perdre à 3 reprises', 'losing twice'],
   ['losses cannot become wins twice', 'perdre à 2 reprises', 'winning twice'],
@@ -85,6 +106,27 @@ const changed = [
   ['twice wrong directed score', 'avant de perdre à 2 reprises, face à Fribourg (2-1)', 'before losing twice, against Fribourg (1-2)'],
 ];
 for (const [label, fr, en] of changed) test('numeric mutation refused: ' + label, () => assert.equal(equivalentNumericFacts(fr, en), false));
+
+// Exact paragraph text from the real 10:55 UTC V3 batch; no generated test
+// translation is presented as native evidence. The complete seven payloads
+// are separately passed through validateBatch + requireCompleteEnglish in QA.
+const realGeminiParagraphs = [
+  ['Petit Journal ASSE lead',
+    "Les joueurs du Forez avaient seulement connu un petit coup de mou avant la trêve internationale en s'inclinant à la surprise générale du côté de Dunkerque (2-1) puis en concédant le nul à Metz (2-2). Mais les Verts ont vite repris leur marche en avant en l'emportant contre Rodez (2-0) puis du côté du Red Star (0-1) le week-end dernier. Bien installés en tête du classement, les Stéphanois disposent de 5 points d'avance sur leur premier poursuivant.",
+    "The players from Forez had only experienced a slight dip in form before the international break by losing to the general surprise away at Dunkerque (2-1) then conceding a draw at Metz (2-2). But the Greens quickly resumed their forward march by winning against Rodez (2-0) then away at Red Star (0-1) last weekend. Comfortably perched at the top of the standings, the Stéphanois boast a 5-point lead over their closest pursuer."],
+  ['Petit Journal Nantes lower half',
+    "Si Saint-Etienne marche sur l'eau en ce début de saison, on peut clairement pas en dire autant du FC Nantes qui se retrouve englué dans la seconde partie de tableau de cette Ligue 2, quelques mois après sa relégation de l'élite, avec uns seul point d'avance sur la zone rouge. Très mal parti dans ce championnat, le club a déjà procédé à un changement d'entraineur, Grégory Poirier étant venu remplacer Michel Der Zakarian dès le mois d'août.",
+    "If Saint-Etienne is flying high at the start of this season, the exact same clearly cannot be said for FC Nantes, which finds itself bogged down in the lower half of the table in this Ligue 2, a few months after being relegated from the top flight, with just a single point ahead of the drop zone. Off to a very poor start in this championship, the club has already made a managerial change, with Grégory Poirier replacing Michel Der Zakarian as early as August."],
+  ['Quinte leading role',
+    '6 - LE COLOMBAR – Récent vainqueur en steeple à Lyon, ce fils de Pastorius aborde ce Quinté+ avec des ambitions légitimes après avoir été supplémenté. Déjà compétitif à cette valeur et capable de s’adapter à l’état de la piste, il possède le profil pour jouer un premier rôle à l’arrivée.',
+    "6 - LE COLOMBAR – A recent steeplechase winner at Lyon, this son of Pastorius approaches this Quinté+ with legitimate ambitions after being supplemented. Already competitive off this mark and capable of adapting to the track condition, he has the profile to play a leading role at the finish."],
+];
+for (const [label, fr, en] of realGeminiParagraphs) test('real Gemini V3 paragraph: ' + label, () => {
+  assert.equal(equivalentNumericFacts(fr, en), true);
+  const mutation = en.includes('5-point') ? en.replace('5-point', '6-point') : en.replace(/\b(?:2|6)\b/u, '7');
+  assert.notEqual(mutation, en);
+  assert.equal(equivalentNumericFacts(fr, mutation), false);
+});
 
 function translatedItem() {
   return { title: { fr: 'Match', en: 'Match' }, summary: { fr: '5 nuls', en: 'five draws' },
