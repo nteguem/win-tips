@@ -103,7 +103,7 @@ class GeminiTests(unittest.TestCase):
         self.assertEqual(wire['maxOutputTokens'], 8192)
         self.assertEqual(job['identity']['generation']['thinkingConfig'], wire['thinkingConfig'])
         self.assertNotIn('thinkingConfig', gemini.request_payload(self.config, [job['html']])['generationConfig'])
-        self.assertEqual(gemini.VERSION, 'gemini-html-facts-v2-sports-domain')
+        self.assertEqual(gemini.VERSION, 'gemini-html-facts-v3-sports-bounded-repair')
         for rule in ('latest/most recent matchday', 'not take on or face', 'entire top-N rank',
                 'last-season final', 'negation, inability or missed opportunity'):
             self.assertIn(rule, gemini.INSTRUCTIONS)
@@ -127,6 +127,130 @@ class GeminiTests(unittest.TestCase):
         with self.assertRaises(TranslationRejected) as caught:
             self.translator(lambda *a: self.fail('Invalid cache causes no spend')).text(source, item())
         self.assertEqual(caught.exception.code, 'gemini_output_structure_or_facts_changed')
+
+    def test_one_factual_repair_preserves_original_inputs_and_validates_entire_batch(self):
+        class Native:
+            feedback = None
+            def __init__(self): self.calls = []
+            def set_feedback(self, value): self.feedback = deepcopy(value)
+            def __call__(self, texts, timeout):
+                self.calls.append((deepcopy(texts), deepcopy(self.feedback)))
+                raw = response(texts)
+                if len(self.calls) == 1:
+                    rows = json.loads(raw['candidates'][0]['content']['parts'][0]['text'])
+                    rows['translations'][-1]['text'] = rows['translations'][-1]['text'].replace('</div>', ' 3 points</div>')
+                    raw['candidates'][0]['content']['parts'][0]['text'] = json.dumps(rows)
+                return raw
+        request = Native()
+        translator = self.translator(request)
+        source = {'items': [item()]}
+        before = deepcopy(source)
+        translator.prepare_batch(source)
+        self.assertEqual(source, before)
+        self.assertEqual(len(request.calls), 2)
+        self.assertEqual(request.calls[0][0], request.calls[1][0])
+        self.assertIsNone(request.calls[0][1])
+        feedback = request.calls[1][1]
+        self.assertTrue(feedback['candidateIsUntrusted'])
+        self.assertEqual(feedback['rejections'], [{'id': '1', 'code': 'gemini_unprotected_number_added'}])
+        self.assertIn('3 points', feedback['rejectedTranslations'][1]['text'])
+        wire = gemini.request_payload(self.config, request.calls[1][0], feedback)
+        data = json.loads(wire['contents'][0]['parts'][0]['text'])
+        self.assertEqual([row['text'] for row in data['fragments']], request.calls[0][0])
+        self.assertEqual(data['contentRepairFeedback'], feedback)
+        self.assertNotIn('3 points', wire['systemInstruction']['parts'][0]['text'])
+        self.assertIsNone(request.feedback)
+        self.assertEqual(len(translator.prepared), 2)
+        self.assertEqual(len(list((self.root / 'gemini/native').glob('*.json'))), 2)
+        self.assertTrue(translator.attempts[0]['contentRepairScheduled'])
+        self.assertEqual(translator.attempts[1]['contentRepairRound'], 1)
+        usage = json.loads((self.root / 'quota/usage.json').read_bytes())
+        self.assertEqual(usage['days']['2026-10-24'], sum(row['inputCharactersReserved'] for row in translator.attempts))
+        self.assertGreater(translator.attempts[1]['inputCharactersReserved'], translator.attempts[0]['inputCharactersReserved'])
+        self.assertTrue(any(json.loads(path.read_bytes())['repairFeedback'] is not None
+            for path in (self.root / 'gemini/native').glob('*.json')))
+
+    def test_persistent_factual_rejection_stops_after_one_repair_without_partial_cache(self):
+        calls = []
+        def bad(texts, timeout):
+            calls.append(texts)
+            raw = response(texts)
+            rows = json.loads(raw['candidates'][0]['content']['parts'][0]['text'])
+            rows['translations'][-1]['text'] += ' 7 goals'
+            raw['candidates'][0]['content']['parts'][0]['text'] = json.dumps(rows)
+            return raw
+        translator = self.translator(bad)
+        with self.assertRaises(TranslationRejected): translator.prepare_batch({'items': [item()]})
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(translator.prepared, {})
+        self.assertFalse((self.root / 'gemini/responses').exists())
+        self.assertTrue(all(row['rejection']['candidateHtml'] for row in translator.attempts))
+
+    def test_repair_revalidates_previously_good_rows_and_cannot_ignore_a_new_defect(self):
+        calls = []
+        def request(texts, timeout):
+            calls.append(texts)
+            raw = response(texts)
+            rows = json.loads(raw['candidates'][0]['content']['parts'][0]['text'])
+            index = 1 if len(calls) == 1 else 0
+            rows['translations'][index]['text'] = rows['translations'][index]['text'].replace('</div>', ' 9 wins</div>')
+            raw['candidates'][0]['content']['parts'][0]['text'] = json.dumps(rows)
+            return raw
+        translator = self.translator(request)
+        with self.assertRaises(TranslationRejected): translator.prepare_batch({'items': [item()]})
+        self.assertEqual(len(calls), 2)
+        self.assertEqual([row['rejection']['id'] for row in translator.attempts], ['1', '0'])
+        self.assertEqual(translator.prepared, {})
+        self.assertFalse((self.root / 'gemini/responses').exists())
+
+    def test_deadline_between_fact_rejection_and_repair_blocks_second_request(self):
+        ticks = iter((0, 0, 0, 0, 2))
+        calls = []
+        def request(texts, timeout):
+            calls.append(texts)
+            return response([text.replace('</div>', ' 9 wins</div>') for text in texts])
+        translator = self.translator(request, config=replace(self.config, max_seconds=1), monotonic=lambda: next(ticks))
+        with self.assertRaises(TranslationRejected) as caught: translator.text(item()['summary']['fr'], item())
+        self.assertEqual(caught.exception.code, 'gemini_time_budget_exhausted')
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(translator.requests, 1)
+
+    def test_repair_shares_three_physical_attempts_with_http_retry_and_global_budget(self):
+        calls = []
+        def request(texts, timeout):
+            calls.append(texts)
+            if len(calls) == 1: raise gemini.GeminiFailure(429)
+            raw = response(texts)
+            if len(calls) == 2:
+                rows = json.loads(raw['candidates'][0]['content']['parts'][0]['text'])
+                rows['translations'][0]['text'] = rows['translations'][0]['text'].replace('</div>', ' 9 wins</div>')
+                raw['candidates'][0]['content']['parts'][0]['text'] = json.dumps(rows)
+            return raw
+        translator = self.translator(request, sleep=lambda _: None)
+        translator.text(item()['summary']['fr'], item())
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(translator.requests, 3)
+        translator = self.translator(lambda texts, timeout: response([text.replace('</div>', ' 9 wins</div>') for text in texts]),
+            config=replace(self.config, max_requests=1))
+        with self.assertRaises(TranslationRejected) as caught: translator.text(item()['summary']['fr'] + '!', item())
+        self.assertEqual(caught.exception.code, 'gemini_request_budget_exhausted')
+        self.assertEqual(translator.requests, 1)
+
+    def test_technical_schema_and_credential_failures_never_schedule_content_repair(self):
+        for mode in ('401', 'schema', 'incomplete', 'credential'):
+            calls = []
+            def request(texts, timeout):
+                calls.append(texts)
+                if mode == '401': raise gemini.GeminiFailure(401)
+                raw = response(texts)
+                if mode == 'schema': raw['candidates'][0]['content']['parts'][0]['text'] = '{'
+                if mode == 'incomplete': raw['candidates'][0]['finishReason'] = 'MAX_TOKENS'
+                if mode == 'credential': raw['unexpected'] = KEY
+                return raw
+            translator = self.translator(request)
+            with self.subTest(mode=mode), self.assertRaises(TranslationRejected): translator.text(item()['summary']['fr'], item())
+            self.assertEqual(len(calls), 1)
+            self.assertFalse(translator.attempts[0].get('contentRepairScheduled', False))
 
     def test_cache_malformed_is_closed_not_replaced_with_a_paid_request(self):
         translator = self.translator(lambda *a: self.fail('Bad cache must not request'))
@@ -162,7 +286,7 @@ class GeminiTests(unittest.TestCase):
         self.assertEqual(translator.prepared, {})
         self.assertFalse((self.root / 'gemini/responses').exists())
         self.assertEqual(translator.attempts[-1]['rejection']['code'], 'gemini_output_structure_or_facts_changed')
-        self.assertEqual(len(list((self.root / 'gemini/native').glob('*.json'))), 1)
+        self.assertEqual(len(list((self.root / 'gemini/native').glob('*.json'))), 2)
 
     def test_retry_429_and_503_reserves_each_attempt_and_respects_retry_after(self):
         calls, pauses = [], []
