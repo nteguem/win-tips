@@ -136,6 +136,6 @@ def create_translator_from_env(cache_dir, max_seconds=1200, ensure_fallback_read
         raise TranslationRejected('invalid_primary_routing')
     translator = CascadeTranslator(config, mt_request=transport, mt_model=transport.model_id,
                                    cache_dir=cache_dir, ensure_fallback_ready=ensure_fallback_ready,
-                                   qwen_primary=True, semantic_judge_enabled=True)
+                                   qwen_primary=True)
     translator.mt_manifest_sha256 = transport.manifest_sha256
     return translator

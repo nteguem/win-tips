@@ -145,7 +145,7 @@ def validate_item(item, source, edition, now, lead):
 
 
 def make_translator(args, output, resources):
-    from .translation import CascadeTranslator, TranslationConfig, TranslationRejected
+    from .translation import LocalTranslator, TranslationConfig
     started = False
     def ensure_fallback_ready():
         nonlocal started
@@ -159,17 +159,14 @@ def make_translator(args, output, resources):
         return create_translator_from_env(cache_dir=output / 'translation-cache', max_seconds=getattr(args, 'translation_max_seconds', 1200), ensure_fallback_ready=ensure_fallback_ready)
     if mode != 'ollama':
         raise ValueError('unknown_local_translation_provider')
+    ensure_fallback_ready()
     defaults = TranslationConfig()
-    def no_mt_transport(*args, **kwargs):
-        raise TranslationRejected('mt_forbidden_in_ollama_provider')
-    return CascadeTranslator(TranslationConfig(
+    return LocalTranslator(TranslationConfig(
         endpoint=os.environ.get('WINTIPS_EDITORIAL_MODEL_ENDPOINT', defaults.endpoint),
         model=os.environ.get('WINTIPS_EDITORIAL_MODEL', defaults.model),
         fallback_model=os.environ.get('WINTIPS_EDITORIAL_FALLBACK_MODEL', defaults.fallback_model),
         max_seconds=getattr(args, 'translation_max_seconds', 1200),
-    ), cache_dir=output / 'translation-cache', semantic_judge_enabled=True,
-        qwen_primary=True, mt_request=no_mt_transport, mt_model='disabled-ollama-provider',
-        ensure_fallback_ready=ensure_fallback_ready)
+    ), cache_dir=output / 'translation-cache')
 
 
 def safe_reason(error):
