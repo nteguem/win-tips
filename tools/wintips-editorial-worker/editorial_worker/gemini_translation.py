@@ -6,6 +6,8 @@ The shared cloud validator preserves factual spans; it does not prove semantics.
 from __future__ import annotations
 
 from copy import deepcopy
+import base64
+import binascii
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from hashlib import sha256
@@ -166,9 +168,24 @@ def response_texts(raw, count):
         raise TranslationRejected('gemini_generation_incomplete')
     content = candidate.get('content')
     parts = content.get('parts') if isinstance(content, dict) else None
-    if (not isinstance(parts, list) or not parts or any(not isinstance(part, dict) or
-            set(part) != {'text'} or not isinstance(part['text'], str) for part in parts)):
+    if not isinstance(parts, list) or not parts:
         raise TranslationRejected('gemini_response_invalid')
+    for part in parts:
+        # Google Part may attach an opaque thoughtSignature to the FINAL text.
+        # It is transport metadata, never translation text or evidence of facts.
+        # Explicit thought content, tools and all other data variants stay closed.
+        if (not isinstance(part, dict) or not {'text'} <= set(part) <= {'text', 'thoughtSignature', 'thought'} or
+                not isinstance(part['text'], str) or 'thought' in part and part['thought'] is not False):
+            raise TranslationRejected('gemini_response_invalid')
+        if 'thoughtSignature' in part:
+            signature = part['thoughtSignature']
+            if (not isinstance(signature, str) or len(signature) > 65_536 or
+                    not re.fullmatch(r'[A-Za-z0-9+/_-]*={0,2}', signature)):
+                raise TranslationRejected('gemini_response_invalid')
+            try:
+                base64.b64decode(signature + '=' * (-len(signature) % 4), altchars=b'-_', validate=True)
+            except (ValueError, binascii.Error):
+                raise TranslationRejected('gemini_response_invalid') from None
     try:
         parsed = _closed_json(''.join(part['text'] for part in parts))
     except (ValueError, TypeError, UnicodeError):

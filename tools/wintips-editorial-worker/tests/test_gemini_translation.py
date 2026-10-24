@@ -3,6 +3,7 @@ from contextlib import ExitStack
 from copy import deepcopy
 from dataclasses import replace
 from datetime import datetime, timezone
+from hashlib import sha256
 import io
 import json
 from pathlib import Path
@@ -219,6 +220,44 @@ class GeminiTests(unittest.TestCase):
         for raw in variants:
             with self.subTest(raw=raw), self.assertRaises(TranslationRejected): gemini.response_texts(raw, 1)
         self.assertEqual(len(gemini.response_texts(good, 1)), 1)
+
+    def test_four_actual_native_final_parts_accept_signature_without_changing_text(self):
+        fixture = json.loads((Path(__file__).parent / 'fixtures/gemini-native-parts-20261024.json').read_bytes())
+        self.assertEqual(len(fixture['cases']), 4)
+        for case in fixture['cases']:
+            raw = case['raw']
+            parts = raw['candidates'][0]['content']['parts']
+            self.assertEqual([sha256(part['text'].encode()).hexdigest() for part in parts], case['textSha256'])
+            self.assertIn('thoughtSignature', parts[0])
+            actual = gemini.response_texts(raw, case['expectedCount'])
+            without_metadata = deepcopy(raw)
+            for part in without_metadata['candidates'][0]['content']['parts']: part.pop('thoughtSignature')
+            self.assertEqual(actual, gemini.response_texts(without_metadata, case['expectedCount']))
+
+    def test_signature_metadata_never_admits_thought_tools_bad_ids_or_nonstop(self):
+        good = response(['<div>Bonjour</div>'])
+        part = good['candidates'][0]['content']['parts'][0]
+        part.update(thoughtSignature='AA==', thought=False)
+        self.assertEqual(len(gemini.response_texts(good, 1)), 1)
+        for signature in (None, 12, {}, 'not base64!', 'A', 'A' * 65_537):
+            bad = deepcopy(good)
+            bad['candidates'][0]['content']['parts'][0]['thoughtSignature'] = signature
+            with self.subTest(signatureType=type(signature).__name__), self.assertRaises(TranslationRejected):
+                gemini.response_texts(bad, 1)
+        for field, value in (('thought', True), ('thought', 0), ('thought', None),
+                ('functionCall', {}), ('inlineData', {}), ('partMetadata', {}), ('unknown', True)):
+            bad = deepcopy(good)
+            bad['candidates'][0]['content']['parts'][0][field] = value
+            with self.subTest(field=field, value=value), self.assertRaises(TranslationRejected):
+                gemini.response_texts(bad, 1)
+        for reason in ('MAX_TOKENS', 'SAFETY', None):
+            bad = deepcopy(good)
+            bad['candidates'][0]['finishReason'] = reason
+            with self.subTest(reason=reason), self.assertRaises(TranslationRejected):
+                gemini.response_texts(bad, 1)
+        bad = deepcopy(good)
+        bad['candidates'][0]['content']['parts'][0]['text'] = '{"translations":[{"id":"wrong","text":"x"}]}'
+        with self.assertRaises(TranslationRejected): gemini.response_texts(bad, 1)
 
     def test_transport_header_key_never_url_and_only_one_physical_post(self):
         class Reply(io.BytesIO):

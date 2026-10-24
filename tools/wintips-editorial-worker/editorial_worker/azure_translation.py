@@ -297,8 +297,11 @@ def validate_output(source, item, content):
     parser.feed(content)
     target = parser.finish()
     for name in _names(item):
-        pattern = r'(?<!\w)' + re.escape(name) + r'(?!\w)'
-        if len(re.findall(pattern, source)) != len(re.findall(pattern, target)):
+        # Canonical capitalization is not an added team/competition. Protected
+        # span contents above still remain byte-exact; count all unprotected
+        # case variants too, so a duplicate lowercase name cannot evade checks.
+        pattern = r'(?<!\w)' + re.escape(name.casefold()) + r'(?!\w)'
+        if len(re.findall(pattern, source.casefold())) != len(re.findall(pattern, target.casefold())):
             raise TranslationRejected('azure_name_occurrences_changed')
     # Copying an entire narrative unchanged is not an English translation.
     if target == source:

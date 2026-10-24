@@ -18,5 +18,27 @@
     "sourceSnapshotBytes": 141153,
     "fixtureTransform": "CRLF to LF only, per tests/fixtures/.gitattributes; original authorized snapshot unchanged under qa/manual-journal-20261024/wintips/sources",
     "readAtUtc": "2026-10-24T07:33:05.597295+00:00"
+  },
+  {
+    "file": "turf-2026-10-24-course-current.html",
+    "sourceUrl": "https://www.ruedesjoueurs.com/turf/pronostic-turf/course/24-10-2026/R1/C3/prix-de-beaune.html",
+    "fixtureSha256": "84660c49d19ac41c76c966dff0b4963c06f4a1729994b1f72360833967167969",
+    "bytes": 180004,
+    "sourceSnapshotSha256": "406f62fb37943da27cd8ca9be6f9cc0c14bff35302a610edbcb2b0fedc88bc92",
+    "sourceSnapshotBytes": 180392,
+    "fixtureTransform": "CRLF to LF only, per tests/fixtures/.gitattributes; native HTTP cache under qualification-gemini-20261024T095037Z-evidence unchanged",
+    "readAtUtc": "2026-10-24T09:50:55.566765+00:00",
+    "evidenceCacheFile": "qa\\automation-reliability-20261024\\qualification-gemini-20261024T095037Z-evidence\\wintips\\http-cache\\d03208e2f42fa3c103b20e7a94f4e849af88f70731e969051a2ea6e5e5ca86fc.json"
+  },
+  {
+    "file": "turf-2026-10-24-bridge.html",
+    "sourceUrl": "https://www.ruedesjoueurs.com/turf/pronostic-turf/pronostics-quinte/74796-pronostic-quinte-du-samedi-24-octobre-prix-de-beaune-compiegne-r1c3-le-turf-decrypte-comme-un-pronostic-foot.html",
+    "fixtureSha256": "f5a3b8617f2434c4b20eddc2b1d590e8aed874a1884acc1296a6184985f5bdcb",
+    "bytes": 144392,
+    "sourceSnapshotSha256": "7ea412c3d12dcf4b0e635b88bba4c65d8efe5dfc50eaec65595aef8b10de7ab1",
+    "sourceSnapshotBytes": 145119,
+    "fixtureTransform": "CRLF to LF only, per tests/fixtures/.gitattributes; native HTTP cache under qualification-gemini-20261024T095037Z-evidence unchanged",
+    "readAtUtc": "2026-10-24T09:50:55.989506+00:00",
+    "evidenceCacheFile": "qa\\automation-reliability-20261024\\qualification-gemini-20261024T095037Z-evidence\\wintips\\http-cache\\aadea93cbc3d309c32a20c2e7898b42ef36746a4ff4a38b823e45efdca01c43c.json"
   }
 ]

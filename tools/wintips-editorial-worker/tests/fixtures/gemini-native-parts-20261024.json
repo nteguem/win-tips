@@ -1,0 +1,178 @@
+{
+  "schema": 1,
+  "method": "native HTTP response from the failed QA qualification",
+  "anonymization": [
+    "Opaque thoughtSignature replaced with valid synthetic Base64 AA==.",
+    "Provider responseId replaced. Generated text, STOP, IDs, model and usage unchanged."
+  ],
+  "sourceEvidenceUnmodified": true,
+  "cases": [
+    {
+      "evidenceFile": "qa/automation-reliability-20261024/qualification-gemini-20261024T095037Z-evidence/bigwin/translation-cache/gemini/native/0482669d1ef64fdeecb250bb7a06c89cef8e39534e3acddbb679fa13b5104e28.json",
+      "evidenceSha256": "de9252df2536f14b7c9c6480dc92e4f988058af31038125f20270b1f317334de",
+      "expectedCount": 7,
+      "textSha256": [
+        "a8f93616619fdbdc40a9d97e268b72163f0bc9b458425a141da2d3f9c159488b"
+      ],
+      "raw": {
+        "candidates": [
+          {
+            "content": {
+              "parts": [
+                {
+                  "text": "{\n  \"translations\": [\n    {\n      \"id\": \"0\",\n      \"text\": \"<div>Not at the expected level during the previous campaign, <span id=\\\"wt0\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">Chelsea</span> had to settle for an uninspiring <span id=\\\"wt1\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">10th</span> place in the <span id=\\\"wt2\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">Premier League</span>. The London club definitely intends to feature prominently again this season. To achieve this, the board brought in manager Xabi Alonso this summer. <span id=\\\"wt3\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">Chelsea</span> is currently <span id=\\\"wt4\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">4th</span> in the <span id=\\\"wt5\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">Premier League</span> with <span id=\\\"wt6\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">13</span> points gathered from <span id=\\\"wt7\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">7</span> matches. Before the international break, the Blues had worried their fans with a sequence of <span id=\\\"wt8\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">three</span> winless games (<span id=\\\"wt9\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">1</span> draw and <span id=\\\"wt10\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">2</span> defeats). However, they brilliantly got back on track afterwards. <span id=\\\"wt11\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">Chelsea</span> easily brushed aside Bournemouth (<span id=\\\"wt12\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">5-1</span>) before winning in front of Everton's fans last weekend (<span id=\\\"wt13\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">0-2</span>).</div>\"\n    },\n    {\n      \"id\": \"1\",\n      \"text\": \"<div>Despite substantial investment, <span id=\\\"wt0\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">Tottenham</span> has been greatly disappointing for some time. Last year, the London side even had to wait until the final matchday to save its top-flight status. The goal is obviously to show a different face this season. Unfortunately for the team and its supporters, Roberto De Zerbi's crew has started off on worrying foundations. Indeed, the Spurs have not won any of their <span id=\\\"wt1\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">six</span> opening league matches (<span id=\\\"wt2\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">3</span> draws and <span id=\\\"wt3\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">3</span> defeats). They finally showed a reaction last Monday by overcoming promoted side Coventry at home (<span id=\\\"wt4\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">3-1</span>). This success allows <span id=\\\"wt5\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">Tottenham</span> to sit today in <span id=\\\"wt6\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">16th</span> place in the Premier League with a <span id=\\\"wt7\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">1</span>-point lead over the first relegation spot. Edge to <span id=\\\"wt8\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">Chelsea</span> on current form</div>\"\n    },\n    {\n      \"id\": \"2\",\n      \"text\": \"<div><span id=\\\"wt0\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">Chelsea</span> win</div>\"\n    },\n    {\n      \"id\": \"3\",\n      \"text\": \"<div>There clearly seems to be AS Saint-Etienne and the others this season in this <span id=\\\"wt0\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">Ligue 2</span> championship. Absolutely dominant, Ian Castro's men have lost only <span id=\\\"wt1\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">one</span> single match this year and they have already secured <span id=\\\"wt2\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">7</span> victories over this period, asserting themselves more than ever as the massive favorites for the championship title.</div>\"\n    },\n    {\n      \"id\": \"4\",\n      \"text\": \"<div>The players from Forez had only experienced a minor slump before the international break by surprisingly losing away at Dunkerque (<span id=\\\"wt0\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">2-1</span>) then conceding a draw at Metz (<span id=\\\"wt1\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">2-2</span>). But the Greens quickly got back on track by winning against Rodez (<span id=\\\"wt2\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">2-0</span>) and then away at Red Star (<span id=\\\"wt3\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">0-1</span>) last weekend. Comfortably perched at the top of the standings, the Stéphanois boast a <span id=\\\"wt4\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">5</span>-point lead over their closest pursuer.</div>\"\n    },\n    {\n      \"id\": \"5\",\n      \"text\": \"<div>While Saint-Etienne is flying high at the start of this season, the same clearly cannot be said for FC <span id=\\\"wt0\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">Nantes</span>, which finds itself bogged down in the bottom half of the table in this <span id=\\\"wt1\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">Ligue 2</span>, a few months after being relegated from the top flight, with just a single-point lead over the relegation zone. Having started this championship very poorly, the club has already made a managerial change, with Grégory Poirier replacing Michel Der Zakarian as early as August.</div>\"\n    },\n    {\n      \"id\": \"6\",\n      \"text\": \"<div>After a brief bright patch in terms of results, notably with <span id=\\\"wt0\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">2</span> wins in <span id=\\\"wt1\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">3</span> matches played before the international break against Nancy (<span id=\\\"wt2\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">1-0</span>), Sochaux (defeat <span id=\\\"wt3\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">1-0</span>) and Boulogne (<span id=\\\"wt4\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">1-2</span>), the Canaries then delivered a rather disappointing performance against Reims (<span id=\\\"wt5\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">0-0</span>) before falling at home last week against Dunkerque (<span id=\\\"wt6\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">2-3</span>). Edge to Saint-Etienne on current form</div>\"\n    }\n  ]\n}",
+                  "thoughtSignature": "AA=="
+                }
+              ],
+              "role": "model"
+            },
+            "finishReason": "STOP",
+            "index": 0
+          }
+        ],
+        "modelVersion": "gemini-3.5-flash-lite",
+        "responseId": "redacted-provider-response-id",
+        "usageMetadata": {
+          "candidatesTokenCount": 1529,
+          "promptTokenCount": 1760,
+          "promptTokensDetails": [
+            {
+              "modality": "TEXT",
+              "tokenCount": 1760
+            }
+          ],
+          "serviceTier": "standard",
+          "totalTokenCount": 3289
+        }
+      },
+      "capitalizationRegression": {
+        "sourcePacketSha256": "b96d5b22c91c747ed31349ac53940e6f2fdff67d34803a45ab2ec8834acb426e",
+        "source": "Malgré des investissements conséquents, Tottenham déçoit grandement depuis quelques temps. L'an passé, la formation londonienne avait même dû attendre la dernière journée pour sauver sa tête au sein de l'élite. L'objectif est bien évidemment d'afficher un autre visage cette saison. Malheureusement pour elle et ses supporters, la bande à Roberto De Zerbi est reparti sur des bases préoccupantes. En effet, les Spurs n'ont remporté aucun de leurs six premiers matchs de championnats (3 matchs nuls et 3 défaites). Ils ont enfin affiché une réaction lundi dernier en prenant le dessus, à domicile, sur le promu Coventry (3-1). Ce succès permet à Tottenham de figurer aujourd'hui au 16ème rang de la premier League avec 1 point d'avance sur le premier relégable. Avantage Chelsea sur la forme",
+        "fixture": {
+          "id": "5795487",
+          "home": "Chelsea",
+          "away": "Tottenham",
+          "competition": "Premier League"
+        },
+        "rowIndex": 1
+      }
+    },
+    {
+      "evidenceFile": "qa/automation-reliability-20261024/qualification-gemini-20261024T095037Z-evidence/wintips/translation-cache/gemini/native/72d00a2926a968dfd8f38ebcaf27263331bd6aa477d8d226af4dc14f6f52d75c.json",
+      "evidenceSha256": "064fa8749669bed034246ea2b5231dd406cca9ee418efa5461af9f9cd73ea121",
+      "expectedCount": 6,
+      "textSha256": [
+        "129aec319591d34c5302e7e41c41e95d61cbbc0d112e342402582de719d2376a"
+      ],
+      "raw": {
+        "candidates": [
+          {
+            "content": {
+              "parts": [
+                {
+                  "text": "{\n  \"translations\": [\n    {\n      \"id\": \"0\",\n      \"text\": \"<div>Last year, <span id=\\\"wt0\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">Arsenal</span> brought a long drought to an end by winning the Premier League. Furthermore, Mikel Arteta's side also shone on the European stage by reaching the Champions League final, beaten by PSG. This season, the London outfit hopes to perform strongly across all fronts once again. Authoritative winners of the Community Shield against Manchester City (<span id=\\\"wt1\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">3-0</span>), <span id=\\\"wt2\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">Arsenal</span> then won their <span id=\\\"wt3\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">four</span> opening league matches. While the Gunners suffered a major setback away at Brighton just before the international break (<span id=\\\"wt4\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">3-0</span>), they have since resumed their forward march with successes secured against Leeds (<span id=\\\"wt5\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">2-1</span>) and Nottingham Forest last weekend (<span id=\\\"wt6\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">0-1</span>)<span id=\\\"wt7\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">3</span> This puts them in <span id=\\\"wt8\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">2nd</span> place in the Premier League, <span id=\\\"wt9\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">3</span> points behind Manchester City. This week, <span id=\\\"wt10\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">Arsenal</span> brought back a good point from Bayern Munich in the Champions League (<span id=\\\"wt11\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">2-2</span>).</div>\"\n    },\n    {\n      \"id\": \"1\",\n      \"text\": \"<div>Performing to their advantage during the previous campaign, <span id=\\\"wt0\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">Everton</span> were not all that far from securing a European spot. Still under the guidance of David Moyes this season, the Liverpool-based club fully intends to continue its progression. <span id=\\\"wt1\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">Everton</span> has shown good disposition up to now. Indeed, the Toffees are currently <span id=\\\"wt2\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">8èmes</span> in the Premier League and concede only <span id=\\\"wt3\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">3</span> units of deficit to the <span id=\\\"wt4\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">4th</span> place. Difficult to maneuver against, they had lost none of their <span id=\\\"wt5\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">six</span> opening league matches (<span id=\\\"wt6\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">2</span> wins and <span id=\\\"wt7\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">4</span> draws). On the other hand, <span id=\\\"wt8\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">Everton</span> suffered their first bump by losing at home to Chelsea last weekend (<span id=\\\"wt9\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">0-2</span>). Advantage <span id=\\\"wt10\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">Arsenal</span> on current form</div>\"\n    },\n    {\n      \"id\": \"2\",\n      \"text\": \"<div>Winner of the Championship last year, <span id=\\\"wt0\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">Coventry</span> is back in the top flight for the first time since <span id=\\\"wt1\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">2001</span>. The promoted side is likely to have to work hard to avoid relegation this season, and the start of the league campaign has worried all observers as well as the fans. Frank Lampard's men had lost their <span id=\\\"wt2\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">four</span> opening matches, notably including a thrashing at home against Brighton (<span id=\\\"wt3\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">0-5</span>). On the other hand, they showed a reaction by defeating Nottingham Forest (<span id=\\\"wt4\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">0-1</span>) and Newcastle (<span id=\\\"wt5\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">4-1</span>) back-to-back. Last Monday, <span id=\\\"wt6\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">Coventry</span> fell back into losing ways in front of Tottenham's fans (<span id=\\\"wt7\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">4-1</span>) and finds itself today in <span id=\\\"wt8\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">18th</span> place in the Premier League.</div>\"\n    },\n    {\n      \"id\": \"3\",\n      \"text\": \"<div><span id=\\\"wt0\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">11th</span> in the Premier League during the previous campaign, <span id=\\\"wt1\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">Fulham</span> narrowly missed out on the final European spots. With the aim of stepping up a gear, the board bet on Alvaro Arbeloa during the off-season. Unfortunately, the former Real Madrid coach's beginnings are proving sluggish. The Cottagers are currently <span id=\\\"wt2\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">19èmes</span> in the Premier League and trail their opponents of the day by <span id=\\\"wt3\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">1</span> point. Not yet up to speed, they had won none of their <span id=\\\"wt4\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">six</span> opening league matches (<span id=\\\"wt5\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">2</span> draws and <span id=\\\"wt6\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">4</span> defeats). The London formation finally reacted last weekend. In front of its fans, <span id=\\\"wt7\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">Fulham</span> got the upper hand over promoted Hull City (<span id=\\\"wt8\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">1-0</span>). Not really any advantage on form</div>\"\n    },\n    {\n      \"id\": \"4\",\n      \"text\": \"<div>At the start of the season, <span id=\\\"wt0\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">Rayo Vallecano</span> played its home matches at Butarque pending emergency renovations inside Vallecas. During this period, the Madrid suburban club managed to remain undefeated by holding Alaves to a draw (<span id=\\\"wt1\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">1-1</span>) and treating itself to wins against Racing Santander (<span id=\\\"wt2\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">3-2</span>) and Espanyol Barcelona (<span id=\\\"wt3\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">2-1</span>), before seeing its match against Athletic Bilbao fail to reach its conclusion following incidents caused by supporters. On Monday evening, <span id=\\\"wt4\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">Rayo Vallecano</span> players went and took <span id=\\\"wt5\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">one</span> point on Getafe's turf on the latest matchday (<span id=\\\"wt6\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">1-1</span>). A second consecutive draw following the one conceded on Osasuna's turf at El Sadar (<span id=\\\"wt7\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">1-1</span>). In the standings, <span id=\\\"wt8\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">Rayo Vallecano</span> finds itself in mid-table, in <span id=\\\"wt9\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">14th</span> place.</div>\"\n    },\n    {\n      \"id\": \"5\",\n      \"text\": \"<div>Already on probation last season with survival secured by the skin of their teeth against Girona, <span id=\\\"wt0\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">Elche</span> finds itself in the relegation zone today, in <span id=\\\"wt1\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">18th</span> place, with only <span id=\\\"wt2\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">one</span> small victory to its name. This was clinched on Espanyol Barcelona's turf before the international break (<span id=\\\"wt3\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">1-3</span>). Since returning from the break, the Franjiverdes have signed off on <span id=\\\"wt4\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">two</span> goalless draws against Celta Vigo at home (<span id=\\\"wt5\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">0-0</span>) and last weekend at Villarreal's Ceramica (<span id=\\\"wt6\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">0-0</span>). Which remains, fundamentally, quite encouraging for Thomas Lemar's teammates. No advantage on form</div>\"\n    }\n  ]\n}",
+                  "thoughtSignature": "AA=="
+                }
+              ],
+              "role": "model"
+            },
+            "finishReason": "STOP",
+            "index": 0
+          }
+        ],
+        "modelVersion": "gemini-3.5-flash-lite",
+        "responseId": "redacted-provider-response-id",
+        "usageMetadata": {
+          "candidatesTokenCount": 2058,
+          "promptTokenCount": 2351,
+          "promptTokensDetails": [
+            {
+              "modality": "TEXT",
+              "tokenCount": 2351
+            }
+          ],
+          "serviceTier": "standard",
+          "totalTokenCount": 4409
+        }
+      }
+    },
+    {
+      "evidenceFile": "qa/automation-reliability-20261024/qualification-gemini-20261024T095037Z-evidence/wintips/translation-cache/gemini/native/7fc224dc346b6d97ab0c717c9bd3b9c2b740d558b4c58bdccd60fea1feb7a46e.json",
+      "evidenceSha256": "69204939701ba3caea9153afe4648b903f1d6076dfc97cc68c1685329f592a12",
+      "expectedCount": 2,
+      "textSha256": [
+        "560c9910d4e9be292419cf2ebc9cc95d85e13d5930c454b96ed06a5de5ae3c0f"
+      ],
+      "raw": {
+        "candidates": [
+          {
+            "content": {
+              "parts": [
+                {
+                  "text": "{\"translations\": [{\"id\": \"0\", \"text\": \"<div>As Kenny Atkinson would say, Cleveland gave themselves a chance to take on the Philadelphia Avengers on Thursday night. A chance, and a mega chance even, by leading by <span id=\\\"wt0\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">29</span> points. But in The Land, playing the chokers is nothing new, as evidenced by last season's despicable playoff performances against the Knicks in particular. The Cavs therefore relapsed and managed to lose this game at the Wells Fargo Center (<span id=\\\"wt1\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">114-106</span>). An atrocious second half marked by an incalculable number of turnovers and terrible shooting from the perimeter players (Merrill, Mitchell and Harden). For a first NBA game of the season, the <span id=\\\"wt2\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">2016</span> NBA champion had hoped for much better than entering history through the very smallest of doors (the first team in the play-by-play modern era) having squandered a <span id=\\\"wt3\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">29</span>-point lead.</div>\"}, {\"id\": \"1\", \"text\": \"<div>The <span id=\\\"wt0\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">Brooklyn Nets</span> season will be a success if they qualify for the play-in. Reaching <span id=\\\"wt1\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">30</span> wins is practically out of reach for the New Yorkers given how weak the roster is, even though Julius Randle wears this jersey. To start the season, the Nets let the Hornets steal the show at the Barclays Center (defeat <span id=\\\"wt2\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">103-110</span>). No advantage regarding current form</div>\"}]}",
+                  "thoughtSignature": "AA=="
+                }
+              ],
+              "role": "model"
+            },
+            "finishReason": "STOP",
+            "index": 0
+          }
+        ],
+        "modelVersion": "gemini-3.5-flash-lite",
+        "responseId": "redacted-provider-response-id",
+        "usageMetadata": {
+          "candidatesTokenCount": 408,
+          "promptTokenCount": 572,
+          "promptTokensDetails": [
+            {
+              "modality": "TEXT",
+              "tokenCount": 572
+            }
+          ],
+          "serviceTier": "standard",
+          "totalTokenCount": 980
+        }
+      }
+    },
+    {
+      "evidenceFile": "qa/automation-reliability-20261024/qualification-gemini-20261024T095037Z-evidence/wintips/translation-cache/gemini/native/9c37078de00f8637b0a0c0e12f5a7e2e72b3bd92ce9e8e5cce8d85b74129c9f5.json",
+      "evidenceSha256": "d760bb46e55151e1b9bee1f388b0d8ec8d0dbce9e14ed116b7d915e1922e8384",
+      "expectedCount": 7,
+      "textSha256": [
+        "a4437ab9c8f741dd5a440cfa8261a48fefe2dab64f112f6b404694f096e47372"
+      ],
+      "raw": {
+        "candidates": [
+          {
+            "content": {
+              "parts": [
+                {
+                  "text": "{\n  \"translations\": [\n    {\n      \"id\": \"0\",\n      \"text\": \"<div>Not at the expected level during the previous campaign, <span id=\\\"wt0\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">Chelsea</span> had to settle for an unflattering <span id=\\\"wt1\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">10th</span> place in the Premier League. The London club fully intends to feature among the front-runners this season. To achieve this, the board brought in manager Xabi Alonso this summer. <span id=\\\"wt2\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">Chelsea</span> is currently <span id=\\\"wt3\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">4th</span> in the Premier League with <span id=\\\"wt4\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">13</span> points taken from <span id=\\\"wt5\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">7</span> matches. Before the international break, the Blues had worried their fans with a sequence of <span id=\\\"wt6\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">three</span> winless games (<span id=\\\"wt7\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">1</span> draw and <span id=\\\"wt8\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">2</span> defeats). However, they brilliantly resumed their forward momentum afterwards. <span id=\\\"wt9\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">Chelsea</span> easily brushed aside Bournemouth (<span id=\\\"wt10\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">5-1</span>) before winning in front of Everton's fans last weekend (<span id=\\\"wt11\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">0-2</span>).</div>\"\n    },\n    {\n      \"id\": \"1\",\n      \"text\": \"<div>Despite substantial investments, <span id=\\\"wt0\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">Tottenham</span> has been greatly disappointing for some time. Last year, the London side even had to wait until the final matchday to save their top-flight status. The objective is obviously to show a different face this season. Unfortunately for the club and its supporters, Roberto De Zerbi's men have started off on concerning foundations. Indeed, the Spurs have not won any of their <span id=\\\"wt1\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">six</span> opening league matches (<span id=\\\"wt2\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">3</span> draws and <span id=\\\"wt3\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">3</span> defeats). They finally showed a reaction last Monday by getting the better of promoted Coventry at home (<span id=\\\"wt4\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">3-1</span>). This success allows <span id=\\\"wt5\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">Tottenham</span> to sit today in <span id=\\\"wt6\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">16th</span> place in the Premier League with a <span id=\\\"wt7\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">1</span>-point lead over the first relegation spot. Advantage <span id=\\\"wt8\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">Chelsea</span> on current form</div>\"\n    },\n    {\n      \"id\": \"2\",\n      \"text\": \"<div>Easy win for Sainté?</div>\"\n    },\n    {\n      \"id\": \"3\",\n      \"text\": \"<div>There clearly seems to be AS Saint-Etienne and the others this season in this Ligue <span id=\\\"wt0\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">2</span> championship. Absolutely dominant, Ian Castro's men have lost only <span id=\\\"wt1\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">one</span> match this year and they have already secured <span id=\\\"wt2\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">7</span> victories over this period, asserting themselves more than ever as the overwhelming favorites for the title of champion.</div>\"\n    },\n    {\n      \"id\": \"4\",\n      \"text\": \"<div>The players from Forez had simply experienced a slight slump before the international break by losing to everyone's surprise away to Dunkerque (<span id=\\\"wt0\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">2-1</span>) then conceding a draw at Metz (<span id=\\\"wt1\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">2-2</span>). But the Greens quickly resumed their upward trajectory by winning against Rodez (<span id=\\\"wt2\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">2-0</span>) and then away to Red Star (<span id=\\\"wt3\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">0-1</span>) last weekend. Comfortably settled at the top of the standings, the Stéphanois boast a <span id=\\\"wt4\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">5</span>-point lead over their closest pursuer.</div>\"\n    },\n    {\n      \"id\": \"5\",\n      \"text\": \"<div>If Saint-Etienne is flying high at the start of this season, the exact opposite can clearly be said for FC <span id=\\\"wt0\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">Nantes</span>, which finds itself bogged down in the lower half of the table in this Ligue <span id=\\\"wt1\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">2</span>, a few months after its relegation from the top flight, with just a single-point lead over the red zone. Off to a very poor start in this division, the club has already made a managerial change, with Grégory Poirier having replaced Michel Der Zakarian as early as August.</div>\"\n    },\n    {\n      \"id\": \"6\",\n      \"text\": \"<div>After a brief bright spot in terms of results, notably with <span id=\\\"wt0\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">2</span> wins earned in <span id=\\\"wt1\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">3</span> matches played before the international break against Nancy (<span id=\\\"wt2\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">1-0</span>), Sochaux (defeat <span id=\\\"wt3\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">1-0</span>) and Boulogne (<span id=\\\"wt4\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">1-2</span>), the Canaries then delivered a rather disappointing performance against Reims (<span id=\\\"wt5\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">0-0</span>) before falling at home last week against Dunkerque (<span id=\\\"wt6\\\" class=\\\"notranslate\\\" translate=\\\"no\\\">2-3</span>). Advantage Saint-Etienne on current form</div>\"\n    }\n  ]\n}",
+                  "thoughtSignature": "AA=="
+                }
+              ],
+              "role": "model"
+            },
+            "finishReason": "STOP",
+            "index": 0
+          }
+        ],
+        "modelVersion": "gemini-3.5-flash-lite",
+        "responseId": "redacted-provider-response-id",
+        "usageMetadata": {
+          "candidatesTokenCount": 1486,
+          "promptTokenCount": 1703,
+          "promptTokensDetails": [
+            {
+              "modality": "TEXT",
+              "tokenCount": 1703
+            }
+          ],
+          "serviceTier": "standard",
+          "totalTokenCount": 3189
+        }
+      }
+    }
+  ]
+}

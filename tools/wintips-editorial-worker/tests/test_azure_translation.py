@@ -145,6 +145,25 @@ class AzureTranslationTests(unittest.TestCase):
         self.assertEqual(translator.market('Victoire Brest', item()), 'Brest to win')
         self.assertFalse((self.cache / 'quota/usage.json').exists())
 
+    def test_name_case_variants_keep_occurrences_and_protected_spans_byte_exact(self):
+        source = 'brest reste en forme.'
+        target, proof = validate_output(source, item(), '<div>Brest remains in good form.</div>')
+        self.assertEqual(target, 'Brest remains in good form.')
+        self.assertTrue(proof['passed'])
+        for html in ('<div>Nice remains in good form.</div>',
+                '<div>Brest remains in good form. brest</div>',
+                '<div>Brests remain in good form.</div>',
+                '<div>Remains in good form.</div>'):
+            with self.subTest(html=html), self.assertRaises(TranslationRejected):
+                validate_output(source, item(), html)
+        protected_source = 'Brest reste en forme.'
+        protected_html, _ = protect(protected_source, item())
+        good = english_html(protected_html)
+        # Even an equivalent case change INSIDE a protected name remains invalid.
+        for bad in (good.replace('>Brest<', '>brest<'), good.replace('>Brest<', '>Lyon<')):
+            with self.subTest(html=bad), self.assertRaises(TranslationRejected):
+                validate_output(protected_source, item(), bad)
+
     def test_reordering_preserved_spans_for_english_grammar_is_allowed(self):
         source = 'Brest et Nice ont gagné 3 matchs.'
         html, anchors = protect(source, item())

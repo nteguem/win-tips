@@ -44,7 +44,7 @@ class TurfLinkedAnalysisTests(unittest.TestCase):
             self.parse(page("analysis", transform))
 
     def test_snapshots_have_exact_integrity_and_provenance(self):
-        self.assertEqual(len(PROVENANCE), 2)
+        self.assertEqual(len(PROVENANCE), 4)
         for row in PROVENANCE:
             data = (FIXTURES / row["file"]).read_bytes()
             self.assertEqual(hashlib.sha256(data).hexdigest(), row["fixtureSha256"])
@@ -157,6 +157,50 @@ class TurfLinkedAnalysisTests(unittest.TestCase):
         result = s.collect_turf("2026-10-24", fetch, now=s.iso("2026-10-24T13:00:00Z"))
         self.assertEqual(result["status"], "outside_publication_window")
         self.assertEqual(result["items"], [])
+
+    def test_real_cold_24_follows_one_editorial_bridge_to_same_classic_analysis(self):
+        course, bridge, article = page("course-current"), page("bridge"), page("analysis")
+        fetch = Offline([listing(course), course, bridge, article])
+        result = s.collect_turf("2026-10-24", fetch, now=s.iso("2026-10-24T09:50:00Z"))
+        self.assertEqual(result["status"], "ready")
+        self.assertEqual(fetch.urls, [s.SOURCES["rdj_turf_quinte"], course.url, bridge.url, article.url])
+        item = result["items"][0]
+        self.assertEqual(item["sourceId"], "2026-10-24-R1C3")
+        self.assertEqual(item["startsAtUtc"], "2026-10-24T13:15:00Z")
+        self.assertEqual(item["selection"]["orderedNumbers"], [4, 6, 7, 12, 5, 9, 2, 1])
+        self.assertEqual(item["analysis"], self.parse()["analysis"])
+        self.assertNotIn("Je parie", json.dumps(item["analysis"]))
+        self.assertNotIn("Penalty", json.dumps(item["analysis"]))
+
+    def test_bridge_identity_must_keep_full_day_race_venue_and_course_backlink(self):
+        course = page("course-current")
+        for old, new in (("Samedi 24 Octobre", "Dimanche 25 Octobre"),
+                         ("Prix De Beaune", "Prix Orionis"), ("Compiegne R1C3", "Vincennes R1C3"),
+                         ("R1C3", "R1C4"), ("/prix-de-beaune.html", "/prix-vatelys.html")):
+            with self.subTest(new=new), self.assertRaises(ValueError):
+                s._turf_classic_analysis_url(page("bridge", lambda raw: raw.replace(old, new)), course, "2026-10-24")
+
+    def test_bridge_never_uses_an_unscoped_missing_ambiguous_or_wrong_related_article(self):
+        course = page("course-current")
+        original = page("analysis").url.removeprefix(s.HOST)
+        for change in (lambda raw: raw.replace('class="news-related__link"', 'class="unscoped"'),
+                       lambda raw: raw.replace("Pronostic Quinté du Samedi 24 Octobre à Compiegne", "Pronostic Quinté du Vendredi 23 Octobre à Compiegne"),
+                       lambda raw: raw.replace(original, "https://untrusted.example/74776-analysis.html")):
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                s._turf_classic_analysis_url(page("bridge", change), course, "2026-10-24")
+        extra = '<a class="news-related__link" href="' + page("analysis").url.replace("74776-", "99999-") + '">Pronostic Quinté du Samedi 24 Octobre à Compiegne - Prix de Beaune - R1C3</a>'
+        bridge = page("bridge", lambda raw: raw.replace('<ul class="news-related__list">', '<ul class="news-related__list">' + extra))
+        with self.assertRaisesRegex(ValueError, "classic_analysis_link_ambiguous"):
+            s._turf_classic_analysis_url(bridge, course, "2026-10-24")
+
+    def test_classic_after_bridge_keeps_all_existing_conditions_and_no_recursive_fallback(self):
+        course, bridge = page("course-current"), page("bridge")
+        for changed in (page("analysis", lambda raw: raw.replace("3600m", "3800m")),
+                        page("analysis", lambda raw: raw.replace("6 - LE COLOMBAR", "6 - LOUBA")),
+                        page("analysis", url=page("analysis").url.replace("74776-", "99999-")),
+                        s.rdj.FetchedPage(page("analysis").url, bridge.html)):
+            with self.subTest(url=changed.url), self.assertRaises(ValueError):
+                s.parse_turf(course, "2026-10-24", analysis_page=changed, analysis_bridge=bridge)
 
 
 if __name__ == "__main__":
