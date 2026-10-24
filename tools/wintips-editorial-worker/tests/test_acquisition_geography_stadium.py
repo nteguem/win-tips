@@ -128,14 +128,100 @@ class AcquisitionGeographyStadiumTests(unittest.TestCase):
 
     def test_stadium_is_a_location_never_the_opponent(self):
         row = self.row('026bbc')
-        for location in ('at the Ceramica of Villarreal', 'in the Ceramica de Villarreal'):
-            proof = self.check(row, row['target'].replace('against the Ceramica of Villarreal', location))
+        # Unit-test candidates only: the actual native target remains rejected
+        # above. The compound must first express its exact source goal count.
+        target = row['target'].replace('two clean draws at home against Celta Vigo', 'two goalless draws against Celta Vigo at home')
+        for location in ('at the Ceramica of Villarreal', 'in the Ceramica de Villarreal',
+                         'at the Ceramica stadium in Villarreal', 'in the Ceramica in Villarreal'):
+            proof = self.check(row, target.replace('against the Ceramica of Villarreal', location))
             venue = next(a for a in proof['anchors'] if a.get('venue_scope', {}).get('rule') == 'verified_stadium_location')
             self.assertEqual(venue['venue_scope']['sourceUrl'], guard.CERAMICA_STADIUM_SOURCE)
         for wrong in ('against the Ceramica of Villarreal', 'facing the Ceramica of Villarreal',
                       'at the Ceramica against Villarreal', 'at the Ceramica of Valencia',
-                      'at the Ceramica and Villarreal', 'at the Ceramica of Villarreal and the Ceramica'):
-            self.check(row, row['target'].replace('against the Ceramica of Villarreal', wrong), False)
+                      'at the Ceramica and Villarreal', 'at the Ceramica of Villarreal and the Ceramica',
+                      'at the Ceramica stadium against Villarreal',
+                      'at the Ceramica where they played in Villarreal',
+                      'at the Ceramica stadium in Getafe'):
+            self.check(row, target.replace('against the Ceramica of Villarreal', wrong), False)
+
+    def test_three_v45_short_native_draw_responses_remain_refused(self):
+        row = self.row('026bbc')
+        # Exact raw English from 5fb2e80b... and f710e10a...; the third native
+        # b5021e9d... equals the immutable 026bbc fixture target. No cached
+        # native is corrected or relabelled as an accepted model response.
+        targets = (
+            'Since the return from the break, the Franjiverdes have recorded two draws and goalless draws against Celta Vigo at home (0-0) and last weekend at the Ceramica stadium in Villarreal (0-0), which remains, in the end, quite encouraging for the teammates of Thomas Lemar.',
+            'Since the end of the break, Franjiverdes have recorded two draws and goalless draws against Celta Vigo at home (0-0) and last weekend at the Ceramica stadium in Villarreal (0-0), which remains quite encouraging for the team alongside Thomas Lemar.',
+            row['target'],
+        )
+        for target in targets:
+            self.check(row, target, False)
+
+    def test_counted_goalless_draw_compound_keeps_count_result_and_outer_facts(self):
+        row = self.row('026bbc')
+        target = row['target'].replace('two clean draws at home against Celta Vigo', 'two goalless draws against Celta Vigo at home').replace(
+            'against the Ceramica of Villarreal', 'at the Ceramica stadium in Villarreal')
+        for count in ('two', '2'):
+            for adjective in ('goalless', 'scoreless'):
+                proof = self.check(row, target.replace('two goalless draws', count + ' ' + adjective + ' draws'))
+                anchor = next(a for a in proof['anchors'] if a['kind'] == 'counted_goalless_draws')
+                self.assertEqual(anchor['source'], 'deux matchs nuls et vierges')
+                self.assertEqual(anchor['typed_scope']['quantity'], 2)
+                self.assertEqual(proof['remasking_proof']['source_token_order'], proof['remasking_proof']['accepted_token_order'])
+        for wrong in ('one goalless draw', 'three goalless draws', 'two scoring draws',
+                      'two clean draws', 'two goalless wins', 'two scoreless defeats',
+                      'two draws and goalless draws', 'two goalless draws and more draws',
+                      'two goalless draws and two draws', 'two goalless draws and one defeat',
+                      'two goalless draws and a victory'):
+            self.check(row, target.replace('two goalless draws', wrong), False)
+        for wrong in (target.replace('Celta Vigo', 'Getafe'),
+                      target.replace('Franjiverdes', 'Rayo Vallecano'),
+                      target.replace('at home', 'away'),
+                      target.replace('last weekend', 'next weekend'),
+                      target.replace('(0-0)', '(0-1)', 1),
+                      target.replace('Celta Vigo at home', 'at home against Celta Vigo and Elche')):
+            self.check(row, wrong, False)
+
+    def test_counted_draw_rule_is_source_scoped_and_reproducible_for_other_counts(self):
+        item = self.item(self.row('026bbc'))
+        for source, count in (('trois matchs nuls et vierges', 'three'), ('5 matchs nuls et vierges', 'five')):
+            french = 'Elche a signé ' + source + '.'
+            english = 'Elche recorded ' + count + ' goalless draws.'
+            _, proof = validate_english_sentence(french, english, item)
+            self.assertTrue(proof['passed'], proof)
+            _, bad = validate_english_sentence(french, english.replace(count, 'two'), item)
+            self.assertFalse(bad['passed'])
+        masked, anchors = guard._protect('Elche a signé deux matchs nuls.', _fixture(item))
+        self.assertFalse(any(a['kind'] == 'counted_goalless_draws' for a in anchors))
+
+    def test_prompt_guidance_preserves_typed_stadium_role_and_source_bytes(self):
+        row = self.row('026bbc')
+        masked, anchors = guard._protect(row['source'], _fixture(self.item(row)))
+        prompt = _prompt(masked, anchors)
+        self.assertIn('two goalless draws', prompt)
+        self.assertIn('verified stadium location: "Ceramica"', prompt)
+        self.assertIn('"Villarreal"', prompt)
+        self.assertIn('never against/facing/playing the stadium', prompt)
+        self.assertEqual(prompt.rpartition('\n\n\n')[2].encode('utf-8'), row['source'].encode('utf-8'))
+        other = self.row('3824e5')
+        masked, anchors = guard._protect(other['source'], _fixture(self.item(other)))
+        self.assertNotIn('verified stadium location:', _prompt(masked, anchors))
+
+    def test_source_home_result_allows_only_local_home_opponent_commutation(self):
+        row = self.row('026bbc')
+        target = row['target'].replace('two clean draws', 'two goalless draws').replace(
+            'against the Ceramica of Villarreal', 'at the Ceramica stadium in Villarreal')
+        for local in ('at home against Celta Vigo (0-0)', 'against Celta Vigo at home (0-0)'):
+            proof = self.check(row, target.replace('at home against Celta Vigo (0-0)', local))
+            self.assertTrue(proof['remasking_proof']['scoped_home_results'][0]['passed'])
+        for local in ('away against Celta Vigo (0-0)', 'against Celta Vigo away (0-0)',
+                      'against Celta Vigo (0-0)', 'against Celta Vigo at home (0-1)',
+                      'at home against Getafe (0-0)', 'at home against Celta Vigo, then (0-0)',
+                      'at home against Celta Vigo and Elche (0-0)',
+                      'and one defeat at home against Celta Vigo (0-0)',
+                      'and a victory against Celta Vigo at home (0-0)',
+                      'against Celta Vigo at home. Another match ended (0-0)'):
+            self.check(row, target.replace('at home against Celta Vigo (0-0)', local), False)
 
     def test_all_original_french_is_reconstructed_byte_for_byte_in_model_prompt(self):
         for row in self.rows:
