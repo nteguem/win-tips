@@ -1,0 +1,163 @@
+{
+  "schema": 1,
+  "method": "actual cold2 Gemini paragraph rejected before numerical-unit fix",
+  "sourceAuditFile": "qa/automation-reliability-20261024/qualification-gemini-20261024T100423Z-evidence/wintips/translation-audits/2026-10-24/rdj_turf_quinte.failed.json",
+  "sourceAuditSha256": "acdfcad2ccf61d0dd9bbfa65a0e440504cf7606fa3d11bb5281aae7d3b29baab",
+  "sourcePayloadSha256": "0dc39fde440ff39ad911e38d79a4009fb0d2250609f04727a4a4315c0f350c11",
+  "source": "7 - MON PETIT PRINCE – Avec neuf podiums en douze sorties, ce sauteur affiche une remarquable régularité et a déjà démontré qu’il avait sa place dans cette catégorie. Particulièrement à son affaire sur les pistes bien assouplies, il constitue une candidature sérieuse pour terminer dans les cinq premiers du Quinté+.",
+  "nativeHtml": "<div><span id=\"wt0\" class=\"notranslate\" translate=\"no\">7</span> - MON PETIT PRINCE – With nine podiums in twelve starts, this jumper displays remarkable consistency and has already shown that he belongs in this category. Particularly suited to well-softened tracks, he constitutes a serious candidate to finish in the top five of the Quinté+.</div>",
+  "item": {
+    "source": "rdj_turf_quinte",
+    "sourceId": "2026-10-24-R1C3",
+    "sourceUrl": "https://www.ruedesjoueurs.com/turf/pronostic-turf/course/24-10-2026/R1/C3/prix-de-beaune.html",
+    "editionDate": "2026-10-24",
+    "kind": "horse_racing",
+    "title": {
+      "fr": "Prix de Beaune · Compiègne"
+    },
+    "summary": {
+      "fr": "R1C3 · haies · 3600 m"
+    },
+    "startsAtUtc": "2026-10-24T13:15:00Z",
+    "sport": {
+      "key": "horse_racing",
+      "name": "Courses hippiques"
+    },
+    "competition": {
+      "name": "Prix de Beaune"
+    },
+    "race": {
+      "meetingNumber": 1,
+      "raceNumber": 3,
+      "name": "Prix de Beaune",
+      "racecourse": "Compiègne",
+      "discipline": "haies",
+      "distanceMeters": 3600,
+      "runnersCount": 15,
+      "runners": [
+        {
+          "number": 1,
+          "name": "Sir Marvel",
+          "odds": 19.3,
+          "silksUrl": "https://media.genybet.fr//web/image/casaque/34/1075634_2.png"
+        },
+        {
+          "number": 2,
+          "name": "Coûte Que Coûte",
+          "odds": 14.12,
+          "silksUrl": "https://media.genybet.fr//web/image/casaque/10/1167710_2.png"
+        },
+        {
+          "number": 3,
+          "name": "Belle Gosse",
+          "odds": 25.05,
+          "silksUrl": "https://media.genybet.fr//web/image/casaque/46/1170146_2.png"
+        },
+        {
+          "number": 4,
+          "name": "Louba",
+          "odds": 6.9,
+          "silksUrl": "https://media.genybet.fr//web/image/casaque/29/1001029_2.png"
+        },
+        {
+          "number": 5,
+          "name": "Lady Lady Lay",
+          "odds": 55.54,
+          "silksUrl": "https://media.genybet.fr//web/image/casaque/99/1193299_2.png"
+        },
+        {
+          "number": 6,
+          "name": "Le Colombar",
+          "odds": 26.72,
+          "silksUrl": "https://media.genybet.fr//web/image/casaque/47/1011447_2.png"
+        },
+        {
+          "number": 7,
+          "name": "Mon Petit Prince",
+          "odds": 8.12,
+          "silksUrl": "https://media.genybet.fr//web/image/casaque/10/1197110_2.png"
+        },
+        {
+          "number": 8,
+          "name": "Lady Ange Win",
+          "odds": 5.59,
+          "silksUrl": "https://media.genybet.fr//web/image/casaque/65/1063165_2.png"
+        },
+        {
+          "number": 9,
+          "name": "Le Coeur Sauvage",
+          "odds": 6.37,
+          "silksUrl": "https://media.genybet.fr//web/image/casaque/61/1007461_2.png"
+        },
+        {
+          "number": 10,
+          "name": "Flying Trix",
+          "odds": 40.01,
+          "silksUrl": "https://media.genybet.fr//web/image/casaque/67/1170167_2.png"
+        },
+        {
+          "number": 11,
+          "name": "Jocasta",
+          "odds": 36.39,
+          "silksUrl": "https://media.genybet.fr//web/image/casaque/91/1188791_2.png"
+        },
+        {
+          "number": 12,
+          "name": "Libre Arbitre",
+          "odds": 6.37,
+          "silksUrl": "https://media.genybet.fr//web/image/casaque/63/1160363_2.png"
+        },
+        {
+          "number": 13,
+          "name": "King Lane",
+          "odds": 77.54,
+          "silksUrl": "https://media.genybet.fr//web/image/casaque/03/1110803_2.png"
+        },
+        {
+          "number": 14,
+          "name": "Captain Flag",
+          "odds": 36.39,
+          "silksUrl": "https://media.genybet.fr//web/image/casaque/78/1020578_2.png"
+        },
+        {
+          "number": 15,
+          "name": "Lerika",
+          "odds": 94.07,
+          "silksUrl": "https://media.genybet.fr//web/image/casaque/48/1207848_2.png"
+        }
+      ]
+    },
+    "analysis": {
+      "fr": [
+        {
+          "heading": "Analyse de la course",
+          "paragraphs": [
+            "4 - LOUBA – Convaincante lors de sa reprise à Auteuil avant de briller en steeple, cette jument possède de sérieux arguments pour le Quinté+ de Compiègne. À l’aise sur cet hippodrome et compétitive à sa valeur, elle mérite une place de choix dans la sélection, à condition que le terrain ne soit pas trop pénible.",
+            "6 - LE COLOMBAR – Récent vainqueur en steeple à Lyon, ce fils de Pastorius aborde ce Quinté+ avec des ambitions légitimes après avoir été supplémenté. Déjà compétitif à cette valeur et capable de s’adapter à l’état de la piste, il possède le profil pour jouer un premier rôle à l’arrivée.",
+            "7 - MON PETIT PRINCE – Avec neuf podiums en douze sorties, ce sauteur affiche une remarquable régularité et a déjà démontré qu’il avait sa place dans cette catégorie. Particulièrement à son affaire sur les pistes bien assouplies, il constitue une candidature sérieuse pour terminer dans les cinq premiers du Quinté+."
+          ]
+        }
+      ]
+    },
+    "selection": {
+      "label": {
+        "fr": "Sélection Quinté+"
+      },
+      "odds": null,
+      "betType": "quinte_selection",
+      "orderedNumbers": [
+        4,
+        6,
+        7,
+        12,
+        5,
+        9,
+        2,
+        1
+      ]
+    },
+    "status": "upcoming"
+  },
+  "nativeMustRemainRejectedWithoutNewSpans": true,
+  "limitation": "Tests may construct annotated HTML as an explicit transport fixture; it is not a new native model output."
+}

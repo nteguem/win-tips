@@ -42,7 +42,9 @@ CARDINALS = {
 }
 NUMBERS = re.compile(r'(?<!\w)[+\-−]?\s*\d+(?:[.,:/\-–−]\d+)*(?:er|re|ème|eme|e|st|nd|rd|th)?(?:\s*[%€$])?(?!\w)', re.I)
 WRITTEN = re.compile(r'(?<![\w-])(?:' + '|'.join(sorted(CARDINALS, key=len, reverse=True)) + r')(?![\w-])', re.I)
-NUMBER_UNIT = re.compile(r'^\s+(?:(?:derniers?|dernières?|premiers?|premières?|autres?|petits?|seuls?|seules?)\s+)*(?:points?|buts?|victoires?|défaites?|matchs?|matches|rencontres?|parties?|équipes?|joueurs?|hommes?|chevaux|partants?|tirs?|rebonds?|titres?|saisons?|ans?|années?|jours?|journées?|mois|minutes?|secondes?|quarts?[- ]temps|sets?|reprises?|fois)\b', re.I)
+NUMBER_UNIT = re.compile(r'^\s+(?:(?:derniers?|dernières?|premiers?|premières?|autres?|petits?|seuls?|seules?)\s+)*(?:points?|buts?|victoires?|défaites?|matchs?|matches|rencontres?|parties?|équipes?|joueurs?|hommes?|chevaux|partants?|tirs?|rebonds?|titres?|saisons?|ans?|années?|jours?|journées?|mois|minutes?|secondes?|quarts?[- ]temps|sets?|reprises?|fois|podiums?|sorties?|courses?|départs?|participations?|accessits?|places?)\b', re.I)
+RANK_UNIT = re.compile(r'^\s+(?:premiers|premières)\b', re.I)
+RANK_PREFIX = re.compile(r'\b(?:dans|parmi)\s+les\s*$', re.I)
 ALPHANUMERIC_FACT = re.compile(r'(?<!\w)[+\-−]?(?=[\w-]*\d)[\w-]+(?!\w)')
 ONE = re.compile(r'\b(?:un|une)(?=\s+(?:(?:seul|seule|petit|petite)\s+)*(?:point|but|victoire|défaite|match|rencontre|titre|saison|an|année|jour)\b)', re.I)
 EXTRA_NUMBER = re.compile(r'\d|\b(?:' + '|'.join(CARDINALS.values()) + r')\b', re.I)
@@ -210,7 +212,8 @@ def protect(source, item):
         add(match.start(), match.end(), match[0], 'number_with_source_unit')
     for match in WRITTEN.finditer(source):
         # In particular "un effectif neuf" means NEW, not NINE players.
-        if NUMBER_UNIT.match(source[match.end():]):
+        if (NUMBER_UNIT.match(source[match.end():]) or
+                RANK_UNIT.match(source[match.end():]) and RANK_PREFIX.search(source[:match.start()])):
             add(match.start(), match.end(), CARDINALS[match[0].casefold()], 'written_number')
     for match in ONE.finditer(source):
         add(match.start(), match.end(), 'one', 'written_number')
