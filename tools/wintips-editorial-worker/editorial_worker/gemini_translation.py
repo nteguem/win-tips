@@ -16,6 +16,7 @@ import os
 from pathlib import Path
 import re
 import time
+import unicodedata
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
@@ -25,7 +26,7 @@ from .azure_translation import (AzureTranslator, Quota, ProtectedText, NUMBERS,
 from .translation import TranslationRejected, _walk
 
 
-VERSION = 'gemini-html-facts-v4-rejected-subset-repair'
+VERSION = 'gemini-html-facts-v5-source-prose-guard'
 ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/'
 INSTRUCTIONS = (
     'Translate each French HTML fragment into natural English sports journalism. '
@@ -69,10 +70,14 @@ REPAIR_INSTRUCTIONS = (
     'A points_deficit_to_rank relation uses the quantity span as points behind '
     'the rank span: are <quantity span> points behind <rank span> place. '
     'This is a role/order template, never a replacement paragraph.'
+    ' If sourceProseUnchanged is true, the unprotected prose was copied from '
+    'French, even if protected ordinals or numbers changed their display. '
+    'Translate ALL the supplied unprotected French prose into English; changing '
+    'only punctuation, capitalization or protected spans is not a translation.'
 )
 REPAIRABLE_FACT_CODES = frozenset({'gemini_unprotected_number_added',
     'gemini_output_structure_or_facts_changed', 'gemini_name_occurrences_changed',
-    'gemini_untranslated_text'})
+    'gemini_untranslated_text', 'gemini_source_prose_not_translated'})
 
 
 def _mapped(exc):
@@ -87,11 +92,27 @@ def _protected(source, item):
         raise _mapped(exc) from None
 
 
+def _source_prose_unchanged(source, item, html):
+    original, anchors = _protected(source, item)
+    def prose(content):
+        parser = ProtectedText(anchors)
+        parser.feed(content)
+        parser.close()
+        text = unicodedata.normalize('NFKC', ''.join(parser.free)).casefold()
+        return ''.join(char for char in text if char.isalnum())
+    baseline = prose(original)
+    return bool(baseline) and baseline == prose(html)
+
+
 def _validated(source, item, html):
     try:
         target, proof = validate_output(source, item, html)
     except TranslationRejected as exc:
+        if exc.code == 'azure_untranslated_text' and _source_prose_unchanged(source, item, html):
+            raise TranslationRejected('gemini_source_prose_not_translated') from None
         raise _mapped(exc) from None
+    if _source_prose_unchanged(source, item, html):
+        raise TranslationRejected('gemini_source_prose_not_translated')
     return target, {**proof, 'validatorVersion': VERSION}
 
 
@@ -164,7 +185,9 @@ def request_payload(config, texts, feedback=None):
 
 def generation_options(config):
     options = {'temperature': 0, 'candidateCount': 1, 'maxOutputTokens': config.max_output_tokens}
-    if config.model == 'gemini-3.8-flash':
+    if config.model == 'gemini-2.5-flash':
+        options['thinkingConfig'] = {'thinkingBudget': 0}
+    elif config.model == 'gemini-3.8-flash':
         # Documented Gemini 3.8 level; MINIMAL is unsupported. No thought output.
         options['thinkingConfig'] = {'thinkingLevel': 'LOW'}
     return options
@@ -267,7 +290,7 @@ def _repair_diagnostics(job, html):
         parser.feed(html)
         parser.close()
     except TranslationRejected:
-        return {'unprotectedNumbers': [], 'typedRelations': []}
+        return {'unprotectedNumbers': [], 'typedRelations': [], 'sourceProseUnchanged': False}
     words = dict(zip(('zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven',
         'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen',
         'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty'), map(str, range(21))))
@@ -298,7 +321,8 @@ def _repair_diagnostics(job, html):
             relations.append({'type': 'points_deficit_to_rank', 'quantitySpanId': bound['quantity'],
                 'rankSpanId': bound['rank'], 'sourceStart': match.start(), 'sourceEnd': match.end(),
                 'roleOrder': ['quantitySpan', 'points behind', 'rankSpan', 'place']})
-    return {'unprotectedNumbers': numbers, 'typedRelations': relations}
+    return {'unprotectedNumbers': numbers, 'typedRelations': relations,
+        'sourceProseUnchanged': _source_prose_unchanged(job['source'], job['item'], html)}
 
 
 def _native_key(record):
