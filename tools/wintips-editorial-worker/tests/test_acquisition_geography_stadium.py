@@ -72,6 +72,34 @@ class AcquisitionGeographyStadiumTests(unittest.TestCase):
         # An explicit win in another clause remains allowed and independently counted.
         self.check(row)
 
+    def test_genuine_v45_survival_participle_keeps_all_outer_facts_in_order(self):
+        row = self.row('3824e5')
+        # Exact native targets from the 03:21 canonical preparation. French
+        # source bytes are identical to the immutable 02:08 source fixture.
+        good = ("Having already been in a precarious position last season, narrowly securing survival against Girona, "
+                "Elche now finds itself in the relegation zone, in 18th place, with only one small victory to its name.")
+        # Qwen da708d... / SHA e2d1e327... and Gemma dd969e... / SHA
+        # b87416ab... produced this same target independently; no cache edited.
+        proof = self.check(row, good)
+        self.assertEqual(proof['remasking_proof']['source_token_order'], proof['remasking_proof']['accepted_token_order'])
+        survival = next(a for a in proof['anchors'] if a['kind'] == 'survival_without_asserted_win')
+        self.assertEqual(survival['typed_scope']['opponent'], 'Girona')
+        # The first real Qwen answer left the relegation adjective in French.
+        bad = ("Already on life support last season with survival narrowly secured against Girona, "
+               "Elche finds itself relégable, in 18th place, with only a small victory to its credit.")
+        self.check(row, bad, False)
+        for wrong in (good.replace('securing survival', 'securing a victory'),
+                      good.replace('against Girona', 'by beating Girona'),
+                      good.replace('against Girona', 'against Getafe'),
+                      good.replace('narrowly securing', 'not narrowly securing'),
+                      good.replace('narrowly securing', 'narrowly losing'),
+                      good.replace('Elche', 'Rayo Vallecano'),
+                      good.replace('18th', '17th'),
+                      good.replace('one small victory', 'two small victories'),
+                      good.replace('Girona, Elche', 'Elche, Girona'),
+                      good.replace('against Girona', 'against Girona and Girona')):
+            self.check(row, wrong, False)
+
     def test_typed_geography_keeps_alps_separate_from_team_side(self):
         for row in self.rows[:3]:
             proof = self.check(row)

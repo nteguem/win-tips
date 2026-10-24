@@ -22,7 +22,7 @@ import urllib.request
 
 
 PROMPT_VERSION = "fr-en-anchors-v8-sports-name-guidance"
-GUARD_VERSION = "ordered-anchors-v44-wintips-acquisition-geography-stadium"
+GUARD_VERSION = "ordered-anchors-v45-wintips-survival-participle"
 TOKEN_RE = re.compile(r"ZXQ[A-Z]+QXZ")
 NUMBER_RE = re.compile(r"(?<!\w)[+-]?\s*\d+(?:[.,:]\d+)*(?:\s*[%€$])?(?!\w)")
 FRENCH_WORDS = re.compile(r"\b(?:avec|dans|leurs|leur|pour|cette|ces|étaient|était|mais|donc|ainsi|lors|depuis|toujours|également|notamment|cependant|aujourd'hui)\b", re.I)
@@ -1385,7 +1385,12 @@ def _anchor_candidates(raw: str, anchor: dict, normalized_raw):
         return tuple(candidates.values())
     if kind == 'survival_without_asserted_win':
         opponent = re.escape(anchor['typed_scope']['opponent'])
-        pattern = r'\bsurvival\s+(?:narrowly\s+)?(?:secured|achieved|earned|obtained)(?:\s+(?:only|narrowly))?\s+against\s+' + opponent + r'(?!\w)'
+        passive = r'survival\s+(?:narrowly\s+)?(?:secured|achieved|earned|obtained)(?:\s+(?:only|narrowly))?'
+        # An acquired league-survival noun phrase may become an affirmative
+        # participle in English. Only this compound's internal predicate/noun
+        # order changes; its opponent and every outer actor/rank/count remain.
+        active = r'narrowly\s+securing\s+survival'
+        pattern = r'\b(?:' + passive + '|' + active + r')\s+against\s+' + opponent + r'(?!\w)'
         for match in re.finditer(pattern, raw, re.I):
             add(match.start(), match.end(), 'equivalent', 'same_survival_without_invented_match_result', match.group())
         return tuple(candidates.values())
