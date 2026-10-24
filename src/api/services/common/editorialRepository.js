@@ -22,6 +22,11 @@ function createEditorialRepository({ Category, EditorialItem, subscriptionServic
   categories: () => Category.find({ isActive: true, catalogueArchived: { $ne: true }, editorialSource: { $in: require('./editorialSources').SOURCES.map(s => s.key) } }).lean(),
   category: id => Category.findById(id).lean(),
   items: (ids, date) => EditorialItem.find({ categoryId: { $in: ids }, editionDate: date, isPublished: true }).sort({ startsAtUtc: 1, sourceId: 1 }).lean(),
+  // Include unpublished rows so a partial/current mapping cannot look complete.
+  // This optional optimisation never creates data, collections or indexes.
+  sourceWindowItems: (ids, date) => EditorialItem.find({ categoryId: { $in: ids }, editionDate: date,
+    source: { $in: ['rdj_petit_journal', 'rdj_turf_quinte'] } })
+    .select('categoryId source editionDate sourceId kind startsAtUtc payload contentHash isPublished').limit(51).lean(),
   item: id => EditorialItem.findOne({ _id: id, isPublished: true }).lean(),
   hasCategoryAccess: (userId, categoryId) => subscriptionService.hasAccessToCategory(userId, categoryId),
   hasAnySubscription: async userId => (await subscriptionService.getActiveSubscriptions(userId)).some(sub => sub.package),
@@ -88,5 +93,5 @@ function getDefaultRepository() {
   });
   return defaultRepository;
 }
-const methods = ['categories', 'category', 'items', 'item', 'hasCategoryAccess', 'hasAnySubscription', 'gate', 'ticketState', 'upsertBatch'];
+const methods = ['categories', 'category', 'items', 'sourceWindowItems', 'item', 'hasCategoryAccess', 'hasAnySubscription', 'gate', 'ticketState', 'upsertBatch'];
 module.exports = { createEditorialRepository, ...Object.fromEntries(methods.map(name => [name, (...args) => getDefaultRepository()[name](...args)])) };

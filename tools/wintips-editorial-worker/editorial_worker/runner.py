@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import argparse
 from contextlib import contextmanager, ExitStack
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import hashlib
 import json
 import os
@@ -47,6 +47,117 @@ def ticket_reservations(configured, edition):
     if duo and any(row['fingerprint'] == duo['fingerprint'] for row in goals):
         raise ValueError('authoritative_ticket_reservations_conflict')
     return duo, {row['fingerprint'] for row in goals}
+
+
+def published_source_window(source, configured, edition, fetcher, now, lead=30):
+    """Match the WHOLE current Free inventory to proven published identities.
+
+    Published rows alone never prove publisher completeness. Failed/unknown
+    optimisation evidence falls back to normal collection, never blocks VIP.
+    """
+    if source not in {'rdj_petit_journal', 'rdj_turf_quinte'} or configured is None:
+        return None
+    try:
+        from .sources import rdj, page_root, event
+        state = configured.get('publishedSourceWindows')
+        if (not isinstance(state, dict) or state.get('version') != 'published-source-windows-v1'
+                or state.get('editionDate') != edition or edition_day(now).isoformat() != edition
+                or abs((iso(state.get('checkedAtUtc')) - now).total_seconds()) > 300):
+            return None
+        mappings = [row for row in configured.get('sources', []) if row.get('key') == source]
+        windows = [row for row in state.get('sources', []) if row.get('source') == source]
+        if len(mappings) != 1 or len(windows) != 1:
+            return None
+        window = windows[0]
+        category_id = window.get('categoryId')
+        if (window.get('ready') is not True or not isinstance(category_id, str)
+                or re.fullmatch(r'[a-fA-F0-9]{24}', category_id) is None
+                or mappings[0].get('access') != 'free' or mappings[0].get('categoryIds') != [category_id]):
+            return None
+        items = window.get('items')
+        if (not isinstance(items, list) or not items or type(window.get('count')) is not int
+                or window['count'] != len(items) or len(items) > (8 if source == 'rdj_petit_journal' else 1)
+                or len({item['sourceId'] for item in items}) != len(items)):
+            return None
+        starts = [iso(item['startsAtUtc']) for item in items]
+        latest = max(starts)
+        if iso(window.get('latestStartsAtUtc')) != latest or latest >= now + timedelta(minutes=lead):
+            return None
+        records = []
+        if source == 'rdj_petit_journal':
+            journal_url = rdj._discover(date.fromisoformat(edition), fetcher.html, records, 2)
+            if journal_url is None or any(item.get('sourceUrl') != journal_url or item.get('kind') != 'match' for item in items):
+                return None
+            journal = rdj._fetch(fetcher.html, journal_url, records)
+            cards = rdj._journal_cards(journal, date.fromisoformat(edition))
+            if len(cards) != len(items):
+                return None
+            matched = set()
+            def logo(team):
+                parts = urlsplit(team.get('logo', ''))
+                found = re.fullmatch(r'/img/(\d+)-[^/]+\.(?:png|jpe?g|webp)', parts.path, re.I)
+                if parts.scheme != 'https' or parts.hostname != 'img.ruedesjoueurs.com' or not found:
+                    raise ValueError('published_logo_not_proven')
+                return found[1]
+            for card in cards:
+                block = rdj.one(rdj.find(card, lambda n: rdj.folded(n.attrs.get('aria-label') or '') == 'match'), 'card event time block')
+                card_time, _ = rdj._event_datetime(block)
+                # The historical parser does not bind free-text zone labels to
+                # its datetime. Never reinterpret an explicit qualifier as Paris.
+                if re.search(r'\b(?:UTC|GMT|CET|CEST)\b|Europe/Paris|(?<!\w)[+-]\d{2}:?\d{2}\b', block.plain(), re.I):
+                    return None
+                logos = rdj._logo_ids(block)
+                competition = rdj.one(rdj.find(card, lambda n: n.tag == 'h2'), 'card competition').plain()
+                candidates = [index for index, item in enumerate(items)
+                    if logos == [logo(item['teams']['home']), logo(item['teams']['away'])]
+                    and rdj.folded(competition) == rdj.folded(item['competition']['name'])]
+                if len(candidates) != 1 or candidates[0] in matched:
+                    return None
+                index = candidates[0]
+                # The published UTC is the existing proof. A naive card clock
+                # must equal its UTC/Paris representation, never infer an offset.
+                rdj._reconcile_clocks(card_time, card_time, starts[index], {})
+                matched.add(index)
+            if len(matched) != len(items):
+                return None
+        else:
+            item = items[0]
+            if item.get('kind') != 'horse_racing':
+                return None
+            root = page_root(fetcher.html(SOURCES[source]))
+            links = set()
+            for node in rdj.find(root, lambda n: n.tag == 'a' and n.attrs.get('href')):
+                try:
+                    url = source_url(node.attrs['href'])
+                except ValueError:
+                    continue
+                identity = RACE_PATH.fullmatch(urlsplit(url).path)
+                if (identity and datetime.strptime(identity[1], '%d-%m-%Y').date().isoformat() == edition
+                        and 'quinte' in rdj.folded(node.plain())):
+                    links.add(url)
+            if links != {item['sourceUrl']}:
+                return None
+            identity = RACE_PATH.fullmatch(urlsplit(item['sourceUrl']).path)
+            if (identity is None or item['sourceId'] != f'{edition}-R{identity[2]}C{identity[3]}'
+                    or item.get('race') != {'meetingNumber': int(identity[2]), 'raceNumber': int(identity[3])}):
+                return None
+            page = fetcher.html(item['sourceUrl'])
+            if page.url != item['sourceUrl']:
+                return None
+            # Read only the race event/identity, never its linked analysis.
+            course = page_root(page)
+            ev = event(course, page.url)
+            title = rdj.one(rdj.find(course, lambda n: n.tag == 'h1'), 'race h1').plain()
+            label = re.search(r'R(\d+)C(\d+)\s+(.+)$', title)
+            if (not label or label[1] != identity[2] or label[2] != identity[3]
+                    or iso(ev['startDate']) != starts[0] or edition_day(starts[0]).isoformat() != edition):
+                return None
+        return {'version': state['version'], 'editionDate': edition, 'categoryId': category_id,
+            'publishedCount': len(items), 'sourceIds': [item['sourceId'] for item in items],
+            'latestStartsAtUtc': latest.isoformat(), 'inventoryMatched': True,
+            'reason': 'published_items_outside_publication_window'}
+    except Exception:
+        return None
 
 
 @contextmanager
@@ -302,6 +413,13 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
         # Translation time must not consume the fetcher's four-minute budget.
         for source in selected:
             try:
+                closed = published_source_window(source, configured, edition, fetched, instant, args.minimum_lead_minutes)
+                if closed is not None:
+                    if source == 'rdj_petit_journal':
+                        seen_free.update(closed['sourceIds'])
+                    report['sources'].append({'source': source, 'status': 'outside_publication_window', 'itemCount': 0,
+                        'issues': [], 'imported': False, 'publishedSourceWindow': closed})
+                    continue
                 extra = {}
                 if source in {'rdj_football_duo', 'rdj_football_goals'}:
                     if ticket_state_error:

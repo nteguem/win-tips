@@ -1,11 +1,67 @@
 const crypto = require('crypto');
 const { SOURCES, sourceByKey, validateCategorySource, failure } = require('./editorialSources');
-const { validateBatch, dateOnly, hasCompleteEnglish, requireCompleteEnglish } = require('./editorialValidation');
+const { validateBatch, normalizeItem, dateOnly, hasCompleteEnglish, requireCompleteEnglish } = require('./editorialValidation');
 const { editionDateFor } = require('./editorialCalendar');
 
 const pickLang = (value, lang) => typeof value === 'string' ? value : (value && (value[lang] || value.fr || value.en)) || '';
 const id = value => String(value && value._id || value);
 const own = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
+const WINDOW_SOURCES = ['rdj_petit_journal', 'rdj_turf_quinte'];
+const storedEnglishStructure = item => {
+  const translated = value => typeof value?.en === 'string' && !!value.en.trim();
+  return translated(item.title) && (!item.summary?.fr || translated(item.summary)) && translated(item.selection?.label) &&
+    Array.isArray(item.analysis?.en) && item.analysis.en.length === item.analysis.fr.length &&
+    item.analysis.fr.every((section, index) => typeof item.analysis.en[index].heading === 'string' &&
+      !!item.analysis.en[index].heading.trim() && Array.isArray(item.analysis.en[index].paragraphs) &&
+      item.analysis.en[index].paragraphs.length === section.paragraphs.length &&
+      item.analysis.en[index].paragraphs.every(p => typeof p === 'string' && !!p.trim()));
+};
+
+// An inventory of published identities, not a declaration that a publisher's
+// whole edition is complete. The worker must still match the current inventory.
+async function publishedSourceWindows(repository, categories, editionDate, instant) {
+  const result = { version: 'published-source-windows-v1', editionDate, checkedAtUtc: instant.toISOString(), sources: [] };
+  const unknown = (source, reason) => ({ source, ready: false, reason });
+  let rows;
+  try {
+    const ids = categories.filter(c => WINDOW_SOURCES.includes(c.editorialSource)).map(c => c._id);
+    rows = ids.length ? await repository.sourceWindowItems(ids, editionDate) : [];
+    if (!Array.isArray(rows) || rows.length > 50) throw new Error('invalid_inventory');
+  } catch (_) {
+    result.sources = WINDOW_SOURCES.map(source => unknown(source, 'published_inventory_unavailable'));
+    return result;
+  }
+  for (const source of WINDOW_SOURCES) {
+    try {
+      const mappings = categories.filter(c => c.editorialSource === source);
+      if (mappings.length !== 1 || !sourceMatchesCategory(mappings[0]) || mappings[0].isVip !== false ||
+          mappings[0].catalogueArchived === true || !/^[a-f\d]{24}$/i.test(id(mappings[0]))) throw new Error('mapping');
+      const categoryId = id(mappings[0]);
+      const selected = rows.filter(row => id(row.categoryId) === categoryId);
+      if (!selected.length || selected.length > (source === 'rdj_petit_journal' ? 8 : 1)) throw new Error('count');
+      const items = selected.map(row => {
+        if (row.isPublished !== true || row.source !== source || row.editionDate !== editionDate ||
+            row.payload?.source !== source || row.payload?.editionDate !== editionDate ||
+            row.payload?.sourceId !== row.sourceId || row.payload?.kind !== row.kind ||
+            !/^[a-f\d]{64}$/.test(row.contentHash || '') ||
+            crypto.createHash('sha256').update(JSON.stringify(row.payload)).digest('hex') !== row.contentHash) throw new Error('row');
+        const item = normalizeItem(row.payload, source, editionDate);
+        // This read-only identity proof does not re-publish/re-qualify historic
+        // wording under today's numeric-equivalence rules. Import stays strict.
+        if (!storedEnglishStructure(item)) throw new Error('english_structure');
+        if (!item.startsAtUtc || new Date(row.startsAtUtc).toISOString() !== item.startsAtUtc || item.status !== 'upcoming') throw new Error('clock');
+        return { sourceId: item.sourceId, sourceUrl: item.sourceUrl, kind: item.kind, startsAtUtc: item.startsAtUtc,
+          sport: { key: item.sport.key },
+          ...(item.teams ? { teams: item.teams, competition: { name: item.competition.name } } : {}),
+          ...(item.race ? { race: { meetingNumber: item.race.meetingNumber, raceNumber: item.race.raceNumber } } : {}) };
+      });
+      if (new Set(items.map(item => item.sourceId)).size !== items.length) throw new Error('duplicate');
+      result.sources.push({ source, ready: true, categoryId, count: items.length,
+        latestStartsAtUtc: new Date(Math.max(...items.map(item => Date.parse(item.startsAtUtc)))).toISOString(), items });
+    } catch (_) { result.sources.push(unknown(source, 'published_inventory_not_proven')); }
+  }
+  return result;
+}
 
 function metadata(payload, lang) {
   const translated = !!hasCompleteEnglish(payload);
@@ -48,10 +104,11 @@ function createEditorialService({ repository, clock = () => new Date(), importEn
 
     async workerConfig() {
       const categories = await repository.categories();
-      const editionDate = editionDateFor(clock());
+      const instant = clock(), editionDate = editionDateFor(instant);
       const ticketState = repository.ticketState ? await repository.ticketState(editionDate) : undefined;
       return { date: editionDate, importEnabled: !!importEnabled(), notificationsEnabled: !!(notifications && notifications.enabled()), requireEnglish: !!requireEnglish(),
         ...(ticketState ? { ticketState } : {}),
+        publishedSourceWindows: await publishedSourceWindows(repository, categories, editionDate, instant),
         sources: SOURCES.map(s => ({ ...s, categoryIds: categories.filter(c => c.editorialSource === s.key && sourceMatchesCategory(c)).map(c => id(c)) })).filter(s => s.categoryIds.length) };
     },
 
