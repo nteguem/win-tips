@@ -280,6 +280,7 @@ test('the real DAL refuses writes until the exact unique identity index is expli
     '../user/subscriptionService': {}, './accessGateService': {},
     './editorialSources': require('../src/api/services/common/editorialSources'),
     './editorialTickets': require('../src/api/services/common/editorialTickets'),
+    './editorialIndexIdentity': require('../src/api/services/common/editorialIndexIdentity'),
   };
   const file = path.join(__dirname, '../src/api/services/common/editorialRepository.js');
   vm.runInNewContext(fs.readFileSync(file, 'utf8'), { module, require: key => { if (!(key in mocks)) throw new Error(key); return mocks[key]; } });
@@ -292,15 +293,15 @@ test('the real DAL refuses writes until the exact unique identity index is expli
 });
 
 test('new route bootstrap wires admin, worker and optional-user guards without startup/DB imports', () => {
-  const guards = { admin() {}, worker() {}, optionalUser() {} };
+  const guards = { admin() {}, worker() {}, optionalUser() {}, protectedUser() {} };
   const controller = require('../src/api/controllers/common/editorialController');
   function load(relative) {
     const calls = [], router = {};
-    for (const method of ['use', 'get', 'post']) router[method] = (...args) => { calls.push({ method, args }); return router; };
+    for (const method of ['use', 'get', 'post', 'put']) router[method] = (...args) => { calls.push({ method, args }); return router; };
     const module = { exports: {} };
     const mocks = { express: { Router: () => router },
       '../../middlewares/admin/adminAuth': { protect: guards.admin },
-      '../../middlewares/user/userAuth': { optional: guards.optionalUser },
+      '../../middlewares/user/userAuth': { optional: guards.optionalUser, protect: guards.protectedUser },
       '../../middlewares/common/editorialWorkerAuth': guards.worker,
       '../../controllers/common/editorialController': controller };
     const file = path.join(__dirname, '../src/api/routes', relative);
@@ -310,7 +311,8 @@ test('new route bootstrap wires admin, worker and optional-user guards without s
   const admin = load('admin/editorialRoutes.js'), worker = load('common/editorialWorkerRoutes.js'), reader = load('common/editorialRoutes.js');
   assert.equal(admin[0].args[0], guards.admin); assert.equal(admin[1].args[0], '/sources');
   assert.equal(worker[0].args[0], guards.worker); assert.deepEqual(worker.slice(1).map(call => call.args[0]), ['/config', '/import', '/notifications/drain']);
-  assert.equal(reader[0].args[0], guards.optionalUser); assert.deepEqual(reader.slice(1).map(call => call.args[0]), ['/feed', '/items/:id/analysis']);
+  assert.equal(reader[0].args[0], guards.optionalUser); assert.deepEqual(reader.slice(1).map(call => call.args[0]), ['/feed', '/items/:id/analysis', '/library', '/categories/:categoryId/editions/:date', '/categories/:categoryId/editions/:date/content', '/categories/:categoryId/editions/:date/reviews', '/categories/:categoryId/editions/:date/reviews']);
+  assert.equal(reader.at(-1).method, 'put'); assert.equal(reader.at(-1).args[1], guards.protectedUser);
   const index = fs.readFileSync(path.join(__dirname, '../src/api/routes/index.js'), 'utf8');
   for (const mount of ['/admin/editorial', '/internal/editorial', '/editorial']) assert.equal(index.includes(`router.use('${mount}'`), true);
 });

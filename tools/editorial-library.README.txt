@@ -1,0 +1,154 @@
+WinTips native coupon library - API contract
+==================================================
+
+This addition changes the mobile presentation contract only. It does not change
+the daily collectors, publication identities, source mappings, translation,
+notification ledgers, subscriptions or existing feed/analysis routes.
+No source provider or Gemini request is made by these new HTTP reads.
+
+All HTTP responses retain the existing { success: true, data: ... } envelope.
+Errors retain { success: false, error: { code, message } }. Every editorial
+response sends Cache-Control: private, no-store because access varies by user.
+
+1. GET /api/editorial/library?isVip=false&lang=fr&date=YYYY-MM-DD
+
+   isVip is exactly true or false. Both catalogue tabs are publicly readable;
+   the VIP tab remains a safe, locked storefront for anonymous readers.
+   date is optional and defaults to the publisher's TODAY (Europe/Paris).
+   A supplied date must be canonical and cannot be in the future.
+   Never replace an absent issue with a different date or call a stale issue
+   today's issue. availableDates lists up to ten actual published editions in
+   descending order for that tab and the categories' current source mappings.
+   currentDate always reports the server's Europe/Paris calendar date, including
+   when date selects an older issue. Mobile must not derive Today from its own
+   device timezone. The server captures this date once before asynchronous
+   reads and reuses it in guards, date lists, the envelope and every card, so a
+   request crossing Paris midnight cannot mix publisher days.
+
+   data: {
+     date, currentDate, availableDates: [ISO date, ...], categories: [{
+       id, categoryId, name, description, editorialDescription?, icon,
+       isVip, editorialSource, source: { key, label, kinds },
+       locked, requiresAuth, gate, itemCount, available, editionDate, coverKey,
+       reviewSummary: { count, averageRating }, previewItems: [...]
+     }]
+   }
+
+   Each category becomes ONE card for the selected edition. The Petit Journal
+   therefore groups its two matches rather than creating two catalogue cards.
+   An active category without today's issue remains available:false,itemCount:0.
+   Never enable Open for an unavailable edition.
+   An edition without reviews reports {count:0,averageRating:null}; absence of
+   ratings must never display as a user score of 0/5. Positive counts expose a
+   finite one-to-five average rounded to one decimal.
+
+   coverKey is the fixed source key (e.g. rdj_petit_journal, rdj_turf_quinte,
+   rdj_football_analysis, rdj_football_duo, rdj_football_goals,
+   rdj_multisport_analysis); it selects the mobile's own WinTips cover template.
+
+   description and editorialDescription first use exact contextual source
+   snippets for up to three matches (one whole sentence per match, 650 chars
+   overall). Summary is tried first, then the first eligible analysis sentence.
+   Only recognized past/current form frames are allowed. Selection labels,
+   markets (including after a contextual preamble), projected outcomes,
+   future/modal promises, derogatory commentary, markup and bidi text are
+   refused. Analysis excerpts must name a participant; anonymous pronoun-only
+   fragments are skipped. Ambiguous wording falls back to factual team labels.
+   The closed "Can [team] keep their run going?" context question is allowed;
+   it contains no result/market. English must
+   already exist, differ from the French source and retain its numeric facts;
+   the API never translates or manufactures a streak. Race descriptions use
+   only public meeting/race numbers, distance and runner count, never a summary
+   or runner paragraph. Without an eligible context the validated immutable
+   daily notification copy is reused, then the selected issue's team/race
+   labels. No request-time AI or stale static BO description is introduced.
+   A no-content card reports that this issue is not available yet.
+
+   previewItems are allowlisted public metadata: id, sourceId, date, title,
+   sport, competition, teams/logos, UTC kickoff, race card without runners,
+   combine public legs, status and translation availability. They NEVER contain
+   analysis, selection, odds, summaries, source URLs, raw payloads or hashes,
+   even when the caller is subscribed.
+
+2. GET /api/editorial/categories/:categoryId/editions/:date?lang=fr
+
+   Public edition detail: the same card, current access/gate and review summary.
+   Invalid category, inactive/archived mapping or absent edition returns 404.
+   This route cannot unlock any content.
+
+3. GET /api/editorial/categories/:categoryId/editions/:date/content?lang=fr
+
+   data: { categoryId, editionDate, locked:false, requestedLanguage,
+           items: [normalized bilingual payload + id/categoryId/language metadata] }
+
+   Native JSON only; the Flutter magazine template lays it out. The payloads
+   retain title/summary/selection i18n and analysis:{fr:[{heading,paragraphs}],
+   en:[...]}, plus teams, competition, sport, race/runners and combine legs.
+   The existing metadata indicates honest French fallback for historic content
+   missing a complete English version. The UI must show selection/odds after
+   the corresponding analysis, not as a combined top/bottom summary.
+
+   Access uses the SAME shared guard as /items/:id/analysis:
+   - anonymous restricted reader: 401 AUTH_TOKEN_MISSING;
+   - authenticated VIP reader without this category: 403 SUBSCRIPTION_REQUIRED;
+   - authenticated free reader behind an uncompleted rewarded gate:
+     403 RESOURCE_LOCKED;
+   - existing category entitlement, rewarded unlock or subscriber bypass:
+     returns the native collection.
+   Catalogue lock flags, query parameters or the app's own ad callback cannot
+   grant server access. Existing rewarded SSV/offer selection remains required.
+
+4. GET /api/editorial/categories/:categoryId/editions/:date/reviews?page=1&limit=10
+
+   Public, paginated reviews. page is 1..1000, limit 1..20 (defaults 1,10).
+   data: { page, limit, total, hasNext,
+           items:[{id,authorName,rating,comment,createdAt,updatedAt,isMine}],
+           myReview:<same shape or null> }
+   myReview is returned separately even when it is outside the visible page.
+   No email, phone, user ID, auth token or user document is serialized.
+
+5. PUT /api/editorial/categories/:categoryId/editions/:date/reviews?lang=fr
+
+   Authorization: Bearer <existing user token> REQUIRED.
+   Body is exactly {rating: integer 1..5, comment?: plain text <=1500 UTF-16 units}.
+   No arbitrary userId/category/date fields, HTML or bidi-control text allowed.
+   The current category access guard also applies before submitting an opinion.
+   data: {review:<same public review shape>}.
+   This updates that reader's existing review of this category/date. The unique
+   database key makes concurrent first submissions converge on ONE opinion.
+
+Explicit schema preparation
+---------------------------------
+
+The new EditorialReview model disables implicit collection/index creation.
+Review writes return 503 until the exact unique index is provisioned. Reads
+never create collections, mutate source documents or call migration tools.
+The runtime guard and provisioning inspection share the exact ordered key and
+functional options comparison. A partial, sparse, collated, expiring or hidden
+review identity index is refused rather than silently weakening its coverage.
+
+Choose the target environment explicitly; the CLI reads its MONGO_URI without
+printing it. Back up code and editorial collections before applying indexes.
+  node tools/editorial-indexes.cjs --check
+  node tools/editorial-indexes.cjs --apply --confirm-editorial-indexes
+
+The provisioning tool never drops indexes, defaults to inspection and refuses
+conflicting definitions. Added definitions:
+  editorialreviews:
+    editorial_review_reader_edition_unique (categoryId,editionDate,userId), UNIQUE
+    editorial_review_edition_recent (categoryId,editionDate,createdAt desc,_id desc)
+  editorialitems:
+    editorial_library_available_dates (categoryId,isPublished,editionDate desc)
+
+Deployment uses local review/tests, commit and push to main, then a fast-forward
+pull on the application server. Preserve unrelated tracked or untracked server
+files. Inspect indexes first; apply only missing definitions with the explicit
+intent flag. No source collection or subscription data is migrated. Restart only
+the WinTips application process and check public reads plus protected access.
+
+Verification
+------------
+
+Node tests (use the project's installed dependencies or a process-local
+NODE_PATH pointing to the existing dependency tree; no install is required):
+  node --test tests/editorial-library.node-test.cjs tests/editorial.node-test.cjs

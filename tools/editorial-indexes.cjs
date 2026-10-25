@@ -1,14 +1,20 @@
 #!/usr/bin/env node
 // Explicit, bounded schema provisioning. No application/job imports.
 const COLLECTION = 'editorialitems';
+const { REVIEW_IDENTITY_INDEX, matchesIndexDefinition } = require('../src/api/services/common/editorialIndexIdentity');
 const SPECS = [
   { key: { categoryId: 1, source: 1, editionDate: 1, sourceId: 1 }, name: 'editorial_identity_unique', unique: true },
   { key: { categoryId: 1, source: 1, editionDate: 1 }, name: 'editorial_duo_one_per_day', unique: true, partialFilterExpression: { source: 'rdj_football_duo' } },
   { key: { editionDate: -1, categoryId: 1, isPublished: 1, startsAtUtc: 1 }, name: 'editorial_feed_by_date' },
+  { key: { categoryId: 1, isPublished: 1, editionDate: -1 }, name: 'editorial_library_available_dates' },
 ];
 const COLLECTIONS = {
   [COLLECTION]: SPECS,
   editorialcopies: [require('../src/api/services/common/editorialCopyStorage').INDEX],
+  editorialreviews: [
+    REVIEW_IDENTITY_INDEX,
+    { key: { categoryId: 1, editionDate: 1, createdAt: -1, _id: -1 }, name: 'editorial_review_edition_recent' },
+  ],
   // This one per-edition document serializes Duo/Goals reservations in the
   // same transaction as their items. Never create it from a request/job.
   editorialticketstates: [
@@ -31,7 +37,7 @@ async function inspectCollection(db, collection, specs) {
   const missing = [], conflicts = [];
   for (const spec of specs) {
     const named = current.find(index => index.name === spec.name);
-    if (named && (!sameKey(named.key, spec.key) || !!named.unique !== !!spec.unique || JSON.stringify(named.partialFilterExpression || null) !== JSON.stringify(spec.partialFilterExpression || null))) conflicts.push(spec.name);
+    if (named && !matchesIndexDefinition(named, spec)) conflicts.push(spec.name);
     else if (!named) {
       if (current.some(index => sameKey(index.key, spec.key))) conflicts.push(spec.name);
       else missing.push(spec.name);

@@ -1,9 +1,17 @@
 const { failure } = require('./editorialSources');
+const { REVIEW_IDENTITY_INDEX, matchesIndexDefinition } = require('./editorialIndexIdentity');
 
-function createEditorialRepository({ Category, EditorialItem, subscriptionService, accessGateService }) {
+function createEditorialRepository({ Category, EditorialItem, EditorialReview, subscriptionService, accessGateService }) {
   const copies = () => require('./editorialCopyStorage').createCopyStorage(EditorialItem);
   const tickets = () => require('./editorialTickets');
   const stateCollection = () => EditorialItem.db.db.collection('editorialticketstates');
+  const reviewsModel = () => EditorialReview || require('../../models/common/EditorialReview');
+  async function reviewStorage() {
+    let indexes;
+    try { indexes = await reviewsModel().collection.listIndexes().toArray(); }
+    catch (_) { throw failure('Stockage des avis non initialise', 503); }
+    if (!indexes.some(index => matchesIndexDefinition(index, REVIEW_IDENTITY_INDEX))) throw failure('Index des avis non initialise', 503);
+  }
   async function ticketStorage() {
     let indexes;
     try { indexes = await stateCollection().listIndexes().toArray(); }
@@ -23,6 +31,37 @@ function createEditorialRepository({ Category, EditorialItem, subscriptionServic
   categories: () => Category.find({ isActive: true, catalogueArchived: { $ne: true }, editorialSource: { $in: require('./editorialSources').SOURCES.map(s => s.key) } }).lean(),
   category: id => Category.findById(id).lean(),
   items: (ids, date) => EditorialItem.find({ categoryId: { $in: ids }, editionDate: date, isPublished: true }).sort({ startsAtUtc: 1, sourceId: 1 }).lean(),
+  availableDates: (ids, today, limit = 10, mappings) => !ids.length ? [] : EditorialItem.aggregate([
+    { $match: { categoryId: { $in: ids }, isPublished: true, editionDate: { $lte: today },
+      ...(mappings?.length ? { $or: mappings.map(mapping => ({ categoryId: mapping.categoryId, source: mapping.source })) } : {}) } },
+    { $group: { _id: '$editionDate' } }, { $sort: { _id: -1 } }, { $limit: Math.min(10, limit) },
+  ]).then(rows => rows.map(row => row._id)),
+  reviewSummaries: (ids, date) => !ids.length ? [] : reviewsModel().aggregate([
+    { $match: { categoryId: { $in: ids }, editionDate: date } },
+    { $group: { _id: '$categoryId', count: { $sum: 1 }, averageRating: { $avg: '$rating' } } },
+  ]).then(rows => rows.map(row => ({ categoryId: row._id, count: row.count, averageRating: row.averageRating }))),
+  reviews: async (categoryId, editionDate, { page, limit }) => {
+    const filter = { categoryId, editionDate };
+    const [rows, total] = await Promise.all([
+      reviewsModel().find(filter).sort({ createdAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit).lean(),
+      reviewsModel().countDocuments(filter),
+    ]);
+    return { rows, total };
+  },
+  userReview: (categoryId, editionDate, userId) => reviewsModel().findOne({ categoryId, editionDate, userId }).lean(),
+  upsertReview: async (categoryId, editionDate, userId, values) => {
+    await reviewStorage();
+    const filter = { categoryId, editionDate, userId };
+    const update = { $set: { rating: values.rating, comment: values.comment, authorName: values.authorName } };
+    try { return await reviewsModel().findOneAndUpdate(filter, update, { new: true, upsert: true, runValidators: true, setDefaultsOnInsert: true }).lean(); }
+    catch (error) {
+      if (error.code !== 11000) throw error;
+      // Concurrent first submissions converge on the same unique reader/edition.
+      const row = await reviewsModel().findOneAndUpdate(filter, update, { new: true, runValidators: true }).lean();
+      if (!row) throw failure('Avis indisponible', 503);
+      return row;
+    }
+  },
   // Include unpublished rows so a partial/current mapping cannot look complete.
   // This optional optimisation never creates data, collections or indexes.
   sourceWindowItems: (ids, date) => EditorialItem.find({ categoryId: { $in: ids }, editionDate: date,
@@ -105,5 +144,5 @@ function getDefaultRepository() {
   });
   return defaultRepository;
 }
-const methods = ['categories', 'category', 'items', 'sourceWindowItems', 'item', 'copies', 'copyStates', 'hasCategoryAccess', 'hasAnySubscription', 'gate', 'ticketState', 'upsertBatch'];
+const methods = ['categories', 'category', 'items', 'availableDates', 'reviewSummaries', 'reviews', 'userReview', 'upsertReview', 'sourceWindowItems', 'item', 'copies', 'copyStates', 'hasCategoryAccess', 'hasAnySubscription', 'gate', 'ticketState', 'upsertBatch'];
 module.exports = { createEditorialRepository, ...Object.fromEntries(methods.map(name => [name, (...args) => getDefaultRepository()[name](...args)])) };

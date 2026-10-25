@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const { SOURCES, sourceByKey, validateCategorySource, failure } = require('./editorialSources');
 const { validateBatch, normalizeItem, dateOnly, hasCompleteEnglish, requireCompleteEnglish } = require('./editorialValidation');
 const { editionDateFor } = require('./editorialCalendar');
+const { editorialAccess, requireEditorialAccess } = require('./editorialAccess');
 
 const pickLang = (value, lang) => typeof value === 'string' ? value : (value && (value[lang] || value.fr || value.en)) || '';
 const id = value => String(value && value._id || value);
@@ -88,18 +89,10 @@ function summary(row, locked, lang) {
 function createEditorialService({ repository, clock = () => new Date(), importEnabled = () => false, requireEnglish = () => true, notifications = null }) {
   if (!repository) throw new TypeError('Editorial repository required');
 
-  async function access(category, user) {
-    if (category.isVip === true) {
-      const allowed = !!(user && await repository.hasCategoryAccess(user._id, category._id));
-      return { locked: !allowed, gate: null, requiresAuth: !user };
-    }
-    const subscriber = !!(user && await repository.hasAnySubscription(user._id));
-    const gate = await repository.gate(user && user._id, category, subscriber);
-    return { locked: !!gate.locked, requiresAuth: !user && !!gate.locked,
-      gate: gate.gated ? { type: 'ad_reward', offers: gate.offers, state: gate.state, unlockCount: gate.unlockCount, requiresAuth: !user } : null };
-  }
+  const access = (category, user) => editorialAccess(repository, category, user);
 
   return {
+    ...require('./editorialLibrary').createEditorialLibrary({ repository, clock, sourceMatchesCategory, summary, metadata }),
     catalog: () => SOURCES.map(s => ({ ...s, kinds: [...s.kinds] })),
 
     async workerConfig() {
@@ -182,8 +175,7 @@ function createEditorialService({ repository, clock = () => new Date(), importEn
       const category = await repository.category(row.categoryId);
       if (!category || !category.isActive || category.editorialSource !== row.source || !sourceMatchesCategory(category)) throw failure('Contenu introuvable', 404);
       const state = await access(category, user);
-      if (state.locked) throw failure(user ? 'Acces a cette analyse requis' : 'Authentification requise', user ? 403 : 401,
-        !user ? 'AUTH_TOKEN_MISSING' : (category.isVip ? 'SUBSCRIPTION_REQUIRED' : 'RESOURCE_LOCKED'));
+      requireEditorialAccess(state, category, user);
       const language = lang === 'en' ? 'en' : 'fr';
       return { ...row.payload, id: id(row), categoryId: id(category), locked: false, ...metadata(row.payload, language) };
     },
