@@ -210,7 +210,9 @@ def protect(source, item):
     # Preserve the complete nominal finish rank, including "top". Do not turn
     # chronological "les cinq premiers matchs/courses" into a top-five ranking.
     for match in RANK_NUMBER.finditer(source):
-        if RANK_PREFIX.search(source[:match.start()]):
+        if (RANK_PREFIX.search(source[:match.start()]) or
+                re.search(r'\bles\s*$', source[:match.start()], re.I) and
+                re.match(r'\s+du\s+classement\b', source[match.end():], re.I)):
             count = match['count']
             display = CARDINALS.get(count.casefold(), count)
             add(match.start(), match.end(), 'top ' + display, 'rank_number')
@@ -220,8 +222,10 @@ def protect(source, item):
     for match in ALPHANUMERIC_FACT.finditer(source):
         add(match.start(), match.end(), match[0], 'number_with_source_unit')
     for match in WRITTEN.finditer(source):
-        # In particular "un effectif neuf" means NEW, not NINE players.
-        if (NUMBER_UNIT.match(source[match.end():]) or
+        # Unambiguous written cardinals are quantities regardless of their unit.
+        # "neuf" can mean NEW; keep its existing source-context requirement.
+        if (CARDINALS[match[0].casefold()] not in {'zero', 'nine'} or
+                NUMBER_UNIT.match(source[match.end():]) or
                 RANK_UNIT.match(source[match.end():]) and RANK_PREFIX.search(source[:match.start()])):
             add(match.start(), match.end(), CARDINALS[match[0].casefold()], 'written_number')
     for match in ONE.finditer(source):

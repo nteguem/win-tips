@@ -1,0 +1,63 @@
+{
+  "source": "Distanc\u00e9e par les six premiers du classement \u00e0 l'issue du pr\u00e9c\u00e9dent exercice, l'Atalanta a d\u00fb se contenter d'une qualification pour la Ligue Conf\u00e9rence. Cet \u00e9t\u00e9, la Dea a ouvert un nouveau chapitre avec l'arriv\u00e9e sur le banc de l'exp\u00e9riment\u00e9 Maurizio Sarri. Malheureusement, le d\u00e9but de championnat se r\u00e9v\u00e8le poussif. Les Bergamasques ne figurent aujourd'hui qu'au 11\u00e8me rang de la Serie A avec d\u00e9j\u00e0 6 unit\u00e9s de d\u00e9bours sur la 4\u00e8me place. Apr\u00e8s avoir encha\u00een\u00e9 trois revers d'affil\u00e9e, ils ont r\u00e9agi en battant la lanterne rouge Venise (3-1). La Dea a en revanche rechut\u00e9 devant les tifosi du Milan AC le week-end dernier (3-2). Cette semaine, l'Atalanta a perdu sur le terrain de l'Ajax en Ligue Conf\u00e9rence (2-0).",
+  "item": {
+    "source": "rdj_football_analysis",
+    "sourceId": "5749710",
+    "sourceUrl": "https://www.ruedesjoueurs.com/pronostic/atalanta-bergame-frosinone-5749710.html",
+    "editionDate": "2026-10-25",
+    "kind": "match",
+    "title": {
+      "fr": "Atalanta Bergame \u2014 Frosinone"
+    },
+    "summary": {
+      "fr": "La Dea se relance"
+    },
+    "startsAtUtc": "2026-10-25T14:00:00Z",
+    "sport": {
+      "key": "football",
+      "name": "Football"
+    },
+    "competition": {
+      "name": "Serie A"
+    },
+    "teams": {
+      "home": {
+        "name": "Atalanta Bergame",
+        "logo": "https://img.ruedesjoueurs.com/img/8524-4.png"
+      },
+      "away": {
+        "name": "Frosinone",
+        "logo": "https://img.ruedesjoueurs.com/img/9891-4.png"
+      }
+    },
+    "analysis": {
+      "fr": [
+        {
+          "heading": "L\u2019\u00e9tat de forme",
+          "paragraphs": [
+            "Distanc\u00e9e par les six premiers du classement \u00e0 l'issue du pr\u00e9c\u00e9dent exercice, l'Atalanta a d\u00fb se contenter d'une qualification pour la Ligue Conf\u00e9rence. Cet \u00e9t\u00e9, la Dea a ouvert un nouveau chapitre avec l'arriv\u00e9e sur le banc de l'exp\u00e9riment\u00e9 Maurizio Sarri. Malheureusement, le d\u00e9but de championnat se r\u00e9v\u00e8le poussif. Les Bergamasques ne figurent aujourd'hui qu'au 11\u00e8me rang de la Serie A avec d\u00e9j\u00e0 6 unit\u00e9s de d\u00e9bours sur la 4\u00e8me place. Apr\u00e8s avoir encha\u00een\u00e9 trois revers d'affil\u00e9e, ils ont r\u00e9agi en battant la lanterne rouge Venise (3-1). La Dea a en revanche rechut\u00e9 devant les tifosi du Milan AC le week-end dernier (3-2). Cette semaine, l'Atalanta a perdu sur le terrain de l'Ajax en Ligue Conf\u00e9rence (2-0).",
+            "Rel\u00e9gu\u00e9e de Serie A en 2024, la Frosinone a eu besoin de deux saisons pour retrouver les joies de l'\u00e9lite. Pour cet exercice 2026/2027, le promu est logiquement attendu dans la lutte pour ne pas descendre. Toutefois, le d\u00e9but de championnat d\u00e9passe les esp\u00e9rances. Les co\u00e9quipiers d'Antonio Raimondo sont actuellement 6\u00e8mes de Serie A avec 13 points glan\u00e9s en 7 rencontres. Juste apr\u00e8s la tr\u00eave internationale, ils ont mis un terme \u00e0 une bonne s\u00e9rie de quatre matchs sans d\u00e9faite en s'inclinant lourdement \u00e0 Naples (3-0). En revanche, la Frosinone a tout de suite repris sa marche en avant contre Sassuolo le week-end dernier (4-2). Avantage Frosinone sur la forme"
+          ]
+        }
+      ]
+    },
+    "selection": {
+      "label": {
+        "fr": "Victoire Atalanta Bergame"
+      },
+      "odds": null,
+      "betType": "match_winner"
+    },
+    "status": "upcoming"
+  },
+  "nativeHtml": "<div>Distanced by the top six in the standings at the end of the previous campaign, Atalanta had to settle for qualification for the Conference League. This summer, La Dea opened a new chapter with the arrival of experienced Maurizio Sarri on the bench. Unfortunately, the start of the league campaign is proving sluggish. The Bergamo side currently rank only <span id=\"wt0\" class=\"notranslate\" translate=\"no\">11th</span> in Serie A with already <span id=\"wt1\" class=\"notranslate\" translate=\"no\">6</span> points behind <span id=\"wt2\" class=\"notranslate\" translate=\"no\">4th</span> place. After stringing together three successive defeats, they reacted by beating bottom side Venezia (<span id=\"wt3\" class=\"notranslate\" translate=\"no\">3-1</span>). However, La Dea relapsed in front of AC Milan's supporters last weekend (<span id=\"wt4\" class=\"notranslate\" translate=\"no\">3-2</span>). This week, Atalanta lost away to Ajax in the Conference League (<span id=\"wt5\" class=\"notranslate\" translate=\"no\">2-0</span>).</div>",
+  "originalRejection": "gemini_unprotected_number_added",
+  "provenance": {
+    "kind": "exact_production_native_regression",
+    "auditFile": "qa/automation-reliability-20261025/live-evidence-20261025T060224Z/wintips/translation-audits/2026-10-25/rdj_football_analysis.failed.json",
+    "auditSha256": "8b83570566bdeab0e2d801f1a8094d9f22d7639aee3cc62ef33b43de870dc81e",
+    "nativeResponseKey": "e9aea8366fd0fcde04d95de3ea82a093aa8e45f11d07c77a1af3ef9e14f3a850",
+    "model": "gemini-3.5-flash-lite",
+    "originalNativeMustRemainRejectedWithoutNewSpans": true
+  }
+}
