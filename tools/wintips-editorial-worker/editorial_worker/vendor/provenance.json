@@ -80,5 +80,18 @@
     "nativeExactResponsesAlwaysRevalidated": true,
     "wholeCacheRoutePreflightWithoutRuntime": true
   },
-  "runtimeDependencyScope": "Only when RDJ_CONTENT_HUB_DIR enables the explicitly verified RDJ_HUB_CODE_ROOT; disabled mode remains independent."
+  "runtimeDependencyScope": "Only when RDJ_CONTENT_HUB_DIR enables the explicitly verified RDJ_HUB_CODE_ROOT; disabled mode remains independent.",
+  "geminiCredentialFallback": {
+    "providerSha256Lf": "ac65d970928aa5b042454efcccdbc1362e64738b54ea180d08c410d56b627ec0",
+    "maximumFallbackCredentials": 3,
+    "globalCharacterQuotaUnchanged": true,
+    "scope": "credential fingerprint + model; legacy model cooldown primary only",
+    "dailyProviderCodes": [
+      "RPD",
+      "TPD"
+    ],
+    "privateCredentialsInContentIdentity": false,
+    "existingRequestRetryTimeRepairBudgetsPreserved": true,
+    "nativeRawAndCompleteBatchValidationPreserved": true
+  }
 }

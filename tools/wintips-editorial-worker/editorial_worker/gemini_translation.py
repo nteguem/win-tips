@@ -162,10 +162,16 @@ class GeminiConfig:
     max_requests: int = 12
     retries: int = 2
     max_output_tokens: int = 8192
+    fallback_keys: tuple[str, ...] = field(default=(), repr=False)
 
     def __post_init__(self):
-        if not isinstance(self.key, str) or not re.fullmatch(r'[A-Za-z0-9_-]{16,256}', self.key):
+        if not _valid_key(self.key):
             raise TranslationRejected('gemini_key_required')
+        if (not isinstance(self.fallback_keys, tuple) or len(self.fallback_keys) > 3 or
+                any(not _valid_key(key) for key in self.fallback_keys)):
+            raise TranslationRejected('gemini_fallback_keys_invalid')
+        object.__setattr__(self, 'fallback_keys', tuple(dict.fromkeys(
+            key for key in self.fallback_keys if key != self.key)))
         if not isinstance(self.model, str) or not re.fullmatch(r'gemini-[a-z0-9][a-z0-9.-]{1,79}', self.model):
             raise TranslationRejected('gemini_model_invalid')
         integers = (self.daily_characters, self.monthly_characters, self.batch_characters,
@@ -178,6 +184,25 @@ class GeminiConfig:
                 not 1 <= self.max_requests <= 24 or not 0 <= self.retries <= 2 or
                 not 256 <= self.max_output_tokens <= 16384):
             raise TranslationRejected('gemini_limits_invalid')
+
+
+def _valid_key(key):
+    return isinstance(key, str) and re.fullmatch(r'(?:[A-Za-z0-9_-]{16,256}|AQ\.[A-Za-z0-9_-]{16,253})', key) is not None
+
+
+def credentials(config):
+    """Private credential values never participate in content cache identities."""
+    return (config.key,) + config.fallback_keys
+
+
+def credential_echo(config, raw):
+    encoded = _json_bytes(raw)
+    return any(key.encode('utf-8') in encoded for key in credentials(config))
+
+
+def fallback_keys_from_env():
+    value = os.environ.get('GEMINI_API_KEY_FALLBACK', '')
+    return tuple(part.strip() for part in value.split(',')) if value.strip() else ()
 
 
 def _fragment_ids(count, ids=None):
@@ -284,8 +309,11 @@ class GeminiCooldown:
     """
     MAX_SECONDS = 48 * 60 * 60
 
-    def __init__(self, directory, now):
+    def __init__(self, directory, now, *, filename='provider-cooldowns.json'):
         self.directory, self.now = Path(directory), now
+        if re.fullmatch(r'provider-cooldowns(?:-[a-f0-9]{64})?\.json', filename) is None:
+            raise TranslationRejected('gemini_cooldown_state_invalid')
+        self.path = self.directory / filename
 
     def _instant(self):
         instant = self.now()
@@ -294,7 +322,7 @@ class GeminiCooldown:
         return instant.astimezone(timezone.utc)
 
     def _load(self):
-        path = self.directory / 'provider-cooldowns.json'
+        path = self.path
         if not path.exists() and not path.is_symlink():
             return {'schema': 1, 'models': {}}
         _private_regular(path)
@@ -308,7 +336,10 @@ class GeminiCooldown:
         for model, row in state['models'].items():
             if (not isinstance(model, str) or re.fullmatch(r'gemini-[a-z0-9][a-z0-9.-]{1,79}', model) is None or
                     not isinstance(row, dict) or set(row) != {'recordedAtUtc', 'untilUtc', 'retryAfterSeconds', 'quotaTypes', 'httpStatus'} or
-                    type(row['httpStatus']) is not int or row['httpStatus'] != 429 or row['quotaTypes'] != ['RPD'] or
+                    type(row['httpStatus']) is not int or row['httpStatus'] != 429 or
+                    not isinstance(row['quotaTypes'], list) or not row['quotaTypes'] or
+                    any(value not in {'RPD', 'TPD'} for value in row['quotaTypes']) or
+                    row['quotaTypes'] != sorted(set(row['quotaTypes'])) or
                     type(row['retryAfterSeconds']) is not int or not 1 <= row['retryAfterSeconds'] <= self.MAX_SECONDS):
                 raise ValueError()
             start, end = self._timestamp(row['recordedAtUtc']), self._timestamp(row['untilUtc'])
@@ -333,9 +364,12 @@ class GeminiCooldown:
         except (OSError, ValueError, TypeError, UnicodeError, OverflowError):
             raise TranslationRejected('gemini_cooldown_state_invalid') from None
 
-    def remember(self, model, seconds):
+    def remember(self, model, seconds, quota_types=('RPD',)):
         if type(seconds) is not int or not 1 <= seconds <= self.MAX_SECONDS:
             raise TranslationRejected('gemini_cooldown_delay_out_of_range')
+        if (not isinstance(quota_types, (tuple, list)) or not quota_types or
+                any(value not in {'RPD', 'TPD'} for value in quota_types)):
+            raise TranslationRejected('gemini_cooldown_state_invalid')
         try:
             instant = self._instant()
             until = instant + timedelta(seconds=seconds)
@@ -347,14 +381,57 @@ class GeminiCooldown:
                 if model not in state['models'] and len(state['models']) >= 32:
                     raise ValueError()
                 row = {'recordedAtUtc': instant.isoformat(), 'untilUtc': until.isoformat(),
-                    'retryAfterSeconds': seconds, 'quotaTypes': ['RPD'], 'httpStatus': 429}
+                    'retryAfterSeconds': seconds, 'quotaTypes': sorted(set(quota_types)), 'httpStatus': 429}
                 state['models'][model] = row
-                _write_private(self.directory / 'provider-cooldowns.json', state)
+                _write_private(self.path, state)
                 return deepcopy(row)
         except TranslationRejected as exc:
             raise _mapped(exc) from None
         except (OSError, ValueError, TypeError, UnicodeError, OverflowError):
             raise TranslationRejected('gemini_cooldown_state_invalid') from None
+
+
+class GeminiKeyPool:
+    """Bounded credential fallback; the independent global spend cap never moves.
+
+    Google projects may share several keys. This pool cannot infer project
+    membership: a second key for the same exhausted project provides no quota.
+    Legacy model-only cooldowns belong to the primary credential only.
+    """
+    def __init__(self, config, quota_dir, now):
+        self.config, self.keys = config, credentials(config)
+        self.legacy = GeminiCooldown(quota_dir, now)
+        self.cooldowns = [GeminiCooldown(quota_dir, now,
+            filename='provider-cooldowns-' + sha256(key.encode('utf-8')).hexdigest() + '.json') for key in self.keys]
+        self.exhausted, self.current = set(), 0
+
+    def select(self):
+        active = None
+        order = list(range(self.current, len(self.keys))) + list(range(self.current))
+        for ordinal in order:
+            if ordinal in self.exhausted:
+                continue
+            scoped = self.cooldowns[ordinal].active(self.config.model)
+            legacy = self.legacy.active(self.config.model) if ordinal == 0 else None
+            blocked = scoped or legacy
+            if blocked is not None:
+                active = blocked
+                continue
+            self.current = ordinal
+            return ordinal, self.keys[ordinal]
+        raise TranslationRejected('gemini_provider_cooldown_active', audit={'providerCooldown': active})
+
+    def note_exhausted(self, ordinal):
+        if type(ordinal) is not int or not 0 <= ordinal < len(self.keys):
+            raise TranslationRejected('gemini_credential_ordinal_invalid')
+        self.exhausted.add(ordinal)
+
+    def remember(self, ordinal, seconds, quota_types=('RPD',)):
+        if type(ordinal) is not int or not 0 <= ordinal < len(self.keys):
+            raise TranslationRejected('gemini_credential_ordinal_invalid')
+        # Existing single-key deployments retain their exact state contract.
+        store = self.legacy if len(self.keys) == 1 else self.cooldowns[ordinal]
+        return store.remember(self.config.model, seconds, quota_types)
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -365,6 +442,7 @@ class NoRedirect(HTTPRedirectHandler):
 class GeminiTransport:
     def __init__(self, config, payload_builder=None):
         self.config = config
+        self.key = config.key
         self.payload_builder = payload_builder or request_payload
         self.opener = build_opener(ProxyHandler({}), NoRedirect())
         self.feedback = None
@@ -372,11 +450,16 @@ class GeminiTransport:
     def set_feedback(self, feedback):
         self.feedback = deepcopy(feedback)
 
+    def set_key(self, key):
+        if key not in credentials(self.config):
+            raise TranslationRejected('gemini_key_required')
+        self.key = key
+
     def __call__(self, texts, timeout):
         request = Request(ENDPOINT + self.config.model + ':generateContent',
             data=_json_bytes(self.payload_builder(self.config, texts, self.feedback)), method='POST', headers={
                 'Content-Type': 'application/json; charset=utf-8', 'Accept': 'application/json',
-                'x-goog-api-key': self.config.key, 'User-Agent': 'WinTipsEditorialWorker/Gemini1'})
+                'x-goog-api-key': self.key, 'User-Agent': 'WinTipsEditorialWorker/Gemini1'})
         try:
             with self.opener.open(request, timeout=timeout) as response:
                 raw = response.read(2_000_001)
@@ -559,6 +642,7 @@ class GeminiTranslator(AzureTranslator):
         quota_clock = now or (lambda: datetime.now(timezone.utc))
         self.quota = Quota(quota_dir, config, quota_clock)
         self.cooldown = GeminiCooldown(quota_dir, quota_clock)
+        self.key_pool = GeminiKeyPool(config, quota_dir, quota_clock)
         self.records, self.prepared, self.requests, self.attempts = [], {}, 0, []
 
     def remaining(self):
@@ -604,6 +688,8 @@ class GeminiTranslator(AzureTranslator):
             _private_regular(native_path)
             if native_path.stat().st_size > 2_000_000: raise ValueError()
             native = _closed_json(native_path.read_bytes())
+            if credential_echo(self.config, native):
+                raise TranslationRejected('gemini_credential_echo_rejected')
             if (not isinstance(native, dict) or native.get('provider') != self.provider or
                     native.get('model') != self.config.model or _native_key(native) != native_key): raise ValueError()
             ids = _fragment_ids(len(native['keys']), native['fragmentIds'])
@@ -643,9 +729,7 @@ class GeminiTranslator(AzureTranslator):
         accepted = {}
         for attempt in range(self.config.retries + 1):
             self.remaining()
-            cooling = self.cooldown.active(self.config.model)
-            if cooling is not None:
-                raise TranslationRejected('gemini_provider_cooldown_active', audit={'providerCooldown': cooling})
+            credential_ordinal, credential = self.key_pool.select()
             if self.requests >= self.config.max_requests:
                 raise TranslationRejected('gemini_request_budget_exhausted')
             texts = [job['html'] for _, job in active]
@@ -658,11 +742,14 @@ class GeminiTranslator(AzureTranslator):
             self.requests += 1
             trace = {'attempt': self.requests, 'textCount': len(texts),
                 'inputCharactersReserved': count, 'quota': reservation, 'status': 'reserved',
+                'credentialOrdinal': credential_ordinal,
                 'cacheKeys': [job['key'] for _, job in active], 'fragmentIds': ids,
                 'originalBatchKeys': original_keys, 'contentRepairRound': int(repaired)}
             if feedback is not None: trace['contentRepairFeedbackSha256'] = sha256(_json_bytes(feedback)).hexdigest()
             self.attempts.append(trace)
             try:
+                key_setter = getattr(self.request, 'set_key', None)
+                if key_setter is not None: key_setter(credential)
                 setter = getattr(self.request, 'set_feedback', None)
                 if setter is not None: setter(feedback)
                 try:
@@ -670,7 +757,7 @@ class GeminiTranslator(AzureTranslator):
                 finally:
                     if setter is not None: setter(None)
                 self.remaining()
-                if self.config.key.encode('utf-8') in _json_bytes(raw):
+                if credential_echo(self.config, raw):
                     raise TranslationRejected('gemini_credential_echo_rejected')
                 if not isinstance(raw, dict) or 'error' in raw:
                     raise TranslationRejected('gemini_response_invalid')
@@ -722,11 +809,21 @@ class GeminiTranslator(AzureTranslator):
             except GeminiFailure as exc:
                 trace['status'] = 'http_' + str(exc.status)
                 if exc.rate_limit is not None: trace['rateLimit'] = exc.rate_limit
-                if exc.status == 429 and exc.rate_limit is not None and 'RPD' in exc.rate_limit.get('quotaTypes', []):
+                daily_types = sorted(set(exc.rate_limit.get('quotaTypes', [])) & {'RPD', 'TPD'}) if exc.rate_limit else []
+                if exc.status == 429 and daily_types:
                     trace['retryScheduled'] = False
                     trace['retryDelaySeconds'] = exc.retry_after
-                    cooling = self.cooldown.remember(self.config.model, exc.retry_after) if exc.retry_after > 0 else None
+                    cooling = self.key_pool.remember(credential_ordinal, exc.retry_after, daily_types) if exc.retry_after > 0 else None
+                    self.key_pool.note_exhausted(credential_ordinal)
                     if cooling is not None: trace['providerCooldown'] = cooling
+                    if attempt < self.config.retries and self.requests < self.config.max_requests:
+                        try:
+                            self.key_pool.select()
+                        except TranslationRejected as blocked:
+                            if blocked.code != 'gemini_provider_cooldown_active': raise
+                        else:
+                            trace['credentialFailoverScheduled'] = True
+                            continue
                     raise TranslationRejected('gemini_daily_request_quota_exhausted',
                         audit={'rateLimit': exc.rate_limit, 'providerCooldown': cooling}) from None
                 if exc.status not in {429, 500, 502, 503, 504} or attempt == self.config.retries:
@@ -778,6 +875,7 @@ def create_translator_from_env(cache_dir, max_seconds=180):
     try:
         config = GeminiConfig(key=os.environ.get('WINTIPS_EDITORIAL_GEMINI_KEY') or
                 os.environ.get('GEMINI_API_KEY') or os.environ.get('GOOGLE_API_KEY', ''),
+            fallback_keys=fallback_keys_from_env(),
             model=os.environ.get('WINTIPS_EDITORIAL_GEMINI_MODEL', 'gemini-3.5-flash-lite'),
             max_seconds=min(float(max_seconds), 600),
             daily_characters=int(os.environ.get('WINTIPS_EDITORIAL_GEMINI_DAILY_CHARACTERS', '1000000')),
