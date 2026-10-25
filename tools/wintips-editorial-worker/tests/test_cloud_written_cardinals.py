@@ -35,7 +35,7 @@ class CloudWrittenCardinalsTests(unittest.TestCase):
 
     def test_articles_new_adjective_names_and_word_boundaries_are_preserved(self):
         for source in ('un effectif neuf', 'une équipe neuve', 'neuf voisins', 'un revers',
-                'troisième', 'deuxième', 'trois-quarts'):
+                'troisièmement', 'deuxièmement', 'trois-quarts'):
             self.assertEqual(protect(source, {})[1], [], source)
         self.assertEqual([a['value'] for a in protect('neuf matchs', {})[1]], ['nine'])
         self.assertEqual([a['value'] for a in protect('un seul point', {})[1]], ['one'])
