@@ -103,7 +103,7 @@ class GeminiTests(unittest.TestCase):
         self.assertEqual(wire['maxOutputTokens'], 8192)
         self.assertEqual(job['identity']['generation']['thinkingConfig'], wire['thinkingConfig'])
         self.assertNotIn('thinkingConfig', gemini.request_payload(self.config, [job['html']])['generationConfig'])
-        self.assertEqual(gemini.VERSION, 'gemini-html-facts-v5-source-prose-guard')
+        self.assertEqual(gemini.VERSION, 'gemini-html-facts-v6-explicit-html-contract')
         for rule in ('latest/most recent matchday', 'not take on or face', 'entire top-N rank',
                 'last-season final', 'negation, inability or missed opportunity'):
             self.assertIn(rule, gemini.INSTRUCTIONS)

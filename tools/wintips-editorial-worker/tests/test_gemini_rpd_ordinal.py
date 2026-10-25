@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from editorial_worker import gemini_translation as g
 from editorial_worker.translation import TranslationRejected
@@ -167,6 +168,40 @@ class GeminiRpdOrdinalTests(unittest.TestCase):
         self.assertFalse((self.root / 'quota/provider-cooldowns.json').exists())
         self.assertEqual(json.loads((self.root / 'quota/usage.json').read_bytes())['days']['2026-10-25'],
             sum(a['inputCharactersReserved'] for a in t.attempts))
+
+    def test_v6_wire_keeps_original_html_and_closed_schema_with_explicit_markup_contract(self):
+        t = self.translator(self.good); job = self.job(t)
+        wire = g.request_payload(t.config, [job['html']])
+        self.assertEqual(json.loads(wire['contents'][0]['parts'][0]['text'])['fragments'], [{'id': '0', 'text': job['html']}])
+        schema = wire['generationConfig']['responseJsonSchema']
+        self.assertFalse(schema['additionalProperties'])
+        self.assertFalse(schema['properties']['translations']['items']['additionalProperties'])
+        self.assertEqual(schema['properties']['translations']['items']['properties']['text']['description'], g.TEXT_DESCRIPTION)
+        span = '<span id="wt0" class="notranslate" translate="no">EXACT_SOURCE_VALUE</span>'
+        self.assertEqual(g.INSTRUCTIONS.count(span), 2)
+        self.assertIn('league-table/standings passage about points', g.INSTRUCTIONS)
+        self.assertIn('goalless draw cannot become a scored goal', g.INSTRUCTIONS)
+        self.assertIn('explicitly discusses a goals tally instead', g.INSTRUCTIONS)
+        for forbidden in ('Marseille', 'Liverpool', 'Le Havre', 'Brighton', '0-0', '6767'):
+            self.assertNotIn(forbidden, g.INSTRUCTIONS)
+
+    def test_v6_version_and_exact_schema_description_change_cache_identity(self):
+        t = self.translator(self.good); current = self.job(t)
+        self.assertEqual(current['identity']['version'], 'gemini-html-facts-v6-explicit-html-contract')
+        self.assertEqual(current['identity']['generation']['responseTextDescription'], g.TEXT_DESCRIPTION)
+        with patch.object(g, 'VERSION', 'gemini-html-facts-v5-source-prose-guard'):
+            self.assertNotEqual(self.job(t)['key'], current['key'])
+        with patch.object(g, 'TEXT_DESCRIPTION', 'different typed output contract'):
+            self.assertNotEqual(self.job(t)['key'], current['key'])
+
+    def test_v6_still_rejects_plaintext_even_if_all_visible_factual_values_are_correct(self):
+        html = json.loads(self.good(['test'], 1)['candidates'][0]['content']['parts'][0]['text'])['translations'][0]['text']
+        _, proof = g._validated(self.source, self.item, html)
+        self.assertTrue(proof['passed'])
+        import re
+        stripped = re.sub(r'</?span\b[^>]*>', '', html)
+        with self.assertRaises(TranslationRejected):
+            g._validated(self.source, self.item, stripped)
 
 
 if __name__ == '__main__':
