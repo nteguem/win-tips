@@ -18,6 +18,13 @@ const ORDINALS = {
   fifth: 5, cinquième: 5, cinquièmes: 5, sixth: 6, sixième: 6, sixièmes: 6,
   seventh: 7, septième: 7, septièmes: 7, eighth: 8, huitième: 8, huitièmes: 8,
   ninth: 9, neuvième: 9, neuvièmes: 9, tenth: 10, dixième: 10, dixièmes: 10,
+  eleventh: 11, onzième: 11, onzièmes: 11, twelfth: 12, douzième: 12, douzièmes: 12,
+  thirteenth: 13, treizième: 13, treizièmes: 13, fourteenth: 14, quatorzième: 14, quatorzièmes: 14,
+  fifteenth: 15, quinzième: 15, quinzièmes: 15, sixteenth: 16, seizième: 16, seizièmes: 16,
+  seventeenth: 17, 'dix-septième': 17, 'dix-septièmes': 17,
+  eighteenth: 18, 'dix-huitième': 18, 'dix-huitièmes': 18,
+  nineteenth: 19, 'dix-neuvième': 19, 'dix-neuvièmes': 19,
+  twentieth: 20, vingtième: 20, vingtièmes: 20,
 };
 const wordPattern = values => new RegExp('(?<![\\p{L}])(?:' + Object.keys(values).sort((a, b) => b.length - a.length).join('|') + ')(?![\\p{L}])', 'giu');
 const cardinalPattern = wordPattern(CARDINALS), ordinalPattern = wordPattern(ORDINALS);
@@ -187,10 +194,16 @@ function normalize(value, language) {
   // in French; a change from 1,50 to 150 must never become equivalent.
   if (language === 'en') text = text.replace(/\b\d{1,3}(?:,\d{3})+\b/g, match => match.replace(/,/g, ''));
   text = text.replace(/\b\d{1,3}(?:[ \u00a0\u202f]\d{3})+\b/g, match => match.replace(/[ \u00a0\u202f]/g, ''));
-  text = text.replace(cardinalPattern, match => String(CARDINALS[match]));
   const ordinals = [];
   text = text.replace(numericOrdinal, (match, digits) => { ordinals.push(number(digits)); return digits; });
-  text = text.replace(ordinalPattern, match => { const value = ORDINALS[match]; ordinals.push(String(value)); return String(value); });
+  // Resolve a whole ordinal before its cardinal components (dix-septième).
+  text = text.replace(ordinalPattern, (match, offset, whole) => {
+    const value = ORDINALS[match];
+    // Do not read cent-onzième as eleven; retain first-place and similar ranks.
+    if (value >= 11 && /[\p{L}\p{N}_-]/u.test(whole[offset - 1] || '')) return match;
+    ordinals.push(String(value)); return String(value);
+  });
+  text = text.replace(cardinalPattern, match => String(CARDINALS[match]));
   // A three-pointer is an explicit three-point unit even when French uses the
   // conventional term "tir primé". It is not an additional made shot.
   text = text.replace(/\btirs? primés?\b/gu, '3 point shot');

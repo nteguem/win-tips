@@ -1,0 +1,25 @@
+{
+  "publicSourceId": "5802971",
+  "source": "Toulouse n'a pas eu à s'employer pour ramener une victoire du Mans (0-3) la semaine dernière. En étrillant le promu, le TFC a signé son premier clean sheet de la saison et aligné un quatrième match consécutif sans défaite. Auparavant, les joueurs de Jens Berthel Askou ont dominé Le Havre (3-2) et refait leurs retards de deux buts à Lorient (2-2) et chez le leader Monaco (2-2). Cette bonne dynamique laisse malgré tout le club en seconde partie de tableau (12e).",
+  "item": {
+    "teams": {
+      "home": {
+        "name": "Toulouse",
+        "logo": "https://img.ruedesjoueurs.com/img/9941-5.png"
+      },
+      "away": {
+        "name": "Troyes",
+        "logo": "https://img.ruedesjoueurs.com/img/10242-5.png"
+      }
+    },
+    "sport": {
+      "key": "football",
+      "name": "Football"
+    },
+    "competition": {
+      "name": "Ligue 1"
+    }
+  },
+  "previousUnanchoredJobKey": "d2437ed72e4400a39634ae8ecac2ed660af4b304b9e895e0dc2db51bdbcf3abc",
+  "nativeResponseIncluded": false
+}

@@ -325,6 +325,46 @@ function translatedItem() {
     analysis: { fr: [{ heading: '4e journée', paragraphs: ['3 points, 11,1 %'] }],
       en: [{ heading: 'fourth matchday', paragraphs: ['three points, 11.1%'] }] } };
 }
+
+const higherWrittenOrdinals = [
+  ['onzi\u00e8me', 'eleventh', 11], ['douzi\u00e8me', 'twelfth', 12],
+  ['treizi\u00e8me', 'thirteenth', 13], ['quatorzi\u00e8me', 'fourteenth', 14],
+  ['quinzi\u00e8me', 'fifteenth', 15], ['seizi\u00e8me', 'sixteenth', 16],
+  ['dix-septi\u00e8me', 'seventeenth', 17], ['dix-huiti\u00e8me', 'eighteenth', 18],
+  ['dix-neuvi\u00e8me', 'nineteenth', 19], ['vingti\u00e8me', 'twentieth', 20],
+];
+for (const [fr, en, value] of higherWrittenOrdinals) {
+  test('written ordinal ' + value + ' preserves exact rank in either language', () => {
+    assert.equal(equivalentNumericFacts('le ' + fr + ' match', 'the ' + value + 'th match'), true);
+    assert.equal(equivalentNumericFacts('les ' + fr + 's matchs', 'the ' + en + ' matches'), true);
+    assert.equal(equivalentNumericFacts(('le ' + fr + ' match').toUpperCase(), ('the ' + en + ' match').toUpperCase()), true);
+    assert.equal(equivalentNumericFacts(value + 'e match', 'the ' + en + ' match'), true);
+  });
+  test('written ordinal ' + value + ' refuses another rank, cardinal or multiplicity', () => {
+    const source = 'le ' + fr + ' match';
+    assert.equal(equivalentNumericFacts(source, 'the ' + (value === 20 ? 19 : value + 1) + 'th match'), false);
+    assert.equal(equivalentNumericFacts(source, value + ' matches'), false);
+    assert.equal(equivalentNumericFacts(value + ' matchs', 'the ' + en + ' match'), false);
+    assert.equal(equivalentNumericFacts(source, 'the ' + en + ' and ' + en + ' matches'), false);
+    assert.equal(equivalentNumericFacts(source, 'the ' + en + ' match, 3 points'), false);
+  });
+}
+
+test('public Toulouse ordinal construction keeps its ordinal type', () => {
+  const source = 'align\u00e9 un quatri\u00e8me match cons\u00e9cutif';
+  assert.equal(equivalentNumericFacts(source, 'recorded a 4th consecutive match'), true);
+  assert.equal(equivalentNumericFacts(source, 'recorded a fourth consecutive match'), true);
+  assert.equal(equivalentNumericFacts(source, 'recorded four consecutive matches'), false);
+  assert.equal(equivalentNumericFacts(source, 'recorded a fifth consecutive match'), false);
+});
+test('written ordinal matching never takes a fragment of a longer compound or adverb', () => {
+  for (const [fr, en] of [
+    ['le soixante-dix-septi\u00e8me match', 'the seventeenth match'],
+    ['le cent-onzi\u00e8me match', 'the eleventh match'],
+    ['onzi\u00e8mement', 'eleventh'],
+    ['dix-septi\u00e8mement', 'seventeenth'],
+  ]) assert.equal(equivalentNumericFacts(fr, en), false);
+});
 test('complete English retains section, paragraph and leg requirements', () => {
   const item = translatedItem();
   assert.equal(hasCompleteEnglish(item), true);

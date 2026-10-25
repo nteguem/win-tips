@@ -42,6 +42,14 @@ CARDINALS = {
 }
 NUMBERS = re.compile(r'(?<!\w)[+\-−]?\s*\d+(?:[.,:/\-–−]\d+)*(?:ers?|[èe]?res?|e\u0300res?|èmes?|emes?|es?|st|nd|rd|th)?(?:\s*[%€$])?(?!\w)', re.I)
 WRITTEN = re.compile(r'(?<![\w-])(?:' + '|'.join(sorted(CARDINALS, key=len, reverse=True)) + r')(?![\w-])', re.I)
+WRITTEN_ORDINALS = {
+    'deuxième': '2nd', 'troisième': '3rd', 'quatrième': '4th', 'cinquième': '5th',
+    'sixième': '6th', 'septième': '7th', 'huitième': '8th', 'neuvième': '9th',
+    'dixième': '10th', 'onzième': '11th', 'douzième': '12th', 'treizième': '13th',
+    'quatorzième': '14th', 'quinzième': '15th', 'seizième': '16th',
+    'dix-septième': '17th', 'dix-huitième': '18th', 'dix-neuvième': '19th', 'vingtième': '20th',
+}
+WRITTEN_ORDINAL = re.compile(r'(?<![\w-])(?:' + '|'.join(sorted(WRITTEN_ORDINALS, key=len, reverse=True)) + r')s?(?![\w-])', re.I)
 NUMBER_UNIT = re.compile(r'^\s+(?:(?:derniers?|dernières?|premiers?|premières?|autres?|petits?|seuls?|seules?)\s+)*(?:points?|buts?|victoires?|défaites?|matchs?|matches|rencontres?|parties?|équipes?|joueurs?|hommes?|chevaux|partants?|tirs?|rebonds?|titres?|saisons?|ans?|années?|jours?|journées?|mois|minutes?|secondes?|quarts?[- ]temps|sets?|reprises?|fois|podiums?|sorties?|courses?|départs?|participations?|accessits?|places?)\b', re.I)
 RANK_UNIT = re.compile(r'^\s+(?:premiers|premières)\b', re.I)
 RANK_PREFIX = re.compile(r'\b(?:dans|parmi)\s+les\s*$', re.I)
@@ -228,6 +236,12 @@ def protect(source, item):
                 NUMBER_UNIT.match(source[match.end():]) or
                 RANK_UNIT.match(source[match.end():]) and RANK_PREFIX.search(source[:match.start()])):
             add(match.start(), match.end(), CARDINALS[match[0].casefold()], 'written_number')
+    # These words are unambiguous ordinal quantities. Anchor the fact before
+    # translation, rather than accepting a newly unprotected English count.
+    # premier/second/seconde are intentionally absent: they also have scoped
+    # qualitative/time meanings handled by existing source-specific grammar.
+    for match in WRITTEN_ORDINAL.finditer(source):
+        add(match.start(), match.end(), WRITTEN_ORDINALS[match[0].casefold().removesuffix('s')], 'written_number')
     for match in ONE.finditer(source):
         add(match.start(), match.end(), 'one', 'written_number')
     result, end = ['<div>'], 0
