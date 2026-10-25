@@ -27,6 +27,10 @@ const equivalent = [
   ['opening interval retains a separate first rank', '6 premiers matchs puis première place', 'first six league matches then first place'],
   ['top N ranking retains N', 'terminer dans les cinq premiers du Quinté+', 'finish in the top five of the Quinté+'],
   ['top N numeric ranking retains N', 'parmi les 5 premiers, 7ème départ', 'among the top five, seventh start'],
+  ['points deficit to safety keeps the explicit count', 'à 5 longueurs du premier non-relégable', '5 points adrift of safety'],
+  ['written points deficit to safety keeps the explicit count', 'à cinq points du premier non relégable', 'five points adrift of safety'],
+  ['safety deficit retains another rank', 'à 5 longueurs du premier non-relégable, 20ème place', '5 points adrift of safety, 20th place'],
+  ['qualitative aim at leading places is not first place', 'viser les premières places', 'in pursuit of the leading places'],
   ['competition name', 'Premier League, 3 victoires', 'Premier League, three wins'],
   ['leading-role idiom', 'jouer les premiers rôles avec 7 partants', 'play leading roles with 7 runners'],
   ['qualitative early performances', 'les premières performances du FCK après 6 journées', 'the early performances of FCK after 6 matchdays'],
@@ -88,6 +92,39 @@ const changed = [
   ['top N ranking does not erase a separate first rank', 'dans les cinq premiers, première place', 'in the top five'],
   ['top N ranking does not license a first-place claim', 'dans les cinq premiers', 'five first-place finishes'],
   ['top N ranking preserves other count', 'dans les cinq premiers après 12 sorties', 'in the top five after 13 outings'],
+  ['safety deficit wrong count', 'à 5 longueurs du premier non-relégable', '4 points adrift of safety'],
+  ['safety deficit wrong unit', 'à 5 longueurs du premier non-relégable', '5 goals adrift of safety'],
+  ['safety deficit wrong direction', 'à 5 longueurs du premier non-relégable', '5 points clear of safety'],
+  ['safety deficit cannot replace a second rank', 'à 5 longueurs du deuxième non-relégable', '5 points adrift of safety'],
+  ['safety deficit target duplicate', 'à 5 longueurs du premier non-relégable', '5 points adrift of safety and 5 points adrift of safety'],
+  ['safety deficit source duplicate', 'à 5 longueurs du premier non-relégable, à 5 longueurs du premier non-relégable', '5 points adrift of safety'],
+  ['safety deficit retains a separate first rank', 'à 5 longueurs du premier non-relégable et première place', '5 points adrift of safety'],
+  ['safety deficit retains other quantities', 'à 5 longueurs du premier non-relégable avec 2 points', '5 points adrift of safety with 3 points'],
+  ['safety deficit cannot move another quantity into the relation', 'à 5 longueurs du premier non-relégable avec 2 points', '2 points adrift of safety with 5 points'],
+  ['safety deficit retains directed score', 'à 5 longueurs du premier non-relégable (1-3)', '5 points adrift of safety (3-1)'],
+  ['safety deficit explicitly negated target', 'à 5 longueurs du premier non-relégable', 'not 5 points adrift of safety'],
+  ['safety deficit explicitly negated source', 'pas à 5 longueurs du premier non-relégable', '5 points adrift of safety'],
+  ['safety deficit negated target qualifier', 'à 5 longueurs du premier non-relégable', 'not exactly 5 points adrift of safety'],
+  ['safety deficit negated source qualifier', 'pas exactement à 5 longueurs du premier non-relégable', '5 points adrift of safety'],
+  ['safety deficit source negation cannot be displaced', "n'est à 5 longueurs du premier non-relégable", '5 points adrift of safety'],
+  ['safety deficit target negation after relation', 'à 5 longueurs du premier non-relégable', '5 points adrift of safety is not the case'],
+  ['safety deficit signed quantity cannot swap with unsigned relation', 'à 5 longueurs du premier non-relégable avec -5 points', '-5 points adrift of safety with 5 points'],
+  ['safety deficit Unicode signed quantity cannot swap', 'à 5 longueurs du premier non-relégable avec -5 points', '−5 points adrift of safety with 5 points'],
+  ['safety deficit separated sign cannot swap', 'à 5 longueurs du premier non-relégable avec -5 points', '- 5 points adrift of safety with 5 points'],
+  ['safety deficit signed word cannot qualify relation', 'à 5 longueurs du premier non-relégable', 'negative 5 points adrift of safety'],
+  ['safety deficit decimal suffix cannot become deficit', 'à 5 longueurs du premier non-relégable avec 1.5 points', '1.5 points adrift of safety with 5 points'],
+  ['leading places cannot invent a qualitative source', 'viser la deuxième place', 'in pursuit of the leading places'],
+  ['leading places cannot become first place', 'viser les premières places', 'in pursuit of first place'],
+  ['leading places target duplicate', 'viser les premières places', 'in pursuit of the leading places and in pursuit of the leading places'],
+  ['leading places source duplicate', 'viser les premières places puis viser les premières places', 'in pursuit of the leading places'],
+  ['leading places retain a separate first rank', 'viser les premières places après une première place', 'in pursuit of the leading places'],
+  ['leading places retain handicap value', '37 pour viser les premières places', '38 in pursuit of the leading places'],
+  ['leading places target local negation', '37 pour viser les premières places', '37 not in pursuit of the leading places'],
+  ['leading places source local negation', '37 pour ne pas viser les premières places', '37 in pursuit of the leading places'],
+  ['leading places target contracted negation', '37 pour viser les premières places', "37 isn't in pursuit of the leading places"],
+  ['leading places target curved contracted negation', '37 pour viser les premières places', '37 isn’t in pursuit of the leading places'],
+  ['leading places source contracted negation', "37 n'envisage viser les premières places", '37 in pursuit of the leading places'],
+  ['leading places target negation after relation', '37 pour viser les premières places', '37 in pursuit of the leading places is not the aim'],
   ['cardinal changed', '5 nuls', 'six draws'],
   ['repeat added', '3 points', '3 points and three goals'],
   ['relative defeat changed', '6 journées et autant de défaites', '6 matchdays and 7 defeats'],
@@ -168,6 +205,28 @@ const realGeminiParagraphs = [
     '6 - LE COLOMBAR – Récent vainqueur en steeple à Lyon, ce fils de Pastorius aborde ce Quinté+ avec des ambitions légitimes après avoir été supplémenté. Déjà compétitif à cette valeur et capable de s’adapter à l’état de la piste, il possède le profil pour jouer un premier rôle à l’arrivée.',
     "6 - LE COLOMBAR – A recent steeplechase winner at Lyon, this son of Pastorius approaches this Quinté+ with legitimate ambitions after being supplemented. Already competitive off this mark and capable of adapting to the track condition, he has the profile to play a leading role at the finish."],
 ];
+test('exact native V6 Le Havre deficit to safety preserves all other facts', () => {
+  const fr = "Seule équipe de Ligue 1 à ne pas avoir encore gagné, Le Havre ferme la marche au classement avec 2 points, à 5 longueurs du premier non-relégable. Les Ciel et Marine ont alimenté leur compteur pour la dernière fois le 12 septembre, face à Angers (0-0). Ils ont depuis été battus par Toulouse (3-2), Lille (1-0) puis Auxerre (1-3), en concédant toujours l'ouverture du score. Le club normand est à la peine dans le secteur offensif : aucune équipe n'a moins marqué que lui en 7 matchs (5 buts). Avantage Marseille au niveau de la forme";
+  const en = "As the only Ligue 1 team yet to win a match, Le Havre bring up the rear in the standings with 2 points, 5 points adrift of safety. The Ciel et Marine added to their points tally for the last time on 12 September against Angers (0-0). They have since been beaten by Toulouse (3-2), Lille (1-0) and Auxerre (1-3), conceding the opening goal on each occasion. The Norman club are struggling in attack: no team has scored fewer goals than them in 7 matches (5 goals). Form edge to Marseille";
+  assert.equal(equivalentNumericFacts(fr, en), true);
+  for (const mutation of [en.replace('5 points adrift', '4 points adrift'), en.replace('5 points adrift', '5 goals adrift'),
+    en.replace('5 points adrift', '5 points clear'), en.replace('(1-3)', '(3-1)'), en.replace('12 September', '13 September'), en.replace('7 matches', '8 matches')]) {
+    assert.notEqual(mutation, en);
+    assert.equal(equivalentNumericFacts(fr, mutation), false);
+  }
+});
+
+test('exact native V6 Cristabel qualitative leading places preserves rank and handicap', () => {
+  const fr = "8 - CRISTABEL – Déjà troisième d’un Quinté+ en juillet après une belle fin de course, elle a confirmé sa compétitivité lors de ses sorties suivantes, notamment dans une Classe 2 à Craon. Sa valeur handicap de 37 semble lui laisser une belle carte à jouer à Saint-Cloud pour viser les premières places.";
+  const en = "8 - CRISTABEL – Already third in a Quinté+ in July following a strong finish, she confirmed her competitiveness in her subsequent outings, notably in a Class 2 event at Craon. Her handicap mark of 37 appears to give her a strong hand to play at Saint-Cloud in pursuit of the leading places.";
+  assert.equal(equivalentNumericFacts(fr, en), true);
+  for (const mutation of [en.replace('third', 'second'), en.replace('37', '38'), en.replace('8 -', '9 -'),
+    en.replace('Class 2', 'Class 3'), en.replace('the leading places', 'first place')]) {
+    assert.notEqual(mutation, en);
+    assert.equal(equivalentNumericFacts(fr, mutation), false);
+  }
+});
+
 test("exact native V5 Tottenham opening interval preserves scores, ranks and quantities", () => {
   const fr = "Malgr\u00e9 des investissements cons\u00e9quents, Tottenham d\u00e9\u00e7oit grandement depuis quelques temps. L'an pass\u00e9, la formation londonienne avait m\u00eame d\u00fb attendre la derni\u00e8re journ\u00e9e pour sauver sa t\u00eate au sein de l'\u00e9lite. L'objectif est bien \u00e9videmment d'afficher un autre visage cette saison. Malheureusement pour elle et ses supporters, la bande \u00e0 Roberto De Zerbi est reparti sur des bases pr\u00e9occupantes. En effet, les Spurs n'ont remport\u00e9 aucun de leurs six premiers matchs de championnats (3 matchs nuls et 3 d\u00e9faites). Ils ont enfin affich\u00e9 une r\u00e9action lundi dernier en prenant le dessus, \u00e0 domicile, sur le promu Coventry (3-1). Ce succ\u00e8s permet \u00e0 Tottenham de figurer aujourd'hui au 16\u00e8me rang de la premier League avec 1 point d'avance sur le premier rel\u00e9gable. Avantage Chelsea sur la forme";
   const en = "Despite significant investments, Tottenham has been greatly disappointing for some time. Last year, the London team even had to wait until the final matchday to save their place in the elite. The objective is obviously to show a different face this season. Unfortunately for them and their supporters, Roberto De Zerbi's squad has started on a worrying note. Indeed, the Spurs have not won any of their six first league matches (3 draws and 3 defeats). They finally showed a reaction last Monday by overcoming newly promoted Coventry at home (3-1). This success allows Tottenham to currently sit in 16th place in the Premier League with 1 point ahead of the first relegation spot. Advantage Chelsea in terms of form";

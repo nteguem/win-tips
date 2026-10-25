@@ -41,6 +41,30 @@ const ONE_UNITS = {
 
 function normalizePairedForms(fr, en) {
   let source = String(fr).normalize('NFC'), target = String(en).normalize('NFC');
+  const countToken = '(?:\\d+|' + Object.keys(CARDINALS).sort((a, b) => b.length - a.length).join('|') + ')';
+  const negativeNear = (text, match) => {
+    const before = text.slice(0, match.index).trim().split(/\s+/u).slice(-10).join(' ');
+    const after = text.slice(match.index + match[0].length).trim().split(/\s+/u).slice(0, 10).join(' ');
+    return /(?<!\p{L})(?:ne|pas|jamais|sans|aucun(?:e|s|es)?|ni|not|never|no|without|cannot|neither|nor)(?!\p{L})|(?<!\p{L})n['’]\p{L}+|\p{L}+n['’]t(?!\p{L})/iu.test(before + ' ' + match[0] + ' ' + after);
+  };
+  // The first team outside the relegation zone is the safety boundary. Pair
+  // only an explicit, unchanged points deficit; no separate rank is asserted
+  // by "N points adrift of safety". Other ranks/quantities stay untouched.
+  const safetyFr = new RegExp('(?<!\\p{L})à\\s+(' + countToken + ')\\s+(?:longueurs?|points?)\\s+du\\s+premier\\s+non[- ]relégable(?!\\p{L})', 'giu');
+  const safetyEn = new RegExp('(?<![\\p{L}\\p{N}_+−.,:/-])(' + countToken + ')\\s+points?\\s+adrift\\s+of\\s+safety(?!\\p{L})', 'giu');
+  const frenchDeficits = [...source.matchAll(safetyFr)], englishDeficits = [...target.matchAll(safetyEn)];
+  const deficitCount = match => {
+    const token = match[1].toLowerCase();
+    return Object.hasOwn(CARDINALS, token) ? String(CARDINALS[token]) : number(token);
+  };
+  if (englishDeficits.length) {
+    if (!equal(frenchDeficits.map(deficitCount), englishDeficits.map(deficitCount)) ||
+        frenchDeficits.some(match => negativeNear(source, match)) ||
+        englishDeficits.some(match => negativeNear(target, match) || /(?:[+−-]|\b(?:minus|negative|plus|positive))\s*$/iu.test(target.slice(0, match.index)))) {
+      return { source, target, valid: false };
+    }
+    source = source.replace(safetyFr, match => match.replace(/premier\s+non[- ]relégable/iu, 'safety boundary'));
+  }
   // These complete sporting expressions have faithful qualitative English
   // equivalents without a numeric ordinal. Pair their exact multiplicities;
   // never suppress a standalone first/second or any other rank/quantity.
@@ -49,11 +73,13 @@ function normalizePairedForms(fr, en) {
     [/(?<!\p{L})seconde\s+partie\s+de\s+tableau(?!\p{L})/giu, /\b(?:lower|bottom)\s+half\s+of\s+the\s+table\b/giu],
     [/(?<!\p{L})un\s+premier\s+rôle(?!\p{L})/giu, /\ba\s+leading\s+role\b/giu],
     [/(?<!\p{L})premier\s+match\s+de\s+la\s+saison(?!\p{L})/giu, /\bseason\s+opener\b/giu, true],
+    [/(?<!\p{L})viser\s+les\s+premières\s+places(?!\p{L})/giu, /\bin\s+pursuit\s+of\s+the\s+leading\s+places\b/giu, true, true],
   ];
-  for (const [french, english, requirePair] of qualitativePairs) {
-    const count = [...source.matchAll(french)].length;
-    const translatedCount = [...target.matchAll(english)].length;
-    if (requirePair && translatedCount && count !== translatedCount) return { source, target, valid: false };
+  for (const [french, english, requirePair, requireSourcePair] of qualitativePairs) {
+    const sourceMatches = [...source.matchAll(french)], targetMatches = [...target.matchAll(english)];
+    const count = sourceMatches.length, translatedCount = targetMatches.length;
+    if ((requirePair && translatedCount || requireSourcePair && count) && count !== translatedCount) return { source, target, valid: false };
+    if (requireSourcePair && (sourceMatches.some(match => negativeNear(source, match)) || targetMatches.some(match => negativeNear(target, match)))) return { source, target, valid: false };
     if (count && count === translatedCount) {
       source = source.replace(french, 'paired qualitative expression');
       target = target.replace(english, 'paired qualitative expression');
@@ -62,7 +88,6 @@ function normalizePairedForms(fr, en) {
   // An opening N-event interval carries the quantity N, not a separate rank
   // of one. License either English word order from that closed French frame;
   // never erase first in a place/rank/finish label or an unrelated expression.
-  const countToken = '(?:\\d+|' + Object.keys(CARDINALS).sort((a, b) => b.length - a.length).join('|') + ')';
   const eventFr = new RegExp('(?<![\\p{L}\\p{N}_])(' + countToken + ')\\s+premi(?:ers|ères)\\s+(matchs?|rencontres?|journées?)(?!\\p{L})', 'giu');
   const eventEn = new RegExp('(?<![\\p{L}\\p{N}_])(?:first\\s+(' + countToken + ')|(' + countToken + ')\\s+first)\\s+(?:league\\s+)?(matches|games|fixtures|matchdays?)(?!\\p{L})', 'giu');
   const intervalKey = (count, unit, language) => {
