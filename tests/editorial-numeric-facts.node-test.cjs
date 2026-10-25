@@ -333,6 +333,35 @@ const higherWrittenOrdinals = [
   ['dix-septi\u00e8me', 'seventeenth', 17], ['dix-huiti\u00e8me', 'eighteenth', 18],
   ['dix-neuvi\u00e8me', 'nineteenth', 19], ['vingti\u00e8me', 'twentieth', 20],
 ];
+test('closed return-to-prominence frame pairs exact occurrences without a rank', () => {
+  assert.equal(equivalentNumericFacts('de retour au premier plan', 'back at the forefront'), true);
+  assert.equal(equivalentNumericFacts('De retour au premier plan avec 3 points et une 8e place.', 'Back at the forefront with three points and an 8th place.'), true);
+  assert.equal(equivalentNumericFacts('de retour au premier plan ; de retour au premier plan', 'back at the forefront; back at the forefront'), true);
+  assert.equal(equivalentNumericFacts('DE RETOUR AU PREMIER PLAN', 'BACK AT THE FOREFRONT'), true);
+});
+test('closed return-to-prominence frame refuses missing, duplicate or changed ranks', () => {
+  for (const [fr, en] of [
+    ['de retour au premier plan', ''],
+    ['de retour au premier plan', 'back at the forefront and back at the forefront'],
+    ['de retour au premier plan ; de retour au premier plan', 'back at the forefront'],
+    ['de retour au premier plan', 'back at the forefront with one point'],
+    ['de retour au premier plan et 8e place', 'back at the forefront and ninth place'],
+    ['de retour au premier plan et 8e place', 'back at the forefront'],
+    ['premier plan', 'back at the forefront'],
+    ['de retour au second plan', 'back at the forefront'],
+    ['première place', 'back at the forefront'],
+    ['de retour au premier plan', 'back in first place'],
+  ]) assert.equal(equivalentNumericFacts(fr, en), false);
+});
+test('closed return-to-prominence frame refuses negated contexts in either language', () => {
+  for (const [fr, en] of [
+    ['pas de retour au premier plan', 'back at the forefront'],
+    ['de retour au premier plan', 'not back at the forefront'],
+    ["il n'est jamais de retour au premier plan", 'back at the forefront'],
+    ['de retour au premier plan', 'never back at the forefront'],
+    ['sans être de retour au premier plan', 'back at the forefront'],
+  ]) assert.equal(equivalentNumericFacts(fr, en), false);
+});
 for (const [fr, en, value] of higherWrittenOrdinals) {
   test('written ordinal ' + value + ' preserves exact rank in either language', () => {
     assert.equal(equivalentNumericFacts('le ' + fr + ' match', 'the ' + value + 'th match'), true);

@@ -1,0 +1,75 @@
+{
+  "publicFrenchOnly": true,
+  "nativeResponsesIncluded": false,
+  "items": [
+    {
+      "sourceId": "5802970",
+      "source": "Strasbourg demeure l'une des déceptions de Ligue 1 sur ce début de saison. Prétendant à une qualification européenne, le Racing ne devance la zone de relégation que d'un point et occupe une modeste 14e place provisoire. Pourtant à la hauteur lors des premières journées, le club alsacien n'a plus pris le moindre point depuis son match nul face à Monaco (1-1) le 12 septembre. Il reste depuis sur 3 défaites consécutives contre le Paris FC (2-1), Nice (2-1) et le PSG (1-3). Avantage Rennes au niveau de la forme",
+      "item": {
+        "teams": {
+          "home": {
+            "name": "Rennes",
+            "logo": "https://img.ruedesjoueurs.com/img/9851-5.png"
+          },
+          "away": {
+            "name": "Strasbourg",
+            "logo": "https://img.ruedesjoueurs.com/img/9848-5.png"
+          }
+        },
+        "sport": {
+          "key": "football",
+          "name": "Football"
+        },
+        "competition": {
+          "name": "Ligue 1"
+        }
+      }
+    },
+    {
+      "sourceId": "5802971",
+      "source": "Troyes accuse le coup moins de deux mois après le début de l'exercice. Pour son retour dans l'élite, le club aubois est retenu dans la zone rouge (17e), puni d'avoir été défait lors de ses 5 derniers matchs. Étrillé par Strasbourg (2-6), puis battu par Lille (2-0), Angers (2-0) et Marseille (0-2), il a de nouveau cédé samedi dernier, sur sa pelouse contre Lens (1-3). Avant-dernière défense de l'élite (16 buts encaissés en 7 matchs), l'ESTAC voit trois points la séparer du premier non relégable. Avantage Toulouse au niveau de la forme",
+      "item": {
+        "teams": {
+          "home": {
+            "name": "Toulouse",
+            "logo": "https://img.ruedesjoueurs.com/img/9941-5.png"
+          },
+          "away": {
+            "name": "Troyes",
+            "logo": "https://img.ruedesjoueurs.com/img/10242-5.png"
+          }
+        },
+        "sport": {
+          "key": "football",
+          "name": "Football"
+        },
+        "competition": {
+          "name": "Ligue 1"
+        }
+      }
+    },
+    {
+      "sourceId": "5802964",
+      "source": "Le FC Lorient d'Alexandre Dujeux, l'ancien entraîneur d'Angers, est de retour au premier plan depuis la trêve internationale. Vainqueurs à domicile contre le Paris FC (1-0) et Monaco (1-0) sans concéder le moindre but, les Merlus voyaient trois points les séparer du leader avant la 8e journée. Ils avaient d'abord fait preuve d'irrégularité cette saison, n'obtenant qu'une victoire en 5 matchs (2 nuls, 2 défaites). Avantage Lorient au niveau de la forme",
+      "item": {
+        "teams": {
+          "home": {
+            "name": "Angers",
+            "logo": "https://img.ruedesjoueurs.com/img/8121-5.png"
+          },
+          "away": {
+            "name": "Lorient",
+            "logo": "https://img.ruedesjoueurs.com/img/8689-5.png"
+          }
+        },
+        "sport": {
+          "key": "football",
+          "name": "Football"
+        },
+        "competition": {
+          "name": "Ligue 1"
+        }
+      }
+    }
+  ]
+}

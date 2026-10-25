@@ -220,6 +220,17 @@ def protect(source, item):
     # of asking a model to invent an unconstrained ordinal-free paraphrase.
     for match in re.finditer(r'(?<!\w)pour\s+viser\s+les\s+premières\s+places(?!\w)', source, re.I):
         add(match.start(), match.end(), 'in pursuit of the leading places', 'qualitative')
+    # Pin only these complete sporting frames. The first two retain their
+    # opening/boundary ordinal; the third is qualitative prominence, not rank.
+    for pattern, value in (
+            (r'premières\s+journées', 'first matchdays'),
+            (r'premier\s+non[- ]relégable', 'first team outside the relegation zone'),
+            (r'de\s+retour\s+au\s+premier\s+plan', 'back at the forefront')):
+        for match in re.finditer(r'(?<!\w)' + pattern + r'(?!\w)', source, re.I):
+            add(match.start(), match.end(), value, 'qualitative')
+    # Preserve a relative position without synthesizing a numeric rank of two.
+    for match in re.finditer(r'(?<!\w)avant-dernière\s+défense(?!\w)', source, re.I):
+        add(match.start(), match.end(), 'next-to-last defence', 'relative_rank')
     # Preserve the complete nominal finish rank, including "top". Do not turn
     # chronological "les cinq premiers matchs/courses" into a top-five ranking.
     for match in RANK_NUMBER.finditer(source):

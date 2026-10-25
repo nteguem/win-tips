@@ -111,6 +111,7 @@ function normalizePairedForms(fr, en) {
     [/(?<!\p{L})un\s+premier\s+rôle(?!\p{L})/giu, /\ba\s+leading\s+role\b/giu],
     [/(?<!\p{L})premier\s+match\s+de\s+la\s+saison(?!\p{L})/giu, /\bseason\s+opener\b/giu, true],
     [/(?<!\p{L})viser\s+les\s+premières\s+places(?!\p{L})/giu, /\bin\s+(?:pursuit\s+of|(?:his|her|its|their)\s+bid\s+for)\s+the\s+leading\s+places\b/giu, true, true],
+    [/(?<!\p{L})de\s+retour\s+au\s+premier\s+plan(?!\p{L})/giu, /\bback\s+at\s+the\s+forefront\b/giu, true, true],
   ];
   for (const [french, english, requirePair, requireSourcePair] of qualitativePairs) {
     const sourceMatches = [...source.matchAll(french)], targetMatches = [...target.matchAll(english)];
