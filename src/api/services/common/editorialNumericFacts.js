@@ -47,6 +47,36 @@ function normalizePairedForms(fr, en) {
     const after = text.slice(match.index + match[0].length).trim().split(/\s+/u).slice(0, 10).join(' ');
     return /(?<!\p{L})(?:ne|pas|jamais|sans|aucun(?:e|s|es)?|ni|not|never|no|without|cannot|neither|nor)(?!\p{L})|(?<!\p{L})n['’]\p{L}+|\p{L}+n['’]t(?!\p{L})/iu.test(before + ' ' + match[0] + ' ' + after);
   };
+  const negativeInClauseNear = (text, match) => {
+    const before = text.slice(0, match.index).split(/[.!?;:\n]/u).at(-1);
+    const after = text.slice(match.index + match[0].length).split(/[.!?;:\n]/u)[0];
+    return negativeNear(before + match[0] + after, { 0: match[0], index: before.length });
+  };
+  const countValue = token => Object.hasOwn(CARDINALS, token.toLowerCase()) ? String(CARDINALS[token.toLowerCase()]) : number(token);
+  const person = "[\\p{Lu}][\\p{L}\\p{M}'’.-]*(?:\\s+[\\p{Lu}][\\p{L}\\p{M}'’.-]*){0,4}";
+  // These closed sporting frames express an opening event/group, not an
+  // extra rank of one. Pair the entire frame and its multiplicity, retaining
+  // the top-N count or exact person/shirt identity. Other ordinals remain.
+  const sportingFrames = [
+    [new RegExp('(?<!\\p{L})les\\s+(' + countToken + ')\\s+premiers\\s+du\\s+classement(?!\\p{L})', 'giu'),
+      new RegExp('\\bthe\\s+top\\s+(' + countToken + ')\\s+of\\s+the\\s+standings\\b', 'giu'),
+      match => countValue(match[1]), match => countValue(match[1]) + ' ranked clubs'],
+    [/(?<!\p{L})punis\s+d['’]avoir\s+encaissé\s+le\s+premier\s+but(?!\p{L})/giu,
+      /\bpunished\s+for\s+conceding\s+the\s+opening\s+goal\b/giu,
+      () => 'conceded opening goal', () => 'conceded opening goal'],
+    [new RegExp("(?<!\\p{L})[Pp]our\\s+la\\s+première\\s+de\\s+(" + person + ")\\s+sous\\s+le\\s+maillot\\s+([\\p{Ll}-]+)(?!\\p{L})", 'gu'),
+      new RegExp("\\b[Ff]or\\s+(" + person + ")[’']s\\s+debut\\s+in\\s+the\\s+([\\p{Ll}-]+)\\s+shirt\\b", 'gu'),
+      match => match[1].toLowerCase() + ':' + match[2], () => 'paired shirt debut'],
+  ];
+  for (const [french, english, identity, replacement] of sportingFrames) {
+    const sourceMatches = [...source.matchAll(french)], targetMatches = [...target.matchAll(english)];
+    if (!sourceMatches.length || !targetMatches.length) continue;
+    if (!equal(sourceMatches.map(identity), targetMatches.map(identity)) ||
+        sourceMatches.some(match => negativeInClauseNear(source, match)) ||
+        targetMatches.some(match => negativeInClauseNear(target, match))) return { source, target, valid: false };
+    source = source.replace(french, (...args) => replacement(args));
+    target = target.replace(english, (...args) => replacement(args));
+  }
   // The first team outside the relegation zone is the safety boundary. Pair
   // only an explicit, unchanged points deficit; no separate rank is asserted
   // by "N points adrift of safety". Other ranks/quantities stay untouched.

@@ -31,6 +31,12 @@ const equivalent = [
   ['written points deficit to safety keeps the explicit count', 'à cinq points du premier non relégable', 'five points adrift of safety'],
   ['safety deficit retains another rank', 'à 5 longueurs du premier non-relégable, 20ème place', '5 points adrift of safety, 20th place'],
   ['qualitative aim at leading places is not first place', 'viser les premières places', 'in pursuit of the leading places'],
+  ['nominal top group keeps its quantity', 'les six premiers du classement', 'the top six of the standings'],
+  ['nominal top group accepts numeric quantity', 'les 6 premiers du classement', 'the top six of the standings'],
+  ['nominal top group retains another rank', 'les six premiers du classement, 11ème rang', 'the top six of the standings, 11th place'],
+  ['conceded first goal is the opening goal', "punis d'avoir encaissé le premier but", 'punished for conceding the opening goal'],
+  ['shirt debut retains person and shirt', 'pour la première de Dani Carvajal sous le maillot azulon', "for Dani Carvajal's debut in the azulon shirt"],
+  ['shirt debut retains Unicode person and apostrophe', 'Pour la première de Ángel Correa sous le maillot rouge', 'For Ángel Correa’s debut in the rouge shirt'],
   ['competition name', 'Premier League, 3 victoires', 'Premier League, three wins'],
   ['leading-role idiom', 'jouer les premiers rôles avec 7 partants', 'play leading roles with 7 runners'],
   ['qualitative early performances', 'les premières performances du FCK après 6 journées', 'the early performances of FCK after 6 matchdays'],
@@ -125,6 +131,30 @@ const changed = [
   ['leading places target curved contracted negation', '37 pour viser les premières places', '37 isn’t in pursuit of the leading places'],
   ['leading places source contracted negation', "37 n'envisage viser les premières places", '37 in pursuit of the leading places'],
   ['leading places target negation after relation', '37 pour viser les premières places', '37 in pursuit of the leading places is not the aim'],
+  ['nominal top group changes count', 'les six premiers du classement', 'the top five of the standings'],
+  ['nominal top group wrong ordinal', 'les six deuxièmes du classement', 'the top six of the standings'],
+  ['nominal top group target duplicate', 'les six premiers du classement', 'the top six of the standings and the top six of the standings'],
+  ['nominal top group source duplicate', 'les six premiers du classement et les six premiers du classement', 'the top six of the standings'],
+  ['nominal top group target negation', 'les six premiers du classement', 'not the top six of the standings'],
+  ['nominal top group source negation', 'pas les six premiers du classement', 'the top six of the standings'],
+  ['nominal top group signed count cannot swap', 'les six premiers du classement avec -6 points', 'the top -6 of the standings with 6 points'],
+  ['nominal top group retains extra ordinal', 'les six premiers du classement, première place', 'the top six of the standings'],
+  ['nominal top group retains other quantity', 'les six premiers du classement avec 4 points', 'the top six of the standings with 5 points'],
+  ['conceded first goal cannot become second goal', "punis d'avoir encaissé le premier but", 'punished for conceding the second goal'],
+  ['conceded first goal source negation', "pas punis d'avoir encaissé le premier but", 'punished for conceding the opening goal'],
+  ['conceded first goal target negation', "punis d'avoir encaissé le premier but", 'not punished for conceding the opening goal'],
+  ['conceded first goal target contraction', "punis d'avoir encaissé le premier but", "weren't punished for conceding the opening goal"],
+  ['conceded first goal target duplicate', "punis d'avoir encaissé le premier but", 'punished for conceding the opening goal and punished for conceding the opening goal'],
+  ['conceded first goal retains another first rank', "punis d'avoir encaissé le premier but, première place", 'punished for conceding the opening goal'],
+  ['conceded first goal retains score direction', "punis d'avoir encaissé le premier but (2-4)", 'punished for conceding the opening goal (4-2)'],
+  ['shirt debut wrong person', 'pour la première de Dani Carvajal sous le maillot azulon', "for Dani Alonso's debut in the azulon shirt"],
+  ['shirt debut wrong shirt', 'pour la première de Dani Carvajal sous le maillot azulon', "for Dani Carvajal's debut in the rouge shirt"],
+  ['shirt debut target negation', 'pour la première de Dani Carvajal sous le maillot azulon', "not for Dani Carvajal's debut in the azulon shirt"],
+  ['shirt debut source negation', 'pas pour la première de Dani Carvajal sous le maillot azulon', "for Dani Carvajal's debut in the azulon shirt"],
+  ['shirt debut target duplicate', 'pour la première de Dani Carvajal sous le maillot azulon', "for Dani Carvajal's debut in the azulon shirt and for Dani Carvajal's debut in the azulon shirt"],
+  ['shirt debut source duplicate', 'pour la première de Dani Carvajal sous le maillot azulon et pour la première de Dani Carvajal sous le maillot azulon', "for Dani Carvajal's debut in the azulon shirt"],
+  ['shirt debut retains another ordinal', 'pour la première de Dani Carvajal sous le maillot azulon, première place', "for Dani Carvajal's debut in the azulon shirt"],
+  ['shirt debut retains score direction', 'pour la première de Dani Carvajal sous le maillot azulon (2-5)', "for Dani Carvajal's debut in the azulon shirt (5-2)"],
   ['cardinal changed', '5 nuls', 'six draws'],
   ['repeat added', '3 points', '3 points and three goals'],
   ['relative defeat changed', '6 journées et autant de défaites', '6 matchdays and 7 defeats'],
@@ -232,6 +262,37 @@ test("exact native V5 Tottenham opening interval preserves scores, ranks and qua
   const en = "Despite significant investments, Tottenham has been greatly disappointing for some time. Last year, the London team even had to wait until the final matchday to save their place in the elite. The objective is obviously to show a different face this season. Unfortunately for them and their supporters, Roberto De Zerbi's squad has started on a worrying note. Indeed, the Spurs have not won any of their six first league matches (3 draws and 3 defeats). They finally showed a reaction last Monday by overcoming newly promoted Coventry at home (3-1). This success allows Tottenham to currently sit in 16th place in the Premier League with 1 point ahead of the first relegation spot. Advantage Chelsea in terms of form";
   assert.equal(equivalentNumericFacts(fr, en), true);
   for (const mutation of [en.replace("six first league matches", "five first league matches"), en.replace("six first league matches", "six second league matches"), en.replace("16th", "15th"), en.replace("(3-1)", "(1-3)")]) {
+    assert.notEqual(mutation, en);
+    assert.equal(equivalentNumericFacts(fr, mutation), false);
+  }
+});
+
+// Exact V6 VIP paragraphs from payload byte SHA256 9b39c203c3dfdd5988eae9658b9520ae3a5872bf25c5b93a43352d8b12112fe3.
+const realVip25Paragraphs = [
+  [
+    "5868102",
+    "De son c\u00f4t\u00e9, Getafe est dans ses standings en s'av\u00e9rant indomptable au sein de son Coliseum Alfonso Perez. Cette \u00e9quipe y a d\u00e9croch\u00e9 2 victoires contre Malaga (1-0) et le Racing Santander (1-0) mais aussi 3 matchs nuls pour les r\u00e9ceptions du Celta Vigo (1-1), de La Corogne (1-1) et du Rayo Vallecano lundi soir (1-1), pour la premi\u00e8re de Dani Carvajal sous le maillot azulon. En revanche, les Azulones ont tout de m\u00eame essuy\u00e9 3 d\u00e9faites depuis le d\u00e9but de la saison, \u00e0 chaque fois en d\u00e9placement du c\u00f4t\u00e9 d'Osasuna (1-0), du B\u00e9tis (1-0) et face \u00e0 l'irr\u00e9sistible Barcelone (3-0). Cette semaine, Getafe a manqu\u00e9 \u00e0 son devoir en s'inclinant s\u00e9v\u00e8rement \u00e0 domicile face au champion de Suisse en titre, Lugano (2-5) en Ligue Conf\u00e9rence. Toujours pas de victoire en comp\u00e9tition europ\u00e9enne donc \u00e0 la suite d'un match nul conc\u00e9d\u00e9 en Roumanie contre l'Universitatea Craiova (1-1) la semaine derni\u00e8re. Aucun avantage sur la forme",
+    "For their part, Getafe are performing as expected by proving indomitable at their Coliseum Alfonso Perez. This team has claimed 2 victories there against Malaga (1-0) and Racing Santander (1-0) as well as 3 draws when hosting Celta Vigo (1-1), Deportivo La Coru\u00f1a (1-1), and Rayo Vallecano on Monday evening (1-1), for Dani Carvajal's debut in the azulon shirt. On the other hand, the Azulones have still suffered 3 defeats since the start of the season, each time away from home against Osasuna (1-0), Real Betis (1-0), and facing irresistible Barcelona (3-0). This week, Getafe fell short by losing heavily at home to reigning Swiss champions Lugano (2-5) in the Conference League. Still no victory in European competition, therefore, following one draw conceded in Romania against Universitatea Craiova (1-1) last week. No advantage regarding form"
+  ],
+  [
+    "5802969",
+    "Lille devance Monaco au classement (4e) malgr\u00e9 un dernier r\u00e9sultat \u00e9galement compromettant. D\u00e9j\u00e0 peu inspir\u00e9s contre Le Havre (victoire 1-0) au retour de la pause de la fen\u00eatre internationale, les Dogues ont \u00e9t\u00e9 tenus en \u00e9chec par Brest (1-1) le week-end dernier, punis d'avoir encaiss\u00e9 le premier but. Olivier Giroud et ses co\u00e9quipiers n'ont par ailleurs pas \u00e9t\u00e9 \u00e0 la hauteur en Ligue des Champions et se d\u00e9placent en Principaut\u00e9 sans avoir gagn\u00e9 lors des 3 derniers matchs. Une semaine apr\u00e8s avoir chut\u00e9 \u00e0 Arsenal (3-0), ils ont \u00e9t\u00e9 surpris sur leur pelouse par Galatasaray (2-4) mercredi. Avant age Monaco sur la forme",
+    "Lille lead Monaco in the standings (4th) despite a similarly compromising latest result. Already uninspiring against Le Havre (1-0 win) upon returning from the international window break, the Dogues were held to a draw by Brest (1-1) last weekend, punished for conceding the opening goal. Olivier Giroud and his teammates moreover fell short in the Champions League and are travelling to the Principality without having won any of their last 3 matches. A week after falling at Arsenal (3-0), they were surprised on their own turf by Galatasaray (2-4) on Wednesday. Advantage Monaco regarding form"
+  ],
+  [
+    "5749710",
+    "Distanc\u00e9e par les six premiers du classement \u00e0 l'issue du pr\u00e9c\u00e9dent exercice, l'Atalanta a d\u00fb se contenter d'une qualification pour la Ligue Conf\u00e9rence. Cet \u00e9t\u00e9, la Dea a ouvert un nouveau chapitre avec l'arriv\u00e9e sur le banc de l'exp\u00e9riment\u00e9 Maurizio Sarri. Malheureusement, le d\u00e9but de championnat se r\u00e9v\u00e8le poussif. Les Bergamasques ne figurent aujourd'hui qu'au 11\u00e8me rang de la Serie A avec d\u00e9j\u00e0 6 unit\u00e9s de d\u00e9bours sur la 4\u00e8me place. Apr\u00e8s avoir encha\u00een\u00e9 trois revers d'affil\u00e9e, ils ont r\u00e9agi en battant la lanterne rouge Venise (3-1). La Dea a en revanche rechut\u00e9 devant les tifosi du Milan AC le week-end dernier (3-2). Cette semaine, l'Atalanta a perdu sur le terrain de l'Ajax en Ligue Conf\u00e9rence (2-0).",
+    "Distanced by the top six of the standings at the end of the previous campaign, Atalanta had to content themselves with qualification for the Conference League. This summer, La Dea opened a new chapter with the arrival on the bench of the experienced Maurizio Sarri. Unfortunately, the start of the championship is proving sluggish. The Bergamasques currently sit only in 11th place in Serie A with already 6 points behind the 4th place. After stringing together three defeats in a row, they reacted by beating bottom side Venezia (3-1). La Dea relapsed again in front of AC Milan's supporters last weekend (3-2). This week, Atalanta lost away to Ajax in the Conference League (2-0)."
+  ]
+];
+for (const [sourceId, fr, en] of realVip25Paragraphs) test('exact native V6 VIP paragraph: ' + sourceId, () => {
+  assert.equal(equivalentNumericFacts(fr, en), true);
+  const mutations = sourceId === '5868102'
+    ? [en.replace('Dani Carvajal', 'Dani Alonso'), en.replace('3 defeats', '4 defeats'), en.replace('(2-5)', '(5-2)'), en.replace("for Dani Carvajal's debut", "not for Dani Carvajal's debut")]
+    : sourceId === '5802969'
+      ? [en.replace('4th', '5th'), en.replace('(2-4)', '(4-2)'), en.replace('punished for conceding', 'not punished for conceding')]
+      : [en.replace('top six', 'top five'), en.replace('11th', '12th'), en.replace('4th', '5th'), en.replace('(3-1)', '(1-3)'), en.replace('the top six', 'not the top six')];
+  for (const mutation of mutations) {
     assert.notEqual(mutation, en);
     assert.equal(equivalentNumericFacts(fr, mutation), false);
   }
