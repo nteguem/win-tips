@@ -1,0 +1,26 @@
+[
+  {
+    "file": "turf-2026-10-25-course.html",
+    "sourceUrl": "https://www.ruedesjoueurs.com/turf/pronostic-turf/course/25-10-2026/R1/C5/prix-de-l-elevage.html",
+    "httpStatus": 200,
+    "readAtUtc": "2026-10-25T05:19:46.369624+00:00",
+    "sourceSnapshotSha256": "0746f48733aa591f04150138f30b542ea4694aca86295d1c148dc3623efa9b99",
+    "sourceSnapshotBytes": 182059,
+    "fixtureSha256": "0756c82cf0abce9f1a6340ce0f046024036482a6e0b6d86fc900a876dd7d86fb",
+    "bytes": 181671,
+    "fixtureTransform": "CRLF to LF only, per tests/fixtures/.gitattributes; original authorized HTTP snapshot unchanged",
+    "evidenceFile": "qa/automation-reliability-20261025/quinte-fix/course-2026-10-25.html"
+  },
+  {
+    "file": "turf-2026-10-25-analysis.html",
+    "sourceUrl": "https://www.ruedesjoueurs.com/turf/pronostic-turf/pronostics-quinte/74792-pronostic-quinte-du-dimanche-25-octobre-a-saint-cloud-prix-de-lelevage-r1c5.html",
+    "httpStatus": 200,
+    "readAtUtc": "2026-10-25T05:19:46.369624+00:00",
+    "sourceSnapshotSha256": "5e3a483e6fb4707f408a97d32a8705431070fee4ffce6175a41d4b375ef0dbad",
+    "sourceSnapshotBytes": 141412,
+    "fixtureSha256": "10666eb06a0625a1998bbdb06135a490d63ce73059c00073bc041551c84b9a23",
+    "bytes": 140595,
+    "fixtureTransform": "CRLF to LF only, per tests/fixtures/.gitattributes; original authorized HTTP snapshot unchanged",
+    "evidenceFile": "qa/automation-reliability-20261025/quinte-fix/analysis-2026-10-25.html"
+  }
+]

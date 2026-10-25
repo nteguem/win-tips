@@ -436,7 +436,9 @@ def _turf_classic_analysis_url(bridge, course, edition):
     root = page_root(bridge)
     article = rdj.one(rdj.find(root, lambda n: n.tag == "article" and n.has_class("news-article")), "race analysis article")
     title = rdj.folded(rdj.one(rdj.find(article, lambda n: n.tag == "h1"), "race analysis h1").plain())
-    title = re.sub(r"\s*[–—-]\s*", " - ", title)
+    # Only spaced field separators may change. Internal name hyphens, such as
+    # Saint-Cloud, belong to the race identity and must remain intact.
+    title = re.sub(r"\s+[–—-]\s+", " - ", title)
     pattern = (r"pronostic quinte\+ du " + when + " - " + re.escape(name) + r" \(" + re.escape(venue)
                + " r" + identity[2] + "c" + identity[3] + r"\) : le turf decrypte comme un pronostic foot")
     checked(re.fullmatch(pattern, title) is not None, "race_analysis_bridge_identity_conflict")
@@ -449,7 +451,7 @@ def _turf_classic_analysis_url(bridge, course, edition):
                + " - r" + identity[2] + "c" + identity[3])
     links = []
     for node in rdj.find(related, lambda n: n.tag == "a" and n.has_class("news-related__link") and n.attrs.get("href")):
-        text = re.sub(r"\s*[–—-]\s*", " - ", rdj.folded(node.plain()))
+        text = re.sub(r"\s+[–—-]\s+", " - ", rdj.folded(node.plain()))
         if re.fullmatch(classic, text) is None:
             continue
         href = source_url(node.attrs["href"], bridge.url)
@@ -469,7 +471,7 @@ def _turf_linked_analysis(page, course, edition, identity, race_name, racecourse
     root = page_root(page)
     article = rdj.one(rdj.find(root, lambda n: n.tag == "article" and n.has_class("news-article")), "race analysis article")
     title = rdj.folded(rdj.one(rdj.find(article, lambda n: n.tag == "h1"), "race analysis h1").plain())
-    title = re.sub(r"\s*[–—-]\s*", " - ", title)
+    title = re.sub(r"\s+[–—-]\s+", " - ", title)
     match = re.fullmatch(r"pronostic quinte du (?:(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche) )?(\d{1,2})(?:er)? (" + "|".join(rdj.MONTHS) + r")(?: (\d{4}))? a (.+?) - (.+?) - r(\d+)c(\d+)", title)
     checked(match is not None, "race_analysis_title_missing")
     day = date.fromisoformat(edition)
@@ -486,7 +488,7 @@ def _turf_linked_analysis(page, course, edition, identity, race_name, racecourse
     body = rdj.one(rdj.find(article, lambda n: n.attrs.get("id") == "articleMainContent"), "race analysis body")
     conditions = rdj.one(rdj.find(body, lambda n: n.has_class("course-block")), "race analysis conditions")
     header = rdj.folded(rdj.one(rdj.find(conditions, lambda n: n.has_class("course-header")), "race analysis conditions header").plain())
-    header = re.sub(r"\s*[–—-]\s*", " - ", header)
+    header = re.sub(r"\s+[–—-]\s+", " - ", header)
     expected_header = (rdj.folded(race_name) + " - " + rdj.folded(racecourse) + " - r" + identity[2] + "c" + identity[3]
                        + " - " + starts.astimezone(paris_timezone()).strftime("%Hh%M"))
     checked(header == expected_header, "race_analysis_conditions_conflict")
