@@ -74,13 +74,66 @@ class PublishedSourceWindowTests(unittest.TestCase):
         self.assertEqual(fetcher.calls, [sources.SOURCES[PETIT], JOURNAL, sources.SOURCES[TURF], COURSE])
         self.assertEqual(config, before)
 
-    def test_cutoff_is_strict_and_future_latest_never_fetches_inventory(self):
-        for instant, expected in [('18:15:00', False), ('18:15:00.001', True), ('18:14:59.999', False)]:
+    def test_petit_cutoff_is_strict_and_future_only_never_fetches_inventory(self):
+        for instant, expected in [('16:00:00', False), ('16:00:00.001', True), ('15:59:59.999', False)]:
             now = datetime.fromisoformat(DAY + 'T' + instant + '+00:00')
             fetcher = ArchiveFetcher()
             self.assertEqual(proof(config=configuration(now), fetcher=fetcher, now=now) is not None, expected)
             if not expected:
                 self.assertEqual(fetcher.calls, [])
+
+    def test_mixed_past_future_petit_matches_whole_inventory_and_retains_latest_max(self):
+        now = datetime.fromisoformat(DAY + 'T17:00:00+00:00')
+        config, fetcher = configuration(now), ArchiveFetcher()
+        before = deepcopy(config)
+        result = proof(config=config, fetcher=fetcher, now=now)
+        self.assertEqual(result['sourceIds'], ['5795487', '5803298'])
+        self.assertEqual(result['publishedCount'], 2)
+        self.assertEqual(result['latestStartsAtUtc'], DAY + 'T18:45:00+00:00')
+        self.assertTrue(result['inventoryMatched'])
+        self.assertEqual(fetcher.calls, [sources.SOURCES[PETIT], JOURNAL])
+        self.assertEqual(config, before)
+
+    def test_mixed_petit_still_requires_complete_current_inventory_and_exact_latest(self):
+        now = datetime.fromisoformat(DAY + 'T17:00:00+00:00')
+        for mutation in ('partial_rows', 'extra_card', 'wrong_latest', 'wrong_logos', 'wrong_clock', 'wrong_day'):
+            config, fetcher = configuration(now), ArchiveFetcher()
+            window = config['publishedSourceWindows']['sources'][0]
+            if mutation == 'partial_rows':
+                window['items'].pop(); window['count'] = 1
+                window['latestStartsAtUtc'] = window['items'][0]['startsAtUtc']
+            if mutation == 'wrong_latest': window['latestStartsAtUtc'] = window['items'][0]['startsAtUtc']
+            if mutation == 'wrong_logos': window['items'][1]['teams']['home']['logo'] = 'https://img.ruedesjoueurs.com/img/9999-2.png'
+            if mutation == 'wrong_clock': window['items'][0]['startsAtUtc'] = DAY + 'T16:31:00Z'
+            if mutation == 'wrong_day': config['publishedSourceWindows']['editionDate'] = '2026-10-23'
+            if mutation == 'extra_card':
+                original = sources.rdj._journal_cards
+                def extra(*args, **kwargs):
+                    cards = original(*args, **kwargs)
+                    return cards + [deepcopy(cards[0])]
+                with patch.object(sources.rdj, '_journal_cards', side_effect=extra):
+                    self.assertIsNone(proof(config=config, fetcher=fetcher, now=now), mutation)
+            else:
+                self.assertIsNone(proof(config=config, fetcher=fetcher, now=now), mutation)
+
+    def test_invalid_published_instants_cannot_close_a_mixed_batch(self):
+        now = datetime.fromisoformat(DAY + 'T17:00:00+00:00')
+        for value in ('invalid', DAY + 'T16:30:00', DAY + 'T25:30:00Z'):
+            for field in ('first', 'second', 'latest'):
+                config, fetcher = configuration(now), ArchiveFetcher()
+                window = config['publishedSourceWindows']['sources'][0]
+                if field == 'latest': window['latestStartsAtUtc'] = value
+                else: window['items'][0 if field == 'first' else 1]['startsAtUtc'] = value
+                self.assertIsNone(proof(config=config, fetcher=fetcher, now=now), (field, value))
+                self.assertEqual(fetcher.calls, [])
+
+    def test_turf_single_race_cutoff_remains_strict(self):
+        for instant, expected in [('12:45:00', False), ('12:45:00.001', True), ('12:44:59.999', False)]:
+            now = datetime.fromisoformat(DAY + 'T' + instant + '+00:00')
+            fetcher = ArchiveFetcher()
+            result = proof(TURF, configuration(now), fetcher, now)
+            self.assertEqual(result is not None, expected)
+            self.assertEqual(fetcher.calls, [sources.SOURCES[TURF], COURSE] if expected else [])
 
     def test_partial_duplicate_or_extra_card_inventory_falls_back_to_normal_collection(self):
         for change in ('partial_rows', 'duplicate_rows', 'extra_future_card', 'partial_cards'):

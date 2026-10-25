@@ -71,5 +71,37 @@ class SportingFramesTests(unittest.TestCase):
                 candidate.replace('</div>', ' 2</div>')):
             with self.assertRaises(TranslationRejected): g._validated(source, {}, bad)
 
+    def test_public_strasbourg_full_negative_is_protected_without_losing_real_one_point_deficit(self):
+        fixture = json.loads((Path(__file__).parent / 'fixtures/sporting-frames-public-20261025.json').read_bytes())
+        public = next(i for i in fixture['items'] if i['sourceId'] == '5802970')
+        _, actual_anchors = g.protect(public['source'], public['item'])
+        negative = next(a for a in actual_anchors if a['kind'] == 'negative_statistic')
+        self.assertEqual(negative['source'], "n'a plus pris le moindre point")
+        self.assertEqual(negative['value'], 'has not picked up any points')
+        self.assertEqual([a['source'] for a in actual_anchors if a['kind'] == 'written_number' and a['value'] == 'one'], ['un'])
+        self.assertIn('first matchdays', [a['value'] for a in actual_anchors])
+        source = "Strasbourg ne devance la zone que d'un point et n'a plus pris le moindre point depuis le 12 septembre."
+        _, anchors = g.protect(source, {})
+        def span(value):
+            a = next(a for a in anchors if a['value'] == value)
+            return '<span id="' + a['id'] + '" class="notranslate" translate="no">' + value + '</span>'
+        negative_span = span('has not picked up any points')
+        candidate = ('<div>Strasbourg is only ' + span('one') + ' point above the zone and ' + negative_span +
+            ' since ' + span('12') + ' September.</div>')
+        self.assertTrue(g._validated(source, {}, candidate)[1]['passed'])
+        for bad in (candidate.replace('has not picked up any points', 'has picked up some points'),
+                candidate.replace('has not picked up any points', 'has not picked up a single point'),
+                candidate.replace('>one<', '>two<'), candidate.replace('>12<', '>13<'),
+                candidate.replace(negative_span, ''), candidate.replace(negative_span, negative_span * 2),
+                candidate.replace('</div>', ' 1</div>')):
+            with self.assertRaises(TranslationRejected): g._validated(source, {}, bad)
+
+    def test_negative_frame_does_not_rewrite_positive_counts_or_other_statistical_units(self):
+        for source in ("a pris un point", "n'a pas pris le moindre point", "n'a plus pris le moindre but",
+                "n'a plus pris le moindre pointage"):
+            self.assertFalse(any(a['kind'] == 'negative_statistic' for a in g.protect(source, {})[1]))
+        for source in ("n'a plus pris le moindre point", 'n’a plus pris le moindre point', 'N’A PLUS PRIS LE MOINDRE POINT'):
+            self.assertEqual([a['value'] for a in g.protect(source, {})[1]], ['has not picked up any points'])
+
 
 if __name__ == '__main__': unittest.main()

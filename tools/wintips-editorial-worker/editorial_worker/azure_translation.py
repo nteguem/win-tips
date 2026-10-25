@@ -231,6 +231,11 @@ def protect(source, item):
     # Preserve a relative position without synthesizing a numeric rank of two.
     for match in re.finditer(r'(?<!\w)avant-dernière\s+défense(?!\w)', source, re.I):
         add(match.start(), match.end(), 'next-to-last defence', 'relative_rank')
+    # The full negative statement means no points, not a quantity of one.
+    # Keep its negation immutable instead of producing "a single point",
+    # which is ambiguous to downstream statistical-unit normalization.
+    for match in re.finditer(r"(?<!\w)n['’]a\s+plus\s+pris\s+le\s+moindre\s+point(?!\w)", source, re.I):
+        add(match.start(), match.end(), 'has not picked up any points', 'negative_statistic')
     # Preserve the complete nominal finish rank, including "top". Do not turn
     # chronological "les cinq premiers matchs/courses" into a top-five ranking.
     for match in RANK_NUMBER.finditer(source):

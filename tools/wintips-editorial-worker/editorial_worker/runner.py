@@ -130,7 +130,10 @@ def published_source_window(source, configured, edition, fetcher, now, lead=30):
             return None
         starts = [iso(item['startsAtUtc']) for item in items]
         latest = max(starts)
-        if iso(window.get('latestStartsAtUtc')) != latest or latest >= now + timedelta(minutes=lead):
+        # Petit collection is all-or-none: ANY ineligible fixture closes its
+        # whole batch. Keep the API's latest/max integrity check independent.
+        cutoff_start = min(starts) if source == 'rdj_petit_journal' else latest
+        if iso(window.get('latestStartsAtUtc')) != latest or cutoff_start >= now + timedelta(minutes=lead):
             return None
         records = []
         if source == 'rdj_petit_journal':
