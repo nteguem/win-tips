@@ -165,7 +165,8 @@ function createEditorialService({ repository, clock = () => new Date(), importEn
         const state = await access(category, user);
         const items = rows.filter(row => id(row.categoryId) === id(category) && row.source === category.editorialSource);
         const dailyCopy = require('./editorialCopy').boundCopy(copies.find(copy => copy.source === category.editorialSource), items);
-        output.push({ id: id(category), name: pickLang(category.name, language), description: pickLang(category.description, language),
+        output.push({ id: id(category), name: pickLang(category.name, language),
+          description: dailyCopy ? dailyCopy.body[language] : pickLang(category.description, language),
           ...(dailyCopy ? { editorialDescription: dailyCopy.body[language] } : {}),
           icon: category.icon || '', isVip: category.isVip, editorialSource: category.editorialSource, source: { ...sourceByKey(category.editorialSource) },
           locked: state.locked, requiresAuth: state.requiresAuth, gate: state.gate,

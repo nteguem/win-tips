@@ -82,21 +82,49 @@ function publishedFixture() {
     copy: value, copySha256: copy.digest(value), itemHashes: [{ sourceId: row.sourceId, contentHash }] };
   return { normalized, row, record, value };
 }
-test('feed adds localized editorialDescription and keeps BO description, item summaries and source payload intact', async () => {
+test('feed exposes the localized copy in the description read by existing phones without changing stored BO or source text', async () => {
   const { row, record, value } = publishedFixture(), original = clone(row.payload);
   const category = { _id: row.categoryId, isActive: true, isVip: false, editorialSource: row.source,
     name: { fr: 'Rubrique', en: 'Category' }, description: { fr: 'Texte BO', en: 'BO text' } };
+  const originalCategory = clone(category);
   const repository = { categories: async () => [category], items: async () => [row], copies: async () => [record],
     hasAnySubscription: async () => false, gate: async () => ({ locked: false, gated: false }) };
   const service = createEditorialService({ repository, clock });
   for (const language of ['fr', 'en']) {
     const out = (await service.feed({ lang: language })).categories[0];
-    assert.equal(out.description, category.description[language]); assert.equal(out.editorialDescription, value.body[language]);
+    assert.equal(typeof out.description, 'string');
+    assert.equal(out.description, value.body[language]); assert.equal(out.editorialDescription, out.description);
+    assert.notEqual(out.description, category.description[language]);
+    assert.equal(out.name, category.name[language]);
     assert.deepEqual(out.items[0].summary, original.summary);
   }
   assert.deepEqual(row.payload, original);
-  record.legacy = true;
-  assert.equal((await service.feed()).categories[0].editorialDescription, undefined);
+  assert.deepEqual(category, originalCategory);
+});
+
+test('feed keeps the localized BO description when the daily copy is absent, legacy or no longer bound', async () => {
+  for (const scenario of ['absent', 'legacy', 'tampered', 'changed-payload']) {
+    const { row, record } = publishedFixture();
+    const category = { _id: row.categoryId, isActive: true, isVip: false, editorialSource: row.source,
+      name: { fr: 'Rubrique', en: 'Category' }, description: { fr: 'Texte BO', en: 'BO text' } };
+    if (scenario === 'legacy') record.legacy = true;
+    if (scenario === 'tampered') record.copy.body.en += ' Unreviewed copy.';
+    if (scenario === 'changed-payload') row.payload.analysis.fr[0].paragraphs.push('Nouveau contexte.');
+    const originalCategory = clone(category), originalPayload = clone(row.payload), originalRecord = clone(record);
+    const repository = { categories: async () => [category], items: async () => [row],
+      copies: async () => scenario === 'absent' ? [] : [record],
+      hasAnySubscription: async () => false, gate: async () => ({ locked: false, gated: false }) };
+    const service = createEditorialService({ repository, clock });
+    for (const language of ['fr', 'en']) {
+      const out = (await service.feed({ lang: language })).categories[0];
+      assert.equal(out.description, category.description[language], scenario + ':' + language);
+      assert.equal(out.editorialDescription, undefined, scenario + ':' + language);
+      assert.deepEqual(out.items[0].summary, originalPayload.summary);
+    }
+    assert.deepEqual(category, originalCategory);
+    assert.deepEqual(row.payload, originalPayload);
+    assert.deepEqual(record, originalRecord);
+  }
 });
 test('copy reads fail closed on changed payload/hash, partial/duplicate identities, wrong date or tampered copy', () => {
   const { row, record, value } = publishedFixture(); assert.deepEqual(copy.boundCopy(record, [row]), value);

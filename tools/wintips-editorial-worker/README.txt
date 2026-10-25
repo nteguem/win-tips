@@ -383,6 +383,16 @@ non armée, ajouter explicitement --allow-preview. Conserver aussi le suivi du
 registre durable et traiter ses états review_required ; une acceptation fournisseur
 ne prouve jamais l'affichage ou le clic. Cette CLI n'installe aucune alerte externe.
 
+ACCROCHES DANS LE FIL MOBILE
+Le feed /api/editorial/feed expose l'accroche bilingue validée de la source et du
+jour dans category.description, champ déjà lu par les téléphones actuels, ainsi
+que dans editorialDescription. La langue demandée FR/EN est respectée. Aucune
+nouvelle version mobile n'est nécessaire pour cet affichage. Si la copie manque,
+est legacy ou n'est plus liée aux contenus exacts, description reprend le texte
+de catégorie du BO et editorialDescription est absent. Le texte enregistré dans
+le BO, les résumés et les analyses source restent inchangés. Cette présentation
+ne régénère pas les copies déjà gelées et ne rejoue aucune notification.
+
 VALIDATION LOCALE
   python3 -B -m unittest discover -s tests -v
 
