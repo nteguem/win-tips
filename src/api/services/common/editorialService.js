@@ -106,10 +106,14 @@ function createEditorialService({ repository, clock = () => new Date(), importEn
       const categories = await repository.categories();
       const instant = clock(), editionDate = editionDateFor(instant);
       const ticketState = repository.ticketState ? await repository.ticketState(editionDate) : undefined;
+      const copyStates = repository.copyStates ? await repository.copyStates(SOURCES.map(source => source.key), editionDate) : [];
       return { date: editionDate, importEnabled: !!importEnabled(), notificationsEnabled: !!(notifications && notifications.enabled()), requireEnglish: !!requireEnglish(),
         ...(ticketState ? { ticketState } : {}),
         publishedSourceWindows: await publishedSourceWindows(repository, categories, editionDate, instant),
-        sources: SOURCES.map(s => ({ ...s, categoryIds: categories.filter(c => c.editorialSource === s.key && sourceMatchesCategory(c)).map(c => id(c)) })).filter(s => s.categoryIds.length) };
+        sources: SOURCES.map(s => ({ ...s, editorialCopyState: (() => {
+          const state = copyStates.find(row => row.source === s.key);
+          return state ? { state: state.state, legacy: state.legacy } : { state: 'unknown', legacy: false };
+        })(), categoryIds: categories.filter(c => c.editorialSource === s.key && sourceMatchesCategory(c)).map(c => id(c)) })).filter(s => s.categoryIds.length) };
     },
 
     async importBatch(body) {
@@ -131,7 +135,7 @@ function createEditorialService({ repository, clock = () => new Date(), importEn
           } });
         }
       }
-      const result = await repository.upsertBatch(operations);
+      const result = await repository.upsertBatch(operations, { source: batch.source, editionDate: batch.editionDate, editorialCopy: batch.editorialCopy || null });
       let notificationResult = { disabled: true, sent: 0 };
       if (notifications && notifications.enabled()) {
         try { notificationResult = await notifications.drain({ source: batch.source, editionDate: batch.editionDate, dryRun: false }); }
@@ -155,11 +159,14 @@ function createEditorialService({ repository, clock = () => new Date(), importEn
       const language = lang === 'en' ? 'en' : 'fr';
       const categories = (await repository.categories()).filter(c => c.isVip === isVip && sourceMatchesCategory(c));
       const rows = await repository.items(categories.map(c => c._id), editionDate);
+      const copies = repository.copies ? await repository.copies([...new Set(categories.map(c => c.editorialSource))], editionDate) : [];
       const output = [];
       for (const category of categories) {
         const state = await access(category, user);
         const items = rows.filter(row => id(row.categoryId) === id(category) && row.source === category.editorialSource);
+        const dailyCopy = require('./editorialCopy').boundCopy(copies.find(copy => copy.source === category.editorialSource), items);
         output.push({ id: id(category), name: pickLang(category.name, language), description: pickLang(category.description, language),
+          ...(dailyCopy ? { editorialDescription: dailyCopy.body[language] } : {}),
           icon: category.icon || '', isVip: category.isVip, editorialSource: category.editorialSource, source: { ...sourceByKey(category.editorialSource) },
           locked: state.locked, requiresAuth: state.requiresAuth, gate: state.gate,
           items: items.map(row => summary(row, state.locked, language)) });

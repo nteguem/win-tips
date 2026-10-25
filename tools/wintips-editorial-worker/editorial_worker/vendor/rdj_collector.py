@@ -13,6 +13,7 @@ from decimal import Decimal, InvalidOperation
 from html.parser import HTMLParser
 import hashlib
 import json
+import os
 import re
 import unicodedata
 from urllib.error import HTTPError, URLError
@@ -483,6 +484,16 @@ def _canonical_analysis(paragraphs, source_url, source_html):
 
 
 def _detail(page: FetchedPage) -> dict:
+    if not os.environ.get('RDJ_CONTENT_HUB_DIR'): return _detail_uncached(page)
+    from ..content_hub import open_hub
+    hub = open_hub()
+    if hub is not None:
+        from rdj_hub.petit import detail
+        return detail(hub, page)
+    return _detail_uncached(page)
+
+
+def _detail_uncached(page: FetchedPage) -> dict:
     root = Document(page.html).root
     match = one(find(root, lambda n: n.has_class("fichematch")), "fichematch")
     teams = find(match, lambda n: n.has_class("equipe"))
@@ -768,7 +779,20 @@ def _reconcile_clocks(card_time: datetime, detail_time: datetime, instant: datet
     return {**evidence, "source_clock_reconciliation": clocks}
 
 
-def collect_edition(edition: str, fetcher=None, *, kickoff_resolver=None, now: datetime | None = None,
+def collect_edition(edition: str, fetcher=None, *, kickoff_resolver=None, now=None, max_index_pages=3):
+    if not os.environ.get('RDJ_CONTENT_HUB_DIR'):
+        return _collect_edition_uncached(edition, fetcher, kickoff_resolver=kickoff_resolver, now=now, max_index_pages=max_index_pages)
+    from ..content_hub import open_hub
+    hub = open_hub(edition)
+    if hub is not None:
+        from rdj_hub.petit import collect
+        fetcher = fetcher or fetch_page
+        return collect(hub, edition, fetcher, kickoff_resolver, now, max_index_pages)
+    return _collect_edition_uncached(edition, fetcher, kickoff_resolver=kickoff_resolver,
+        now=now, max_index_pages=max_index_pages)
+
+
+def _collect_edition_uncached(edition: str, fetcher=None, *, kickoff_resolver=None, now: datetime | None = None,
                     max_index_pages: int = 3) -> dict:
     """Return ready/source_absent/source_incomplete; non-ready has fixtures=[].
 

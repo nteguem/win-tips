@@ -81,6 +81,15 @@ class PreflightProcessTests(unittest.TestCase):
                 self.call(self.receipt(**change))
             self.assertEqual(caught.exception.code, 'api_validator_receipt_binding_invalid')
 
+    def test_copy_validator_is_part_of_the_exact_checkout_pins(self):
+        name = 'src/api/services/common/editorialCopy.js'
+        self.assertIn(name, preflight.SOURCES)
+        receipt = self.receipt()
+        del receipt['checkout']['sourceSha256'][name]
+        with self.assertRaises(preflight.ApiPreflightRejected) as caught:
+            self.call(receipt)
+        self.assertEqual(caught.exception.code, 'api_validator_receipt_binding_invalid')
+
     def test_rejected_fields_preserved_without_backend_prose(self):
         receipt = self.receipt(passed=False, code='api_complete_english_invalid', diagnostics=[{
             'sourceId': '2026-10-23-R1C4', 'field': 'analysis[0].paragraphs[1]',

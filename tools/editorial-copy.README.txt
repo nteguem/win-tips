@@ -1,0 +1,52 @@
+Daily editorial copy (rdj-editorial-copy-v1)
+
+The optional batch editorialCopy is a closed bilingual question for ALL source
+IDs in order, not a translation or a model-written body. Node mirrors the hub
+protocol and its eight exact fixtures. The FR source paragraphs, selections,
+odds and item payloads are unchanged. Facts include full FR paragraph context;
+only their SHA is retained by the envelope. Bodies are limited to 800 Unicode
+code points. Exceptionally long names use every complete label, never a cut
+identity; if even that exceeds the limit the worker omits this optional field.
+
+Provision BEFORE activating the new import code, from the reviewed checkout:
+  node tools/editorial-indexes.cjs --copies-only --check
+  node tools/editorial-indexes.cjs --copies-only --apply --confirm-editorial-indexes
+The default is read-only. The explicit apply creates only editorialcopies and
+its unique {appId,source,editionDate} index, without modifying any historical
+collection, record or index. Index conflicts require review; no drops occur.
+
+Imports require a replica set with sessions/transactions (verified separately
+by the deployment operator). A deterministic wintips:source:date lock is created
+only in the explicitly provisioned collection. The revision lock, first copy
+decision and all article writes then share one snapshot/majority transaction.
+The ticket families retain their existing additional edition lock in that same
+transaction. A failed transaction may leave an empty uninitialized lock, never
+a committed copy or partial articles.
+
+ANY existing article for the source/day, including an unpublished/archived
+mapping, or ANY old WinTips notification ledger makes the first decision null
+and legacy. Publication without an envelope likewise freezes null. Reimports
+cannot retrofit or replace it. No migration of old days is performed.
+
+GET worker config exposes editorialCopyState:{state:new|frozen|unknown,legacy}
+per source for the CURRENT Europe/Paris edition. This read creates no records.
+Only new/non-legacy may request an angle; frozen/unknown omit generation. A new
+day naturally starts independently. Missing/unavailable storage yields unknown.
+
+The feed adds localized editorialDescription only when all original article
+IDs, full payload hashes and copy facts still match. It preserves category BO
+description and all item summaries. A changed/partial batch hides stale cosmetic
+copy rather than generating a replacement.
+
+On the FIRST notification ledger insert only, freeze editorialCopy (or null),
+its SHA and the exact eligible, ordered item hash. Pending/completed/legacy
+ledgers are never retrofitted. A changed new snapshot enters review_required
+before any send. Existing notification ID, device deduplication, opt-in, language,
+entitlement and delivery retry policies remain authoritative. No extra send is
+triggered by reads or this cosmetic feature.
+
+Offline tests:
+  node --test tests/editorial-copy.node-test.cjs
+  node --test tests/editorial-copy.mongo-test.cjs
+The second command requires EXPLICIT disposable Mongo runtime/binary variables;
+it never loads .env, an application bootstrap, jobs or any provider.

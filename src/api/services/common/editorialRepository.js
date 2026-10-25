@@ -1,6 +1,7 @@
 const { failure } = require('./editorialSources');
 
 function createEditorialRepository({ Category, EditorialItem, subscriptionService, accessGateService }) {
+  const copies = () => require('./editorialCopyStorage').createCopyStorage(EditorialItem);
   const tickets = () => require('./editorialTickets');
   const stateCollection = () => EditorialItem.db.db.collection('editorialticketstates');
   async function ticketStorage() {
@@ -28,6 +29,8 @@ function createEditorialRepository({ Category, EditorialItem, subscriptionServic
     source: { $in: ['rdj_petit_journal', 'rdj_turf_quinte'] } })
     .select('categoryId source editionDate sourceId kind startsAtUtc payload contentHash isPublished').limit(51).lean(),
   item: id => EditorialItem.findOne({ _id: id, isPublished: true }).lean(),
+  copies: (sources, date) => copies().read(sources, date),
+  copyStates: (sources, date) => copies().states(sources, date),
   hasCategoryAccess: (userId, categoryId) => subscriptionService.hasAccessToCategory(userId, categoryId),
   hasAnySubscription: async userId => (await subscriptionService.getActiveSubscriptions(userId)).some(sub => sub.package),
   gate: (userId, category, isSubscriber) => accessGateService.getCategoryGateState(userId, category, { isSubscriber }),
@@ -35,7 +38,7 @@ function createEditorialRepository({ Category, EditorialItem, subscriptionServic
     try { await ticketStorage(); return { ready: true, ...await readTicketState(editionDate) }; }
     catch (_) { return { ready: false, editionDate, reason: 'ticket_reservations_require_review' }; }
   },
-  upsertBatch: async operations => {
+  upsertBatch: async (operations, copyContext) => {
     // Deployment explicitly prepares this index after operator approval. A read
     // request/import must never create collections/indexes behind the scenes.
     let indexes;
@@ -50,29 +53,38 @@ function createEditorialRepository({ Category, EditorialItem, subscriptionServic
       JSON.stringify(index.key) === JSON.stringify({ categoryId: 1, source: 1, editionDate: 1 }) && index.partialFilterExpression?.source === 'rdj_football_duo')) throw failure('Index du Duo unique par jour non initialise', 503);
     const ticketOps = operations.filter(op => tickets().TICKET_SOURCES.includes(op.updateOne.filter.source));
     try {
-      if (!ticketOps.length) return await EditorialItem.bulkWrite(operations, { ordered: true });
-      await ticketStorage();
+      if (!ticketOps.length && !copyContext) return await EditorialItem.bulkWrite(operations, { ordered: true });
+      if (copyContext) await copies().prepare(copyContext);
+      if (ticketOps.length) await ticketStorage();
       const dates = [...new Set(ticketOps.map(op => op.updateOne.filter.editionDate))];
-      if (dates.length !== 1 || ticketOps.length !== operations.length) throw failure('Un lot de tickets doit porter sur une seule edition', 409);
+      if (ticketOps.length && (dates.length !== 1 || ticketOps.length !== operations.length)) throw failure('Un lot de tickets doit porter sur une seule edition', 409);
       const editionDate = dates[0], collection = stateCollection();
       // Create only a document in the explicitly provisioned collection. The
       // per-edition write serializes both families, including different workers.
-      try { await collection.updateOne({ _id: editionDate }, { $setOnInsert: { ...tickets().emptyState(editionDate), revision: 0 } }, { upsert: true }); }
-      catch (error) { if (error.code !== 11000) throw error; }
+      if (ticketOps.length) {
+        try { await collection.updateOne({ _id: editionDate }, { $setOnInsert: { ...tickets().emptyState(editionDate), revision: 0 } }, { upsert: true }); }
+        catch (error) { if (error.code !== 11000) throw error; }
+      }
       const session = await EditorialItem.db.startSession();
       try {
         return await session.withTransaction(async () => {
-          const locked = await collection.updateOne({ _id: editionDate }, { $inc: { revision: 1 } }, { session });
-          if (locked.matchedCount !== 1) throw failure('Reservation du ticket indisponible', 409);
-          const state = await readTicketState(editionDate, session);
-          for (const operation of ticketOps) {
-            const { filter, update } = operation.updateOne, item = update.$set.payload;
-            if (filter.sourceId !== item.sourceId) throw failure('Identite de ticket incoherente', 409);
-            tickets().reserve(state, filter.source, tickets().entryFor(item));
+          if (copyContext) await copies().lockAndInitialize(copyContext, operations, session);
+          let state;
+          if (ticketOps.length) {
+            const locked = await collection.updateOne({ _id: editionDate }, { $inc: { revision: 1 } }, { session });
+            if (locked.matchedCount !== 1) throw failure('Reservation du ticket indisponible', 409);
+            state = await readTicketState(editionDate, session);
+            for (const operation of ticketOps) {
+              const { filter, update } = operation.updateOne, item = update.$set.payload;
+              if (filter.sourceId !== item.sourceId) throw failure('Identite de ticket incoherente', 409);
+              tickets().reserve(state, filter.source, tickets().entryFor(item));
+            }
           }
           const result = await EditorialItem.bulkWrite(operations, { ordered: true, session });
-          const saved = await collection.updateOne({ _id: editionDate }, { $set: state }, { session });
-          if (saved.matchedCount !== 1) throw failure('Reservation du ticket indisponible', 409);
+          if (state) {
+            const saved = await collection.updateOne({ _id: editionDate }, { $set: state }, { session });
+            if (saved.matchedCount !== 1) throw failure('Reservation du ticket indisponible', 409);
+          }
           return result;
         }, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } });
       } finally { await session.endSession(); }
@@ -93,5 +105,5 @@ function getDefaultRepository() {
   });
   return defaultRepository;
 }
-const methods = ['categories', 'category', 'items', 'sourceWindowItems', 'item', 'hasCategoryAccess', 'hasAnySubscription', 'gate', 'ticketState', 'upsertBatch'];
+const methods = ['categories', 'category', 'items', 'sourceWindowItems', 'item', 'copies', 'copyStates', 'hasCategoryAccess', 'hasAnySubscription', 'gate', 'ticketState', 'upsertBatch'];
 module.exports = { createEditorialRepository, ...Object.fromEntries(methods.map(name => [name, (...args) => getDefaultRepository()[name](...args)])) };

@@ -316,15 +316,16 @@ test('new route bootstrap wires admin, worker and optional-user guards without s
 });
 
 test('index CLI defaults to read-only, requires explicit intent and never drops conflicts', async () => {
-  const { provision, SPECS } = require('../tools/editorial-indexes.cjs');
+  const { provision, SPECS, COLLECTIONS } = require('../tools/editorial-indexes.cjs');
   let current = {}, mutations = 0;
   const db = { collection: name => ({ listIndexes: () => ({ toArray: async () => current[name] || [] }), createIndex: async (key, options) => { mutations++; (current[name] ||= []).push({ key, ...options }); } }), createCollection: async () => { mutations++; } };
   const check = await provision(db); assert.equal(check.readOnly, true); assert.equal(check.ready, false); assert.equal(mutations, 0);
   await assert.rejects(provision(db, { apply: true }), { code: 'INTENT_REQUIRED' }); assert.equal(mutations, 0);
   current = { editorialitems: [{ name: SPECS[0].name, key: { wrong: 1 } }] };
   await assert.rejects(provision(db, { apply: true, intent: true }), { code: 'INDEX_CONFLICT' }); assert.equal(mutations, 0);
-  current = {}; const applied = await provision(db, { apply: true, intent: true }); assert.equal(applied.ready, true); assert.equal(mutations, 11);
-  const repeat = await provision(db, { apply: true, intent: true }); assert.equal(repeat.readOnly, true); assert.equal(mutations, 11);
+  const expected = Object.keys(COLLECTIONS).length + Object.values(COLLECTIONS).flat().length;
+  current = {}; const applied = await provision(db, { apply: true, intent: true }); assert.equal(applied.ready, true); assert.equal(mutations, expected);
+  const repeat = await provision(db, { apply: true, intent: true }); assert.equal(repeat.readOnly, true); assert.equal(mutations, expected);
 });
 
 test('late/started/unknown single and race imports fail before writes; every combine leg has a 30 minute lead', async () => {

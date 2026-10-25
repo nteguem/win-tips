@@ -20,15 +20,20 @@ function createEditorialNotificationRepository({ Category, EditorialItem, Editor
   async groups({ source, editionDate }) {
     const categories = (await Category.find({ isActive: true, catalogueArchived: { $ne: true }, editorialSource: source || { $ne: null } }).lean()).filter(sourceMatchesCategory);
     const items = await EditorialItem.find({ categoryId: { $in: categories.map(category => category._id) }, editionDate, isPublished: true }).sort({ startsAtUtc: 1, sourceId: 1 }).lean();
-    return categories.map(category => ({ category, source: category.editorialSource, editionDate,
-      items: items.filter(item => id(item.categoryId) === id(category) && item.source === category.editorialSource) }));
+    const copies = await require('./editorialCopyStorage').createCopyStorage(EditorialItem).read([...new Set(categories.map(category => category.editorialSource))], editionDate);
+    return categories.map(category => {
+      const rows = items.filter(item => id(item.categoryId) === id(category) && item.source === category.editorialSource);
+      return { category, source: category.editorialSource, editionDate, items: rows,
+        editorialCopy: require('./editorialCopy').boundCopy(copies.find(copy => copy.source === category.editorialSource), rows) };
+    });
   },
   async categoryStillMatches(key, isVip) {
     return !!await Category.exists({ _id: key.categoryId, isActive: true, catalogueArchived: { $ne: true }, editorialSource: key.source, isVip });
   },
-  async claim(key, notificationId, now) {
+  async claim(key, notificationId, now, snapshot = {}) {
     try {
-      await EditorialNotification.updateOne(key, { $setOnInsert: { ...key, notificationId, status: 'pending', afterDeviceId: null, passes: 0 } }, { upsert: true });
+      await EditorialNotification.updateOne(key, { $setOnInsert: { ...key, notificationId, status: 'pending', afterDeviceId: null, passes: 0,
+        editorialCopy: snapshot.editorialCopy || null, editorialCopySha256: snapshot.editorialCopySha256 || null, itemHash: snapshot.itemHash } }, { upsert: true });
     } catch (error) { if (error.code !== 11000) throw error; }
     return EditorialNotification.findOneAndUpdate({ ...key,
       status: { $in: ['pending', 'processing', 'retry_pending'] },

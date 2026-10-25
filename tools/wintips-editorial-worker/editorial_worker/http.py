@@ -48,6 +48,8 @@ class PublicFetcher:
         # global collection budget as an absent or partially complete source.
         self.budget_refusals = []
         self.opener = build_opener(Redirects())
+        from .content_hub import open_hub
+        self.hub = open_hub()
 
     def _refuse_budget(self, code):
         self.budget_refusals.append({'code': code, 'requests': self.requests,
@@ -60,12 +62,27 @@ class PublicFetcher:
         public_url(url)
         if url in self.memory:
             return self.memory[url]
+        if self.hub is not None and urlsplit(url).hostname in {'www.ruedesjoueurs.com', 'ruedesjoueurs.com'}:
+            if time.monotonic() - self.started >= self.max_seconds:
+                self._refuse_budget('public_time_budget_exceeded')
+            before = len(self.records)
+            entry = self.hub.fetch(url, lambda: self._get(url, use_cache=False))
+            self.memory[url] = entry
+            if len(self.records) == before:
+                self.records.append({k: entry[k] for k in ('url', 'final_url', 'status', 'sha256')})
+            return entry
+        return self._get(url)
+
+    def _get(self, url, *, use_cache=True):
+        public_url(url)
+        if url in self.memory:
+            return self.memory[url]
         if time.monotonic() - self.started >= self.max_seconds:
             self._refuse_budget("public_time_budget_exceeded")
         key = hashlib.sha256(url.encode()).hexdigest()
         path = self.cache_dir / (key + ".json")
         entry = None
-        if path.is_file() and not path.is_symlink():
+        if use_cache and path.is_file() and not path.is_symlink():
             try:
                 candidate = json.loads(path.read_text("utf-8"))
                 if candidate.get("url") == url and 0 <= time.time() - candidate["saved"] < self.ttl:
@@ -98,7 +115,7 @@ class PublicFetcher:
             except HTTPError as exc:
                 entry = {"url": url, "final_url": url, "status": exc.code, "body": "", "saved": time.time(),
                          "sha256": hashlib.sha256(b"").hexdigest()}
-            if entry["status"] == 200:
+            if entry["status"] == 200 and use_cache:
                 temporary = path.with_suffix(".tmp")
                 temporary.write_text(json.dumps(entry, ensure_ascii=False), "utf-8")
                 temporary.replace(path)

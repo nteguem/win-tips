@@ -363,8 +363,9 @@ class NoRedirect(HTTPRedirectHandler):
 
 
 class GeminiTransport:
-    def __init__(self, config):
+    def __init__(self, config, payload_builder=None):
         self.config = config
+        self.payload_builder = payload_builder or request_payload
         self.opener = build_opener(ProxyHandler({}), NoRedirect())
         self.feedback = None
 
@@ -373,7 +374,7 @@ class GeminiTransport:
 
     def __call__(self, texts, timeout):
         request = Request(ENDPOINT + self.config.model + ':generateContent',
-            data=_json_bytes(request_payload(self.config, texts, self.feedback)), method='POST', headers={
+            data=_json_bytes(self.payload_builder(self.config, texts, self.feedback)), method='POST', headers={
                 'Content-Type': 'application/json; charset=utf-8', 'Accept': 'application/json',
                 'x-goog-api-key': self.config.key, 'User-Agent': 'WinTipsEditorialWorker/Gemini1'})
         try:
@@ -548,6 +549,11 @@ class GeminiTranslator(AzureTranslator):
     def __init__(self, config, *, cache_dir, quota_dir, request=None, now=None,
             monotonic=time.monotonic, sleep=time.sleep):
         self.config, self.directory = config, Path(cache_dir) / 'gemini'
+        import importlib
+        adapter = importlib.import_module(__package__.split('.vendor.')[0] + '.content_hub')
+        self.shared_hub = adapter.open_hub()
+        if self.shared_hub is not None:
+            self.directory = self.shared_hub.translations / 'gemini'
         self.request = request or GeminiTransport(config)
         self.monotonic, self.sleep, self.started = monotonic, sleep, monotonic()
         quota_clock = now or (lambda: datetime.now(timezone.utc))
@@ -562,6 +568,9 @@ class GeminiTranslator(AzureTranslator):
         return value
 
     def job(self, source, item):
+        if getattr(self, 'shared_hub', None) is not None or item.get('contextVersion') == 'rdj-neutral-narrative-v1':
+            from rdj_hub.translation import neutral_context
+            item = neutral_context(item, source)
         html, anchors = _protected(source, item)
         facts = deepcopy(item)
         for row in _walk(facts):
@@ -575,6 +584,8 @@ class GeminiTranslator(AzureTranslator):
                 'responseContract': 'translations-id-text-html-v2', 'responseTextDescription': TEXT_DESCRIPTION},
             'source': source, 'html': html, 'anchors': anchors,
             'factContextSha256': sha256(_json_bytes(facts)).hexdigest()}
+        if item.get('contextVersion') == 'rdj-neutral-narrative-v1':
+            identity['contextContract'] = item['contextVersion']
         return {'key': sha256(_json_bytes(identity)).hexdigest(), 'identity': identity,
             'source': source, 'item': item, 'html': html}
 
@@ -607,6 +618,20 @@ class GeminiTranslator(AzureTranslator):
         return True
 
     def send(self, jobs):
+        if getattr(self, 'shared_hub', None) is None:
+            return self._send_unlocked(jobs)
+        from contextlib import ExitStack
+        from rdj_hub import HubBusy
+        try:
+            with ExitStack() as stack:
+                for key in sorted({job['key'] for job in jobs}):
+                    stack.enter_context(self.shared_hub.lock('translation', key))
+                pending = [job for job in jobs if not self.cached(job)]
+                if pending: return self._send_unlocked(pending)
+        except HubBusy:
+            raise TranslationRejected('gemini_shared_cache_busy') from None
+
+    def _send_unlocked(self, jobs):
         texts = [job['html'] for job in jobs]
         if not jobs or len(jobs) > self.config.batch_items or sum(_characters(text) for text in texts) > self.config.batch_characters:
             raise TranslationRejected('gemini_request_size_exceeded')

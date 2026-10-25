@@ -1,0 +1,459 @@
+{
+  "version": "rdj-editorial-copy-v1",
+  "vectors": [
+    {
+      "facts": {
+        "source": "rdj_petit_journal",
+        "editionDate": "2026-10-25",
+        "items": [
+          {
+            "id": "101",
+            "kind": "match",
+            "home": "Alpha",
+            "away": "Bravo",
+            "sport": "football",
+            "competition": "League",
+            "startsAtUtc": "2026-10-25T16:00:00.000Z",
+            "contextFr": "Alpha reste prudent."
+          },
+          {
+            "id": "102",
+            "kind": "match",
+            "home": "Charlie",
+            "away": "Delta",
+            "sport": "football",
+            "competition": "Cup",
+            "startsAtUtc": "2026-10-25T18:00:00.000Z",
+            "contextFr": "Delta se deplace."
+          }
+        ]
+      },
+      "copy": {
+        "version": "rdj-editorial-copy-v1",
+        "sourceHash": "042670d7ccd9db21affc87ebd0343c7a474eeaf4dcc87ff3bc10f60f78023fc0",
+        "sourceIds": [
+          "101",
+          "102"
+        ],
+        "choice": {
+          "angle": "duel",
+          "focusIds": [
+            "101",
+            "102"
+          ]
+        },
+        "body": {
+          "fr": "Alpha \u2014 Bravo : quel visage pour ce duel ? \u2022 Charlie \u2014 Delta : quel visage pour ce duel ?",
+          "en": "Alpha \u2014 Bravo: how will this matchup unfold? \u2022 Charlie \u2014 Delta: how will this matchup unfold?"
+        },
+        "method": "gemini",
+        "model": "gemini-3.5-flash-lite",
+        "cacheKey": "1111111111111111111111111111111111111111111111111111111111111111",
+        "nativeSha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      }
+    },
+    {
+      "facts": {
+        "source": "rdj_petit_journal",
+        "editionDate": "2026-10-25",
+        "items": [
+          {
+            "id": "101",
+            "kind": "match",
+            "home": "Alpha",
+            "away": "Bravo",
+            "sport": "football",
+            "competition": "League",
+            "startsAtUtc": "2026-10-25T16:00:00.000Z",
+            "contextFr": "Alpha reste prudent."
+          },
+          {
+            "id": "102",
+            "kind": "match",
+            "home": "Charlie",
+            "away": "Delta",
+            "sport": "football",
+            "competition": "Cup",
+            "startsAtUtc": "2026-10-25T18:00:00.000Z",
+            "contextFr": "Delta se deplace."
+          }
+        ]
+      },
+      "copy": {
+        "version": "rdj-editorial-copy-v1",
+        "sourceHash": "042670d7ccd9db21affc87ebd0343c7a474eeaf4dcc87ff3bc10f60f78023fc0",
+        "sourceIds": [
+          "101",
+          "102"
+        ],
+        "choice": {
+          "angle": "stakes",
+          "focusIds": [
+            "101",
+            "102"
+          ]
+        },
+        "body": {
+          "fr": "Alpha \u2014 Bravo : quels enjeux pour cette rencontre ? \u2022 Charlie \u2014 Delta : quels enjeux pour cette rencontre ?",
+          "en": "Alpha \u2014 Bravo: what is at stake in this contest? \u2022 Charlie \u2014 Delta: what is at stake in this contest?"
+        },
+        "method": "gemini",
+        "model": "gemini-3.5-flash-lite",
+        "cacheKey": "1111111111111111111111111111111111111111111111111111111111111111",
+        "nativeSha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      }
+    },
+    {
+      "facts": {
+        "source": "rdj_petit_journal",
+        "editionDate": "2026-10-25",
+        "items": [
+          {
+            "id": "101",
+            "kind": "match",
+            "home": "Alpha",
+            "away": "Bravo",
+            "sport": "football",
+            "competition": "League",
+            "startsAtUtc": "2026-10-25T16:00:00.000Z",
+            "contextFr": "Alpha reste prudent."
+          },
+          {
+            "id": "102",
+            "kind": "match",
+            "home": "Charlie",
+            "away": "Delta",
+            "sport": "football",
+            "competition": "Cup",
+            "startsAtUtc": "2026-10-25T18:00:00.000Z",
+            "contextFr": "Delta se deplace."
+          }
+        ]
+      },
+      "copy": {
+        "version": "rdj-editorial-copy-v1",
+        "sourceHash": "042670d7ccd9db21affc87ebd0343c7a474eeaf4dcc87ff3bc10f60f78023fc0",
+        "sourceIds": [
+          "101",
+          "102"
+        ],
+        "choice": {
+          "angle": "competition",
+          "focusIds": [
+            "101",
+            "102"
+          ]
+        },
+        "body": {
+          "fr": "Alpha \u2014 Bravo \u00b7 League : quel sc\u00e9nario ? \u2022 Charlie \u2014 Delta \u00b7 Cup : quel sc\u00e9nario ?",
+          "en": "Alpha \u2014 Bravo \u00b7 League: how will the contest unfold? \u2022 Charlie \u2014 Delta \u00b7 Cup: how will the contest unfold?"
+        },
+        "method": "gemini",
+        "model": "gemini-3.5-flash-lite",
+        "cacheKey": "1111111111111111111111111111111111111111111111111111111111111111",
+        "nativeSha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      }
+    },
+    {
+      "facts": {
+        "source": "rdj_petit_journal",
+        "editionDate": "2026-10-25",
+        "items": [
+          {
+            "id": "101",
+            "kind": "match",
+            "home": "Alpha",
+            "away": "Bravo",
+            "sport": "football",
+            "competition": "League",
+            "startsAtUtc": "2026-10-25T16:00:00.000Z",
+            "contextFr": "Alpha reste prudent."
+          },
+          {
+            "id": "102",
+            "kind": "match",
+            "home": "Charlie",
+            "away": "Delta",
+            "sport": "football",
+            "competition": "Cup",
+            "startsAtUtc": "2026-10-25T18:00:00.000Z",
+            "contextFr": "Delta se deplace."
+          }
+        ]
+      },
+      "copy": {
+        "version": "rdj-editorial-copy-v1",
+        "sourceHash": "042670d7ccd9db21affc87ebd0343c7a474eeaf4dcc87ff3bc10f60f78023fc0",
+        "sourceIds": [
+          "101",
+          "102"
+        ],
+        "choice": {
+          "angle": "duel",
+          "focusIds": [
+            "101",
+            "102"
+          ]
+        },
+        "body": {
+          "fr": "Alpha \u2014 Bravo : quel visage pour ce duel ? \u2022 Charlie \u2014 Delta : quel visage pour ce duel ?",
+          "en": "Alpha \u2014 Bravo: how will this matchup unfold? \u2022 Charlie \u2014 Delta: how will this matchup unfold?"
+        },
+        "method": "deterministic_fallback",
+        "model": null,
+        "cacheKey": null,
+        "nativeSha256": null
+      }
+    },
+    {
+      "facts": {
+        "source": "rdj_turf_quinte",
+        "editionDate": "2026-10-25",
+        "items": [
+          {
+            "id": "R1C5",
+            "kind": "horse_racing",
+            "race": "Prix test",
+            "racecourse": "Saint-Cloud",
+            "startsAtUtc": "2026-10-25T14:15:00.000Z",
+            "contextFr": "Analyse."
+          }
+        ]
+      },
+      "copy": {
+        "version": "rdj-editorial-copy-v1",
+        "sourceHash": "476b0df7f0ceac1da15df5a4163b26f32a20b6578027061fa785168b13685f34",
+        "sourceIds": [
+          "R1C5"
+        ],
+        "choice": {
+          "angle": "race",
+          "focusIds": [
+            "R1C5"
+          ]
+        },
+        "body": {
+          "fr": "Prix test \u00b7 Saint-Cloud : quels enjeux sur la piste ?",
+          "en": "Prix test \u00b7 Saint-Cloud: what awaits on the track?"
+        },
+        "method": "deterministic_fallback",
+        "model": null,
+        "cacheKey": null,
+        "nativeSha256": null
+      }
+    },
+    {
+      "facts": {
+        "source": "rdj_petit_journal",
+        "editionDate": "2026-10-25",
+        "items": [
+          {
+            "id": "101",
+            "kind": "match",
+            "home": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "away": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+            "sport": "football",
+            "competition": "League",
+            "startsAtUtc": "2026-10-25T16:00:00.000Z",
+            "contextFr": "Alpha reste prudent."
+          },
+          {
+            "id": "102",
+            "kind": "match",
+            "home": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "away": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+            "sport": "football",
+            "competition": "Cup",
+            "startsAtUtc": "2026-10-25T18:00:00.000Z",
+            "contextFr": "Delta se deplace."
+          }
+        ]
+      },
+      "copy": {
+        "version": "rdj-editorial-copy-v1",
+        "sourceHash": "a87632065ad60cb0b5f45d75ca245d16bec6f7cae6613fe24b840cdabd87ff0d",
+        "sourceIds": [
+          "101",
+          "102"
+        ],
+        "choice": {
+          "angle": "labels",
+          "focusIds": [
+            "101",
+            "102"
+          ]
+        },
+        "body": {
+          "fr": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA \u2014 BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB \u2022 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA \u2014 BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+          "en": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA \u2014 BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB \u2022 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA \u2014 BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+        },
+        "method": "deterministic_fallback",
+        "model": null,
+        "cacheKey": null,
+        "nativeSha256": null
+      }
+    },
+    {
+      "facts": {
+        "source": "rdj_petit_journal",
+        "editionDate": "2026-10-25",
+        "items": [
+          {
+            "id": "101",
+            "kind": "match",
+            "home": "Alpha",
+            "away": "Bravo",
+            "sport": "football",
+            "competition": "League",
+            "startsAtUtc": "2026-10-25T16:00:00.000Z",
+            "contextFr": "Alpha reste prudent."
+          },
+          {
+            "id": "102",
+            "kind": "match",
+            "home": "Charlie",
+            "away": "Delta",
+            "sport": "football",
+            "competition": "Cup",
+            "startsAtUtc": "2026-10-25T18:00:00.000Z",
+            "contextFr": "Delta se deplace."
+          },
+          {
+            "id": "103",
+            "kind": "match",
+            "home": "Home2",
+            "away": "Away2",
+            "sport": "football",
+            "competition": "League",
+            "startsAtUtc": "2026-10-25T16:00:00.000Z",
+            "contextFr": "Alpha reste prudent."
+          }
+        ]
+      },
+      "copy": {
+        "version": "rdj-editorial-copy-v1",
+        "sourceHash": "b25258e18e3e18c495b2844da47b6d93c338b056f9ad0797cbc65ab27712aed4",
+        "sourceIds": [
+          "101",
+          "102",
+          "103"
+        ],
+        "choice": {
+          "angle": "stakes",
+          "focusIds": [
+            "101",
+            "102",
+            "103"
+          ]
+        },
+        "body": {
+          "fr": "Alpha \u2014 Bravo : quels enjeux pour cette rencontre ? \u2022 Charlie \u2014 Delta : quels enjeux pour cette rencontre ? \u2022 Home2 \u2014 Away2 : quels enjeux pour cette rencontre ?",
+          "en": "Alpha \u2014 Bravo: what is at stake in this contest? \u2022 Charlie \u2014 Delta: what is at stake in this contest? \u2022 Home2 \u2014 Away2: what is at stake in this contest?"
+        },
+        "method": "gemini",
+        "model": "gemini-3.5-flash-lite",
+        "cacheKey": "1111111111111111111111111111111111111111111111111111111111111111",
+        "nativeSha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      }
+    },
+    {
+      "facts": {
+        "source": "rdj_petit_journal",
+        "editionDate": "2026-10-25",
+        "items": [
+          {
+            "id": "101",
+            "kind": "match",
+            "home": "Alpha",
+            "away": "Bravo",
+            "sport": "football",
+            "competition": "League",
+            "startsAtUtc": "2026-10-25T16:00:00.000Z",
+            "contextFr": "Alpha reste prudent."
+          },
+          {
+            "id": "102",
+            "kind": "match",
+            "home": "Charlie",
+            "away": "Delta",
+            "sport": "football",
+            "competition": "Cup",
+            "startsAtUtc": "2026-10-25T18:00:00.000Z",
+            "contextFr": "Delta se deplace."
+          },
+          {
+            "id": "103",
+            "kind": "match",
+            "home": "Home2",
+            "away": "Away2",
+            "sport": "football",
+            "competition": "League",
+            "startsAtUtc": "2026-10-25T16:00:00.000Z",
+            "contextFr": "Alpha reste prudent."
+          },
+          {
+            "id": "104",
+            "kind": "match",
+            "home": "Home3",
+            "away": "Away3",
+            "sport": "football",
+            "competition": "League",
+            "startsAtUtc": "2026-10-25T16:00:00.000Z",
+            "contextFr": "Alpha reste prudent."
+          },
+          {
+            "id": "105",
+            "kind": "match",
+            "home": "Home4",
+            "away": "Away4",
+            "sport": "football",
+            "competition": "League",
+            "startsAtUtc": "2026-10-25T16:00:00.000Z",
+            "contextFr": "Alpha reste prudent."
+          },
+          {
+            "id": "106",
+            "kind": "match",
+            "home": "Home5",
+            "away": "Away5",
+            "sport": "football",
+            "competition": "League",
+            "startsAtUtc": "2026-10-25T16:00:00.000Z",
+            "contextFr": "Alpha reste prudent."
+          }
+        ]
+      },
+      "copy": {
+        "version": "rdj-editorial-copy-v1",
+        "sourceHash": "f7ae75fd1d43164efb9c7969327e631b8f78c9f8943909606a2afd0fecf42277",
+        "sourceIds": [
+          "101",
+          "102",
+          "103",
+          "104",
+          "105",
+          "106"
+        ],
+        "choice": {
+          "angle": "duel",
+          "focusIds": [
+            "101",
+            "102",
+            "103",
+            "104",
+            "105",
+            "106"
+          ]
+        },
+        "body": {
+          "fr": "Alpha \u2014 Bravo : quel visage pour ce duel ? \u2022 Charlie \u2014 Delta : quel visage pour ce duel ? \u2022 Home2 \u2014 Away2 : quel visage pour ce duel ? \u2022 Home3 \u2014 Away3 : quel visage pour ce duel ? \u2022 Home4 \u2014 Away4 : quel visage pour ce duel ? \u2022 Home5 \u2014 Away5 : quel visage pour ce duel ?",
+          "en": "Alpha \u2014 Bravo: how will this matchup unfold? \u2022 Charlie \u2014 Delta: how will this matchup unfold? \u2022 Home2 \u2014 Away2: how will this matchup unfold? \u2022 Home3 \u2014 Away3: how will this matchup unfold? \u2022 Home4 \u2014 Away4: how will this matchup unfold? \u2022 Home5 \u2014 Away5: how will this matchup unfold?"
+        },
+        "method": "gemini",
+        "model": "gemini-3.5-flash-lite",
+        "cacheKey": "1111111111111111111111111111111111111111111111111111111111111111",
+        "nativeSha256": "2222222222222222222222222222222222222222222222222222222222222222"
+      }
+    }
+  ]
+}

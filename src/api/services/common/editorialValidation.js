@@ -228,7 +228,7 @@ function normalizeItem(input, source, editionDate, leg = false) {
   return normalized;
 }
 function validateBatch(body, now = new Date()) {
-  keys(body, ['source', 'editionDate', 'items'], 'batch');
+  keys(body, ['source', 'editionDate', 'items', 'editorialCopy'], 'batch');
   const source = sourceByKey(body.source);
   if (!source) throw failure('Source editoriale inconnue');
   const editionDate = dateOnly(body.editionDate);
@@ -247,7 +247,12 @@ function validateBatch(body, now = new Date()) {
     if (item.kind === 'combine' && item.startsAtUtc && new Date(item.startsAtUtc).getTime() !== Math.min(...item.legs.map(leg => new Date(leg.startsAtUtc).getTime()))) throw failure('Le depart du combine doit correspondre a sa premiere rencontre');
   }
   if (new Set(items.map(item => item.sourceId)).size !== items.length) throw failure('sourceId duplique dans le lot');
-  return { source: source.key, editionDate, items };
+  const batch = { source: source.key, editionDate, items };
+  if (Object.prototype.hasOwnProperty.call(body, 'editorialCopy')) {
+    const { factsFromBatch, validateCopy } = require('./editorialCopy');
+    batch.editorialCopy = validateCopy(factsFromBatch(batch), body.editorialCopy);
+  }
+  return batch;
 }
 
 function hasCompleteEnglish(item) {

@@ -257,6 +257,20 @@ test('exact native V6 Cristabel qualitative leading places preserves rank and ha
   }
 });
 
+test('native Cristabel bid for the leading places keeps the qualitative aim and every numerical fact', () => {
+  const fr = "8 - CRISTABEL – Déjà troisième d’un Quinté+ en juillet après une belle fin de course, elle a confirmé sa compétitivité lors de ses sorties suivantes, notamment dans une Classe 2 à Craon. Sa valeur handicap de 37 semble lui laisser une belle carte à jouer à Saint-Cloud pour viser les premières places.";
+  const en = "8 - CRISTABEL – Already third in a Quinté+ in July following a strong finish, she confirmed her competitiveness in her subsequent outings, notably in a Class 2 event at Craon. Her handicap rating of 37 looks to give her a strong hand to play at Saint-Cloud in her bid for the leading places.";
+  assert.equal(equivalentNumericFacts(fr, en), true);
+  for (const mutation of [en.replace('third', 'second'), en.replace('Class 2', 'Class 3'),
+    en.replace('37', '38'), en.replace('8 -', '9 -'), en.replace('the leading places', 'first place'),
+    en.replace('in her bid', 'not in her bid'), en + ' In her bid for the leading places.']) {
+    assert.notEqual(mutation, en);
+    assert.equal(equivalentNumericFacts(fr, mutation), false);
+  }
+  assert.equal(equivalentNumericFacts(fr.replace('pour viser', 'pour ne pas viser'), en), false);
+  assert.equal(equivalentNumericFacts('viser la deuxième place', 'in her bid for the leading places'), false);
+});
+
 test("exact native V5 Tottenham opening interval preserves scores, ranks and quantities", () => {
   const fr = "Malgr\u00e9 des investissements cons\u00e9quents, Tottenham d\u00e9\u00e7oit grandement depuis quelques temps. L'an pass\u00e9, la formation londonienne avait m\u00eame d\u00fb attendre la derni\u00e8re journ\u00e9e pour sauver sa t\u00eate au sein de l'\u00e9lite. L'objectif est bien \u00e9videmment d'afficher un autre visage cette saison. Malheureusement pour elle et ses supporters, la bande \u00e0 Roberto De Zerbi est reparti sur des bases pr\u00e9occupantes. En effet, les Spurs n'ont remport\u00e9 aucun de leurs six premiers matchs de championnats (3 matchs nuls et 3 d\u00e9faites). Ils ont enfin affich\u00e9 une r\u00e9action lundi dernier en prenant le dessus, \u00e0 domicile, sur le promu Coventry (3-1). Ce succ\u00e8s permet \u00e0 Tottenham de figurer aujourd'hui au 16\u00e8me rang de la premier League avec 1 point d'avance sur le premier rel\u00e9gable. Avantage Chelsea sur la forme";
   const en = "Despite significant investments, Tottenham has been greatly disappointing for some time. Last year, the London team even had to wait until the final matchday to save their place in the elite. The objective is obviously to show a different face this season. Unfortunately for them and their supporters, Roberto De Zerbi's squad has started on a worrying note. Indeed, the Spurs have not won any of their six first league matches (3 draws and 3 defeats). They finally showed a reaction last Monday by overcoming newly promoted Coventry at home (3-1). This success allows Tottenham to currently sit in 16th place in the Premier League with 1 point ahead of the first relegation spot. Advantage Chelsea in terms of form";

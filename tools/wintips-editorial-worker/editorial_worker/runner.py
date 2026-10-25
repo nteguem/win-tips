@@ -27,6 +27,55 @@ def write_json(path, value):
     temporary.replace(path)
 
 
+def build_editorial_copy(payload, translator):
+    """Optional grounded hook; source paragraphs/summaries are never rewritten."""
+    try:
+        from .content_hub import module
+        package = module()
+        if package is None:
+            return None
+        from rdj_hub.editorial_copy import facts_from_wintips, generate, fallback
+    except (ImportError, ValueError, OSError):
+        return None
+    try:
+        hub = package.open_hub(payload['editionDate'])
+    except Exception:
+        return None
+    if hub is None:
+        return None
+    try:
+        facts = facts_from_wintips(payload)
+    except (ValueError, KeyError, TypeError):
+        return None
+    try:
+        if os.environ.get('WINTIPS_EDITORIAL_TRANSLATOR', 'ollama') != 'gemini':
+            return fallback(facts)
+        from . import gemini_translation as gemini
+        from dataclasses import replace
+        # Optional authoring cannot extend the essential translator's deadline.
+        settings = replace(translator.config, max_seconds=min(30, translator.remaining()))
+        quota = Path(os.environ.get('WINTIPS_EDITORIAL_GEMINI_QUOTA_DIR', '/var/lib/wintips-editorial-worker/gemini-quota'))
+        if not quota.is_absolute(): return fallback(facts)
+        return generate(facts, provider=gemini, config=settings, quota_dir=quota,
+            hub=hub)
+    except Exception:
+        try:
+            return fallback(facts)
+        except ValueError:
+            return None
+
+
+def editorial_copy_allowed(configured, source, edition):
+    """Only an explicit current API proof of a NEW source/day permits authoring."""
+    if not isinstance(configured, dict) or configured.get('date') != edition:
+        return False
+    rows = [row for row in configured.get('sources', []) if row.get('key') == source]
+    if len(rows) != 1:
+        return False
+    state = rows[0].get('editorialCopyState')
+    return isinstance(state, dict) and state.get('state') == 'new' and state.get('legacy') is False
+
+
 def ticket_reservations(configured, edition):
     """Protected server state, never a local last-run guess or an input payload."""
     state = configured.get('ticketState') if configured else None
@@ -504,6 +553,21 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
                     except Exception as audit_error:
                         row['translationFailureAuditError'] = safe_reason(audit_error)
                 report['blocked'] = True
+        # Essential FR/EN batches get first use of the shared request/character
+        # quota. Optional hooks never compete with later-source translations.
+        if bilingual:
+            for source, payload, row in prepared:
+                if not editorial_copy_allowed(configured, source, edition):
+                    continue
+                try:
+                    copy = build_editorial_copy(payload, translator)
+                    if copy is not None:
+                        payload['editorialCopy'] = copy
+                        write_json(Path(row['payloadFile']), payload)
+                        row['editorialCopyMethod'] = copy['method']
+                except Exception:
+                    payload.pop('editorialCopy', None)
+                    row['editorialCopyMethod'] = 'unavailable'
         # Do not keep model RAM/shared locks during database writes or FCM waits.
         try:
             resources.close()

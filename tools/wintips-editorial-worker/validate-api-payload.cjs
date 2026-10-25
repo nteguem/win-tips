@@ -57,7 +57,7 @@ function checkout() {
   if (!/^[a-f0-9]{40}$/.test(head)) throw new Error();
   const sources = ['tools/wintips-editorial-worker/validate-api-payload.cjs',
     'src/api/services/common/editorialValidation.js', 'src/api/services/common/editorialNumericFacts.js',
-    'src/api/services/common/editorialSources.js', 'src/api/services/common/editorialCalendar.js'];
+    'src/api/services/common/editorialSources.js', 'src/api/services/common/editorialCalendar.js', 'src/api/services/common/editorialCopy.js'];
   const hashes = {};
   for (const relative of sources) {
     const file = path.join(root, relative);

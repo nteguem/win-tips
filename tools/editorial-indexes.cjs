@@ -8,6 +8,7 @@ const SPECS = [
 ];
 const COLLECTIONS = {
   [COLLECTION]: SPECS,
+  editorialcopies: [require('../src/api/services/common/editorialCopyStorage').INDEX],
   // This one per-edition document serializes Duo/Goals reservations in the
   // same transaction as their items. Never create it from a request/job.
   editorialticketstates: [
@@ -38,15 +39,15 @@ async function inspectCollection(db, collection, specs) {
   }
   return { collection, ready: missing.length === 0 && conflicts.length === 0, missing, conflicts };
 }
-async function inspect(db) {
-  const collections = await Promise.all(Object.entries(COLLECTIONS).map(([collection, specs]) => inspectCollection(db, collection, specs)));
+async function inspect(db, { onlyCopies = false } = {}) {
+  const collections = await Promise.all(Object.entries(COLLECTIONS).filter(([name]) => !onlyCopies || name === 'editorialcopies').map(([collection, specs]) => inspectCollection(db, collection, specs)));
   return { ready: collections.every(result => result.ready), collections,
     missing: collections.flatMap(result => result.missing), conflicts: collections.flatMap(result => result.conflicts) };
 }
 
-async function provision(db, { apply = false, intent = false } = {}) {
+async function provision(db, { apply = false, intent = false, onlyCopies = false } = {}) {
   if (apply && !intent) { const error = new Error('Explicit --confirm-editorial-indexes required'); error.code = 'INTENT_REQUIRED'; throw error; }
-  const before = await inspect(db);
+  const before = await inspect(db, { onlyCopies });
   if (!apply || before.ready) return { ...before, readOnly: true, created: [] };
   if (before.conflicts.length) { const error = new Error('Existing indexes require operator review; no index is dropped'); error.code = 'INDEX_CONFLICT'; throw error; }
   const created = [];
@@ -59,12 +60,12 @@ async function provision(db, { apply = false, intent = false } = {}) {
       created.push(spec.name);
     }
   }
-  return { ...await inspect(db), readOnly: false, created };
+  return { ...await inspect(db, { onlyCopies }), readOnly: false, created };
 }
 
 async function main() {
   const args = process.argv.slice(2);
-  const allowed = ['--check', '--apply', '--confirm-editorial-indexes'];
+  const allowed = ['--check', '--apply', '--confirm-editorial-indexes', '--copies-only'];
   if (args.some(arg => !allowed.includes(arg)) || (args.includes('--check') && args.includes('--apply'))) throw Object.assign(new Error('Invalid arguments'), { code: 'ARGUMENTS' });
   const apply = args.includes('--apply'), intent = args.includes('--confirm-editorial-indexes');
   if (apply && !intent) throw Object.assign(new Error('Intent flag required'), { code: 'INTENT_REQUIRED' });
@@ -74,7 +75,7 @@ async function main() {
   const uri = process.env.MONGO_URI || env.MONGO_URI || 'mongodb://localhost:27017/wintips';
   const connection = await mongoose.createConnection(uri, { autoIndex: false, autoCreate: false, serverSelectionTimeoutMS: 10000, maxPoolSize: 1 }).asPromise();
   try {
-    const result = await provision(connection.db, { apply, intent });
+    const result = await provision(connection.db, { apply, intent, onlyCopies: args.includes('--copies-only') });
     console.log(JSON.stringify(result));
     if (!result.ready) process.exitCode = 2;
   } finally { await connection.close(); }

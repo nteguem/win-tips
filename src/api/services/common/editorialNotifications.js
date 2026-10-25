@@ -3,6 +3,7 @@ const { preferredLanguage } = require('./devicePreferences');
 const { sourceByKey, failure } = require('./editorialSources');
 const { editionDateFor } = require('./editorialCalendar');
 const { hasCompleteEnglish } = require('./editorialValidation');
+const { notificationSnapshot, digest } = require('./editorialCopy');
 
 const id = value => String(value && value._id || value);
 const terminal = new Set(['completed', 'no_audience', 'review_required']);
@@ -41,7 +42,7 @@ function message(appId, group, language) {
   const body = (language === 'en' ? 'Analysis and statistics: ' : 'Analyses et statistiques : ') + names.join(' · ');
   const single = group.items.length === 1;
   return {
-    id: notificationId(appId, group), title: labels[group.source][language], body: body.length > 180 ? body.slice(0, 177) + '…' : body,
+    id: notificationId(appId, group), title: labels[group.source][language], body: group.editorialCopy ? group.editorialCopy.body[language] : body.length > 180 ? body.slice(0, 177) + '…' : body,
     businessChannel: group.category.isVip ? 'vip' : 'tips', route: '/home', requiresVip: group.category.isVip === true,
     extra: { action: single ? 'view_editorial' : 'view_editorial_feed', ...(single ? { itemId: id(group.items[0]) } : {}),
       categoryId: id(group.category), isVip: group.category.isVip ? 'true' : 'false', editionDate: group.editionDate, language },
@@ -70,7 +71,11 @@ function createEditorialNotificationService({ repository, push, clock = () => ne
       if (!DAY.test(date) || date !== editionDateFor(now)) throw failure('Seule l edition du jour peut etre notifiee');
       if (appId() !== 'wintips') return { disabled: true, reason: 'wrong_app', sent: 0 };
       if (!dryRun && !activated()) return { disabled: true, reason: 'notifications_disabled', sent: 0 };
-      const groups = (await repository.groups({ source, editionDate: date })).map(group => ({ ...group, items: group.items.filter(row => eligibleItem(row.payload, now) && (!requireEnglish() || hasCompleteEnglish(row.payload))) })).filter(group => group.items.length);
+      const groups = (await repository.groups({ source, editionDate: date })).map(group => {
+        const items = group.items.filter(row => eligibleItem(row.payload, now) && (!requireEnglish() || hasCompleteEnglish(row.payload)));
+        const copy = group.editorialCopy;
+        return { ...group, items, editorialCopy: copy && copy.choice.focusIds.every(sourceId => items.some(row => row.payload.sourceId === sourceId)) ? copy : null };
+      }).filter(group => group.items.length);
       const report = { dryRun, groups: [], sent: 0, pending: 0 };
       const deadline = Date.now() + budgetMs;
       let batches = 0;
@@ -88,7 +93,10 @@ function createEditorialNotificationService({ repository, push, clock = () => ne
           result.status = 'preview'; report.groups.push(result); continue;
         }
         await repository.assertIndexes();
-        const claim = await repository.claim(key, stableId, now);
+        let snapshot;
+        try { snapshot = notificationSnapshot(group); }
+        catch (_) { result.status = 'review_required'; report.groups.push(result); continue; }
+        const claim = await repository.claim(key, stableId, now, snapshot);
         if (!claim) {
           // Preserve terminal review visibility on every hourly drain without
           // reclaiming or sending an already-finished notification again.
@@ -99,6 +107,14 @@ function createEditorialNotificationService({ repository, push, clock = () => ne
         }
         let after = claim.afterDeviceId || null, finished = false;
         try {
+          // Old ledgers have no snapshot fields and keep their original generic
+          // message. New claims cannot silently change copy/content on retry.
+          const hasSnapshot = Object.prototype.hasOwnProperty.call(claim, 'itemHash');
+          if (hasSnapshot && (typeof claim.itemHash !== 'string' || !/^[a-f0-9]{64}$/.test(claim.itemHash) || claim.itemHash !== snapshot.itemHash ||
+            (claim.editorialCopy ? claim.editorialCopySha256 !== digest(claim.editorialCopy) : claim.editorialCopySha256 != null))) {
+            throw failure('Contenu de notification modifie', 409, 'EDITORIAL_NOTIFICATION_SNAPSHOT_CHANGED');
+          }
+          const deliveryGroup = { ...group, editorialCopy: hasSnapshot ? claim.editorialCopy || null : null };
           while (batches < maxBatches && Date.now() < deadline && activated()) {
             if (editionDateFor(clock()) !== date || !group.items.every(row => eligibleItem(row.payload, clock()))) throw failure('Publication devenue trop tardive', 409);
             // Re-check the category before every batch: BO source changes and
@@ -111,7 +127,7 @@ function createEditorialNotificationService({ repository, push, clock = () => ne
               const deviceIds = targets.filter(device => preferredLanguage(device) === language).map(device => device.deviceId);
               if (!deviceIds.length) continue;
               if (!activated()) throw failure('Notifications desactivees', 409);
-              const stats = await push(appId(), message(appId(), group, language), { targeting: { deviceIds }, retryFailures: true,
+              const stats = await push(appId(), message(appId(), deliveryGroup, language), { targeting: { deviceIds }, retryFailures: true,
                 respectNotificationPreferences: true, respectEditorialSchemaVersion: true });
               result.languages[language] += deviceIds.length;
               report.sent += (stats.fcm || 0) + (stats.onesignal || 0);
@@ -131,8 +147,9 @@ function createEditorialNotificationService({ repository, push, clock = () => ne
         } catch (error) {
           // Keep the cursor before an ambiguous chunk. Stable per-device claims
           // exclude all accepted/queued messages on the next drain.
-          await repository.finish(key, claim.lockToken, { status: 'pending', lastErrorCode: String(error.errorCode || error.code || 'DELIVERY_INTERRUPTED').slice(0, 80) }, clock());
-          result.status = 'pending'; report.pending++;
+          const status = error.errorCode === 'EDITORIAL_NOTIFICATION_SNAPSHOT_CHANGED' ? 'review_required' : 'pending';
+          await repository.finish(key, claim.lockToken, { status, lastErrorCode: String(error.errorCode || error.code || 'DELIVERY_INTERRUPTED').slice(0, 80) }, clock());
+          result.status = status; if (status === 'pending') report.pending++;
         }
         report.groups.push(result);
       }
