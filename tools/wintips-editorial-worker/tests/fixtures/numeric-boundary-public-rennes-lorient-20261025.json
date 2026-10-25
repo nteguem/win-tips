@@ -1,0 +1,52 @@
+{
+  "publicFrenchOnly": true,
+  "nativeResponsesIncluded": false,
+  "items": [
+    {
+      "sourceId": "5802970",
+      "source": "Invaincu à domicile mais fébrile hors de ses bases, Rennes manque encore de régularité après deux mois de compétition. Si cette tendance s'est illustrée dernièrement – avec une démonstration de force contre Auxerre (4-1) suivie d'une rechute du côté du Paris FC (4-3) – les Rouge et Noir répondent présent au classement. 7es ce dimanche, ils ne sont devancés que d'un point par le leader. Le club breton aborde ce rendez-vous contre Strasbourg après avoir ramené un bon nul de Turin (2-2), où il affrontait la Juventus jeudi en Ligue Europa.",
+      "item": {
+        "teams": {
+          "home": {
+            "name": "Rennes",
+            "logo": "https://img.ruedesjoueurs.com/img/9851-5.png"
+          },
+          "away": {
+            "name": "Strasbourg",
+            "logo": "https://img.ruedesjoueurs.com/img/9848-5.png"
+          }
+        },
+        "sport": {
+          "key": "football",
+          "name": "Football"
+        },
+        "competition": {
+          "name": "Ligue 1"
+        }
+      }
+    },
+    {
+      "sourceId": "5802964",
+      "source": "Le FC Lorient d'Alexandre Dujeux, l'ancien entraîneur d'Angers, est de retour au premier plan depuis la trêve internationale. Vainqueurs à domicile contre le Paris FC (1-0) et Monaco (1-0) sans concéder le moindre but, les Merlus voyaient trois points les séparer du leader avant la 8e journée. Ils avaient d'abord fait preuve d'irrégularité cette saison, n'obtenant qu'une victoire en 5 matchs (2 nuls, 2 défaites). Avantage Lorient au niveau de la forme",
+      "item": {
+        "teams": {
+          "home": {
+            "name": "Angers",
+            "logo": "https://img.ruedesjoueurs.com/img/8121-5.png"
+          },
+          "away": {
+            "name": "Lorient",
+            "logo": "https://img.ruedesjoueurs.com/img/8689-5.png"
+          }
+        },
+        "sport": {
+          "key": "football",
+          "name": "Football"
+        },
+        "competition": {
+          "name": "Ligue 1"
+        }
+      }
+    }
+  ]
+}

@@ -215,6 +215,11 @@ def protect(source, item):
     for name in _names(item):
         for match in re.finditer(r'(?<!\w)' + re.escape(name) + r'(?!\w)', source):
             add(match.start(), match.end(), match[0], 'verified_name')
+    # This source phrase is qualitative ambition, not a first-place rank.
+    # Pin the complete clause to the already supported API equivalence instead
+    # of asking a model to invent an unconstrained ordinal-free paraphrase.
+    for match in re.finditer(r'(?<!\w)pour\s+viser\s+les\s+premières\s+places(?!\w)', source, re.I):
+        add(match.start(), match.end(), 'in pursuit of the leading places', 'qualitative')
     # Preserve the complete nominal finish rank, including "top". Do not turn
     # chronological "les cinq premiers matchs/courses" into a top-five ranking.
     for match in RANK_NUMBER.finditer(source):
@@ -225,7 +230,14 @@ def protect(source, item):
             display = CARDINALS.get(count.casefold(), count)
             add(match.start(), match.end(), 'top ' + display, 'rank_number')
     for match in NUMBERS.finditer(source):
-        add(match.start(), match.end(), _number_display(match[0]), 'number')
+        # Whitespace surrounding a fact belongs to the prose, not its immutable
+        # value. Preserve source bytes outside the span and normalize the actual
+        # token (notably plural French 7es -> 7th). Internal signed forms such
+        # as "- 3" remain intact and cannot lose their sign.
+        token = match[0].strip()
+        start = match.start() + len(match[0]) - len(match[0].lstrip())
+        end = match.end() - (len(match[0]) - len(match[0].rstrip()))
+        add(start, end, _number_display(token), 'number')
     # Attached source units/IDs (21h00, R1C4, 2850m) remain exact too.
     for match in ALPHANUMERIC_FACT.finditer(source):
         add(match.start(), match.end(), match[0], 'number_with_source_unit')
