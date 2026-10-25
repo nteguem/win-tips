@@ -40,7 +40,7 @@ CARDINALS = {
     'seize': 'sixteen', 'dix-sept': 'seventeen', 'dix-huit': 'eighteen',
     'dix-neuf': 'nineteen', 'vingt': 'twenty',
 }
-NUMBERS = re.compile(r'(?<!\w)[+\-−]?\s*\d+(?:[.,:/\-–−]\d+)*(?:ers?|res?|èmes?|emes?|es?|st|nd|rd|th)?(?:\s*[%€$])?(?!\w)', re.I)
+NUMBERS = re.compile(r'(?<!\w)[+\-−]?\s*\d+(?:[.,:/\-–−]\d+)*(?:ers?|[èe]?res?|e\u0300res?|èmes?|emes?|es?|st|nd|rd|th)?(?:\s*[%€$])?(?!\w)', re.I)
 WRITTEN = re.compile(r'(?<![\w-])(?:' + '|'.join(sorted(CARDINALS, key=len, reverse=True)) + r')(?![\w-])', re.I)
 NUMBER_UNIT = re.compile(r'^\s+(?:(?:derniers?|dernières?|premiers?|premières?|autres?|petits?|seuls?|seules?)\s+)*(?:points?|buts?|victoires?|défaites?|matchs?|matches|rencontres?|parties?|équipes?|joueurs?|hommes?|chevaux|partants?|tirs?|rebonds?|titres?|saisons?|ans?|années?|jours?|journées?|mois|minutes?|secondes?|quarts?[- ]temps|sets?|reprises?|fois|podiums?|sorties?|courses?|départs?|participations?|accessits?|places?)\b', re.I)
 RANK_UNIT = re.compile(r'^\s+(?:premiers|premières)\b', re.I)
@@ -189,7 +189,7 @@ class Quota:
 
 
 def _number_display(value):
-    ordinal = re.fullmatch(r'(\d+)(?:ers?|res?|èmes?|emes?|es?|st|nd|rd|th)', value, re.I)
+    ordinal = re.fullmatch(r'(\d+)(?:ers?|[èe]?res?|e\u0300res?|èmes?|emes?|es?|st|nd|rd|th)', value, re.I)
     if ordinal:
         n = int(ordinal[1])
         suffix = 'th' if 10 < n % 100 < 14 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')

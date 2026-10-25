@@ -9,7 +9,7 @@ from copy import deepcopy
 import base64
 import binascii
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from html.parser import HTMLParser
 import json
@@ -23,7 +23,7 @@ from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_ope
 
 from .azure_translation import (AzureTranslator, Quota, ProtectedText, NUMBERS,
     EXTRA_NUMBER, EXTRA_ONE, _characters, _json_bytes,
-    _private_regular, _write_private, protect, validate_output)
+    _private_regular, _quota_lock, _write_private, protect, validate_output)
 from .translation import TranslationRejected, _walk
 
 
@@ -256,6 +256,87 @@ def _rate_limit_metadata(raw, header, body_status='parsed'):
     return result
 
 
+class GeminiCooldown:
+    """Shared, per-model provider backoff; separate from local character usage.
+
+    Only an explicit positive server delay is persisted. Never infer a project
+    quota from local counters, shorten RetryInfo, reset usage, or block caches.
+    """
+    MAX_SECONDS = 48 * 60 * 60
+
+    def __init__(self, directory, now):
+        self.directory, self.now = Path(directory), now
+
+    def _instant(self):
+        instant = self.now()
+        if not isinstance(instant, datetime) or instant.tzinfo is None:
+            raise TranslationRejected('gemini_cooldown_clock_invalid')
+        return instant.astimezone(timezone.utc)
+
+    def _load(self):
+        path = self.directory / 'provider-cooldowns.json'
+        if not path.exists() and not path.is_symlink():
+            return {'schema': 1, 'models': {}}
+        _private_regular(path)
+        if path.stat().st_size > 131072:
+            raise ValueError()
+        state = _closed_json(path.read_bytes())
+        if (not isinstance(state, dict) or set(state) != {'schema', 'models'} or
+                type(state['schema']) is not int or state['schema'] != 1 or
+                not isinstance(state['models'], dict) or len(state['models']) > 32):
+            raise ValueError()
+        for model, row in state['models'].items():
+            if (not isinstance(model, str) or re.fullmatch(r'gemini-[a-z0-9][a-z0-9.-]{1,79}', model) is None or
+                    not isinstance(row, dict) or set(row) != {'recordedAtUtc', 'untilUtc', 'retryAfterSeconds', 'quotaTypes', 'httpStatus'} or
+                    type(row['httpStatus']) is not int or row['httpStatus'] != 429 or row['quotaTypes'] != ['RPD'] or
+                    type(row['retryAfterSeconds']) is not int or not 1 <= row['retryAfterSeconds'] <= self.MAX_SECONDS):
+                raise ValueError()
+            start, end = self._timestamp(row['recordedAtUtc']), self._timestamp(row['untilUtc'])
+            if (end - start).total_seconds() != row['retryAfterSeconds']:
+                raise ValueError()
+        return state
+
+    @staticmethod
+    def _timestamp(value):
+        if not isinstance(value, str) or re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?\+00:00', value) is None:
+            raise ValueError()
+        return datetime.fromisoformat(value)
+
+    def active(self, model):
+        try:
+            instant = self._instant()
+            with _quota_lock(self.directory):
+                row = self._load()['models'].get(model)
+                return deepcopy(row) if row and self._timestamp(row['untilUtc']) > instant else None
+        except TranslationRejected as exc:
+            raise _mapped(exc) from None
+        except (OSError, ValueError, TypeError, UnicodeError, OverflowError):
+            raise TranslationRejected('gemini_cooldown_state_invalid') from None
+
+    def remember(self, model, seconds):
+        if type(seconds) is not int or not 1 <= seconds <= self.MAX_SECONDS:
+            raise TranslationRejected('gemini_cooldown_delay_out_of_range')
+        try:
+            instant = self._instant()
+            until = instant + timedelta(seconds=seconds)
+            with _quota_lock(self.directory):
+                state = self._load()
+                previous = state['models'].get(model)
+                if previous and self._timestamp(previous['untilUtc']) >= until:
+                    return deepcopy(previous)  # A concurrent shorter delay cannot undo backoff.
+                if model not in state['models'] and len(state['models']) >= 32:
+                    raise ValueError()
+                row = {'recordedAtUtc': instant.isoformat(), 'untilUtc': until.isoformat(),
+                    'retryAfterSeconds': seconds, 'quotaTypes': ['RPD'], 'httpStatus': 429}
+                state['models'][model] = row
+                _write_private(self.directory / 'provider-cooldowns.json', state)
+                return deepcopy(row)
+        except TranslationRejected as exc:
+            raise _mapped(exc) from None
+        except (OSError, ValueError, TypeError, UnicodeError, OverflowError):
+            raise TranslationRejected('gemini_cooldown_state_invalid') from None
+
+
 class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, *args):
         raise TranslationRejected('gemini_redirect_forbidden')
@@ -449,7 +530,9 @@ class GeminiTranslator(AzureTranslator):
         self.config, self.directory = config, Path(cache_dir) / 'gemini'
         self.request = request or GeminiTransport(config)
         self.monotonic, self.sleep, self.started = monotonic, sleep, monotonic()
-        self.quota = Quota(quota_dir, config, now or (lambda: datetime.now(timezone.utc)))
+        quota_clock = now or (lambda: datetime.now(timezone.utc))
+        self.quota = Quota(quota_dir, config, quota_clock)
+        self.cooldown = GeminiCooldown(quota_dir, quota_clock)
         self.records, self.prepared, self.requests, self.attempts = [], {}, 0, []
 
     def remaining(self):
@@ -515,6 +598,9 @@ class GeminiTranslator(AzureTranslator):
         accepted = {}
         for attempt in range(self.config.retries + 1):
             self.remaining()
+            cooling = self.cooldown.active(self.config.model)
+            if cooling is not None:
+                raise TranslationRejected('gemini_provider_cooldown_active', audit={'providerCooldown': cooling})
             if self.requests >= self.config.max_requests:
                 raise TranslationRejected('gemini_request_budget_exhausted')
             texts = [job['html'] for _, job in active]
@@ -591,6 +677,13 @@ class GeminiTranslator(AzureTranslator):
             except GeminiFailure as exc:
                 trace['status'] = 'http_' + str(exc.status)
                 if exc.rate_limit is not None: trace['rateLimit'] = exc.rate_limit
+                if exc.status == 429 and exc.rate_limit is not None and 'RPD' in exc.rate_limit.get('quotaTypes', []):
+                    trace['retryScheduled'] = False
+                    trace['retryDelaySeconds'] = exc.retry_after
+                    cooling = self.cooldown.remember(self.config.model, exc.retry_after) if exc.retry_after > 0 else None
+                    if cooling is not None: trace['providerCooldown'] = cooling
+                    raise TranslationRejected('gemini_daily_request_quota_exhausted',
+                        audit={'rateLimit': exc.rate_limit, 'providerCooldown': cooling}) from None
                 if exc.status not in {429, 500, 502, 503, 504} or attempt == self.config.retries:
                     raise TranslationRejected('gemini_http_' + str(exc.status)) from None
                 pause = max(exc.retry_after, 1 << attempt)

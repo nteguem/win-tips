@@ -1,0 +1,32 @@
+{
+  "description": "Exact real rejected source/candidate from BigWin native Gemini 2026-10-25T05:07. No text edited. Actual sanitized RPD metadata retained separately; no key/project/user data.",
+  "evidenceFile": "qa/automation-reliability-20261025/failures-20261025T051811Z.json",
+  "evidenceSha256": "92584ab8b64b393d3ebf39b6e49e369833c9678b720cb5dd3f2cd75298504ed9",
+  "source": "Champion d'Angleterre en 2025, Liverpool a d\u00fb se contenter de la 5\u00e8me place en Premier League l'an pass\u00e9. Cela a entra\u00een\u00e9 le renvoi de l'entra\u00eeneur Arne Slot cet \u00e9t\u00e9. Les dirigeants ont mis\u00e9 sur Andoni Iraola, qui a effectu\u00e9 du tr\u00e8s bon travail \u00e0 Bournemouth. L'objectif est bien \u00e9videmment de rejouer les premiers r\u00f4les. Le club de la Mersey est actuellement 5\u00e8me de Premier League et conc\u00e8de d\u00e9j\u00e0 un d\u00e9bours important de 9 points sur la 1\u00e8re place. Invaincus lors des cinq premi\u00e8res journ\u00e9es, les Reds ont ensuite perdu contre le leader Manchester City \u00e0 domicile (0-3). Le week-end dernier, ils ont affich\u00e9 une belle r\u00e9action en s'imposant \u00e0 Brentford (1-2). Cette semaine, Liverpool a pris le dessus sur Villarreal en Ligue des Champions (4-3).",
+  "candidateHtml": "<div>English champions in <span id=\"wt0\" class=\"notranslate\" translate=\"no\">2025</span>, <span id=\"wt1\" class=\"notranslate\" translate=\"no\">Liverpool</span> had to settle for <span id=\"wt2\" class=\"notranslate\" translate=\"no\">5th</span> place in the <span id=\"wt3\" class=\"notranslate\" translate=\"no\">Premier League</span> last year. This led to the dismissal of coach Arne Slot this summer. The management opted for Andoni Iraola, who did a very good job at Bournemouth. The objective is obviously to play a leading role again. The Merseyside club is currently <span id=\"wt4\" class=\"notranslate\" translate=\"no\">5th</span> in the <span id=\"wt5\" class=\"notranslate\" translate=\"no\">Premier League</span> and already concedes a significant deficit of <span id=\"wt6\" class=\"notranslate\" translate=\"no\">9</span> points on <span id=\"wt7\" class=\"notranslate\" translate=\"no\">1st</span> place. Undefeated in the <span id=\"wt8\" class=\"notranslate\" translate=\"no\">five</span> opening matchdays, the Reds then lost against leaders Manchester City at home (<span id=\"wt9\" class=\"notranslate\" translate=\"no\">0-3</span>). Last weekend, they showed a good reaction by winning at Brentford (<span id=\"wt10\" class=\"notranslate\" translate=\"no\">1-2</span>). This week, <span id=\"wt11\" class=\"notranslate\" translate=\"no\">Liverpool</span> overcame Villarreal in the Champions League (<span id=\"wt12\" class=\"notranslate\" translate=\"no\">4-3</span>).</div>",
+  "item": {
+    "home": "Liverpool",
+    "away": "Brighton",
+    "competition": "Premier League"
+  },
+  "previousRejection": {
+    "code": "gemini_output_structure_or_facts_changed",
+    "mutatedSpans": [
+      {
+        "id": "wt7",
+        "requiredValue": "1\u00e8re",
+        "requiredValueTruncated": false,
+        "actualValue": "1st",
+        "actualValueTruncated": false
+      }
+    ]
+  },
+  "rateLimit": {
+    "retryAfterHeaderSeconds": 0,
+    "retryInfoSeconds": 6767,
+    "quotaTypes": [
+      "RPD"
+    ],
+    "bodyStatus": "parsed"
+  }
+}
