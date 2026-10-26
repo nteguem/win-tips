@@ -144,16 +144,25 @@ def _advisory_validated(source, item, html):
     provider HTML. Empty/oversized responses still use the caller's source
     fallback. A failed quality proof is evidence for review, not a publish gate.
     """
+    def readable(target, proof):
+        target = target.replace('\r\n', '\n').replace('\r', '\n')
+        unusable = ('gemini_output_control_character' if re.search(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', target)
+            else 'gemini_output_unresolved_marker' if re.search(r'__[A-Z0-9_]+__', target) else None)
+        if unusable:
+            return source.replace('\r\n', '\n').replace('\r', '\n'), {**proof,
+                'passed': False, 'sourceFallback': True, 'semanticQualityProven': False,
+                'warnings': list(dict.fromkeys([*proof.get('warnings', []), unusable]))}
+        return target, proof
     try:
         target, proof = _validated(source, item, html)
-        return target, {**proof, 'qualityPolicy': 'advisory-v1', 'warnings': []}
+        return readable(target, {**proof, 'qualityPolicy': 'advisory-v1', 'warnings': []})
     except TranslationRejected as exc:
         warning = exc.code
     fallback = {'passed': False, 'qualityPolicy': 'advisory-v1',
         'warnings': [warning], 'validatorVersion': VERSION,
         'semanticQualityProven': False, 'sourceFallback': True}
     if not isinstance(html, str) or len(html) > 200_000:
-        return source, fallback
+        return readable(source, fallback)
     class ReadableText(HTMLParser):
         def __init__(self):
             super().__init__(convert_charrefs=True)
@@ -171,12 +180,12 @@ def _advisory_validated(source, item, html):
         parser.feed(html)
         parser.close()
     except (ValueError, TypeError):
-        return source, fallback
+        return readable(source, fallback)
     target = ''.join(parser.parts).strip()
     if not target:
-        return source, fallback
-    return target, {'passed': False, 'qualityPolicy': 'advisory-v1',
-        'warnings': [warning], 'validatorVersion': VERSION, 'semanticQualityProven': False}
+        return readable(source, fallback)
+    return readable(target, {'passed': False, 'qualityPolicy': 'advisory-v1',
+        'warnings': [warning], 'validatorVersion': VERSION, 'semanticQualityProven': False})
 
 
 def _closed_json(raw):

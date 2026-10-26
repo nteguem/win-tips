@@ -116,6 +116,36 @@ class NonblockingTranslationTests(unittest.TestCase):
         self.assertEqual(target, 'The finding.')
         self.assertTrue(proof['warnings'])
 
+    def test_control_characters_fall_back_even_if_quality_validator_accepts(self):
+        for accepted in (True, False):
+            with self.subTest(accepted=accepted), patch.object(gemini, '_validated',
+                    **({'return_value': ('The finding.\x00', {'passed': True})} if accepted else
+                       {'side_effect': TranslationRejected('gemini_name_occurrences_changed')})):
+                target, proof = gemini._advisory_validated('Le constat.', {}, '<div>The finding.\x00</div>')
+                self.assertEqual(target, 'Le constat.')
+                self.assertTrue(proof['sourceFallback'])
+                self.assertIn('gemini_output_control_character', proof['warnings'])
+
+    def test_all_advisory_targets_have_canonical_line_feeds(self):
+        for accepted in (True, False):
+            with self.subTest(accepted=accepted), patch.object(gemini, '_validated',
+                    **({'return_value': ('First.\r\nSecond.\rThird.', {'passed': True})} if accepted else
+                       {'side_effect': TranslationRejected('gemini_name_occurrences_changed')})):
+                target, proof = gemini._advisory_validated('Le constat.', {}, '<div>First.\r\nSecond.\rThird.</div>')
+                self.assertEqual(target, 'First.\nSecond.\nThird.')
+                self.assertNotIn('\r', target)
+                self.assertEqual(proof['passed'], accepted)
+
+    def test_unresolved_template_markers_fall_back_before_rendering(self):
+        for accepted in (True, False):
+            with self.subTest(accepted=accepted), patch.object(gemini, '_validated',
+                    **({'return_value': ('__TEAM_0__ to win.', {'passed': True})} if accepted else
+                       {'side_effect': TranslationRejected('gemini_name_occurrences_changed')})):
+                target, proof = gemini._advisory_validated('Le constat.', {}, '<div>__TEAM_0__ to win.</div>')
+                self.assertEqual(target, 'Le constat.')
+                self.assertTrue(proof['sourceFallback'])
+                self.assertIn('gemini_output_unresolved_marker', proof['warnings'])
+
     def test_missing_provider_configuration_has_complete_source_fallback(self):
         result, audit = translate_batch({'items': [item()]},
             SourceFallbackTranslator(TranslationRejected('gemini_key_required')), best_effort=True)
