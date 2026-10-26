@@ -6,6 +6,7 @@ function createEditorialRepository({ Category, EditorialItem, EditorialReview, s
   const tickets = () => require('./editorialTickets');
   const stateCollection = () => EditorialItem.db.db.collection('editorialticketstates');
   const reviewsModel = () => EditorialReview || require('../../models/common/EditorialReview');
+  const openings = () => require('./editorialOpeningStorage').createOpeningStorage(EditorialItem);
   async function reviewStorage() {
     let indexes;
     try { indexes = await reviewsModel().collection.listIndexes().toArray(); }
@@ -40,6 +41,8 @@ function createEditorialRepository({ Category, EditorialItem, EditorialReview, s
     { $match: { categoryId: { $in: ids }, editionDate: date } },
     { $group: { _id: '$categoryId', count: { $sum: 1 }, averageRating: { $avg: '$rating' } } },
   ]).then(rows => rows.map(row => ({ categoryId: row._id, count: row.count, averageRating: row.averageRating }))),
+  openingCounts: (ids, date) => openings().counts(ids, date),
+  recordOpening: (categoryId, editionDate, openingId, now) => openings().record(categoryId, editionDate, openingId, now),
   reviews: async (categoryId, editionDate, { page, limit }) => {
     const filter = { categoryId, editionDate };
     const [rows, total] = await Promise.all([
@@ -144,5 +147,5 @@ function getDefaultRepository() {
   });
   return defaultRepository;
 }
-const methods = ['categories', 'category', 'items', 'availableDates', 'reviewSummaries', 'reviews', 'userReview', 'upsertReview', 'sourceWindowItems', 'item', 'copies', 'copyStates', 'hasCategoryAccess', 'hasAnySubscription', 'gate', 'ticketState', 'upsertBatch'];
+const methods = ['categories', 'category', 'items', 'availableDates', 'reviewSummaries', 'openingCounts', 'recordOpening', 'reviews', 'userReview', 'upsertReview', 'sourceWindowItems', 'item', 'copies', 'copyStates', 'hasCategoryAccess', 'hasAnySubscription', 'gate', 'ticketState', 'upsertBatch'];
 module.exports = { createEditorialRepository, ...Object.fromEntries(methods.map(name => [name, (...args) => getDefaultRepository()[name](...args)])) };

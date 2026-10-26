@@ -8,6 +8,7 @@ router.get('/items/:id/analysis', controller.analysis);
 router.get('/library', controller.library);
 router.get('/categories/:categoryId/editions/:date', controller.edition);
 router.get('/categories/:categoryId/editions/:date/content', controller.content);
+router.post('/categories/:categoryId/editions/:date/open', controller.open);
 router.get('/categories/:categoryId/editions/:date/reviews', controller.reviews);
 router.put('/categories/:categoryId/editions/:date/reviews', userAuth.protect, controller.putReview);
 module.exports = router;

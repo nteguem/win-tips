@@ -40,6 +40,7 @@ function createEditorialController(service) {
     }, getService),
     edition: handler((service, req) => service.edition(req.params.categoryId, req.params.date, { lang: language(req), user: req.user }), getService),
     content: handler((service, req) => service.content(req.params.categoryId, req.params.date, { lang: language(req), user: req.user }), getService),
+    open: handler((service, req) => service.open(req.params.categoryId, req.params.date, req.body, { user: req.user }), getService),
     reviews: handler((service, req) => service.reviews(req.params.categoryId, req.params.date, { page: req.query.page, limit: req.query.limit, user: req.user }), getService),
     putReview: handler((service, req) => service.putReview(req.params.categoryId, req.params.date, req.body, { lang: language(req), user: req.user }), getService),
   };

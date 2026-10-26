@@ -4,7 +4,7 @@ const crypto = require('node:crypto');
 const { createEditorialService } = require('../src/api/services/common/editorialService');
 const { createEditorialRepository } = require('../src/api/services/common/editorialRepository');
 const { fallback, factsFromBatch, digest } = require('../src/api/services/common/editorialCopy');
-const { pagination, reviewInput } = require('../src/api/services/common/editorialLibrary');
+const { pagination, reviewInput, openingInput } = require('../src/api/services/common/editorialLibrary');
 
 const date = '2026-10-25', a = 'a'.repeat(24), b = 'b'.repeat(24), c = 'c'.repeat(24);
 const user = { _id: 'd'.repeat(24), pseudo: 'Moussa', email: 'private@example.invalid', phoneNumber: 'private' };
@@ -22,7 +22,7 @@ function row(key, categoryId = a, source = 'rdj_petit_journal', editionDate = da
     contentHash: crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex'), isPublished: true };
 }
 function setup(categories = [category()], rows = [row(1), row(2)]) {
-  const state = { categories, rows, reviews: [], copies: [], subscription: false, access: false, unlocked: false, writes: 0, reads: 0, dates: [date] };
+  const state = { categories, rows, reviews: [], copies: [], openings: new Map(), subscription: false, access: false, unlocked: false, writes: 0, reads: 0, dates: [date] };
   const equal = (left, right) => String(left) === String(right);
   const repo = {
     categories: async () => state.categories,
@@ -39,6 +39,13 @@ function setup(categories = [category()], rows = [row(1), row(2)]) {
       const reviews = state.reviews.filter(value => equal(value.categoryId, key) && value.editionDate === day);
       return { categoryId: key, count: reviews.length, averageRating: reviews.length ? reviews.reduce((sum, value) => sum + value.rating, 0) / reviews.length : 0 };
     }),
+    openingCounts: async (ids, day) => ids.map(key => ({ categoryId: key, openingCount: [...state.openings.values()].filter(row => equal(row.categoryId, key) && row.editionDate === day).length })),
+    recordOpening: async (categoryId, editionDate, openingId) => {
+      const key = [categoryId, editionDate, openingId].join(':');
+      const counted = !state.openings.has(key);
+      if (counted) { state.openings.set(key, { categoryId, editionDate }); state.writes++; }
+      return { counted, openingCount: [...state.openings.values()].filter(row => equal(row.categoryId, categoryId) && row.editionDate === editionDate).length };
+    },
     reviews: async (key, day, { page, limit }) => {
       const reviews = state.reviews.filter(value => equal(value.categoryId, key) && value.editionDate === day).slice().reverse();
       return { total: reviews.length, rows: reviews.slice((page - 1) * limit, page * limit) };
@@ -295,4 +302,76 @@ test('the provisioning inspection and runtime use the same exact functional inde
     assert.equal(result.ready, false); assert.deepEqual(result.conflicts, ['editorial_review_reader_edition_unique']);
     assert.equal(matchesIndexDefinition(collections.editorialreviews[0], REVIEW_IDENTITY_INDEX), false);
   }
+});
+
+const firstOpening = '4f5ca989-95f4-4e8e-a335-73de107ebc67';
+const secondOpening = '928d0143-7ea9-4156-9872-073f44a70ceb';
+test('opening action accepts only an exact UUIDv4 body and canonicalizes its casing before DAL', async () => {
+  const { service, state } = setup();
+  for (const body of [null, [], {}, { openingId: 4 }, { openingId: '' }, { openingId: { $ne: null } },
+    { openingId: firstOpening, userId: user._id }, { openingId: firstOpening + ' ' }, { openingId: firstOpening + '\n' },
+    Object.assign(Object.create({ openingId: firstOpening }), { other: true }),
+    { openingId: '4f5ca989-95f4-1e8e-a335-73de107ebc67' }, { openingId: '4f5ca989-95f4-4e8e-7335-73de107ebc67' }]) {
+    await assert.rejects(service.open(a, date, body), { statusCode: 400 });
+  }
+  assert.equal(state.reads, 0); assert.equal(state.writes, 0);
+  assert.equal(openingInput({ openingId: firstOpening.toUpperCase() }), firstOpening);
+});
+
+test('only explicit authorized openings count, shared by library/detail and all reader languages', async () => {
+  const { service, state } = setup();
+  assert.equal((await service.library()).categories[0].openingCount, 0);
+  assert.equal((await service.edition(a, date)).openingCount, 0);
+  await service.content(a, date); await service.reviews(a, date, {});
+  assert.equal(state.writes, 0);
+  assert.deepEqual(await service.open(a, date, { openingId: firstOpening }), { categoryId: a, editionDate: date, openingCount: 1, counted: true });
+  assert.equal((await service.open(a, date, { openingId: firstOpening.toUpperCase() }, { user })).counted, false);
+  assert.equal((await service.open(a, date, { openingId: secondOpening }, { user })).openingCount, 2);
+  assert.equal((await service.library({ lang: 'en' })).categories[0].openingCount, 2);
+  assert.equal((await service.edition(a, date, { lang: 'fr', user })).openingCount, 2);
+  assert.equal(state.writes, 2);
+});
+
+test('opening a VIP edition requires the current category entitlement before any counted write', async () => {
+  const { service, state } = setup([category({ isVip: true, editorialSource: 'rdj_football_analysis' })], [row(1, a, 'rdj_football_analysis')]);
+  await assert.rejects(service.open(a, date, { openingId: firstOpening }), { statusCode: 401 });
+  await assert.rejects(service.open(a, date, { openingId: firstOpening }, { user }), { statusCode: 403, errorCode: 'SUBSCRIPTION_REQUIRED' });
+  assert.equal(state.writes, 0);
+  state.access = true;
+  assert.equal((await service.open(a, date, { openingId: firstOpening }, { user })).openingCount, 1);
+  state.access = false;
+  await assert.rejects(service.open(a, date, { openingId: secondOpening }, { user }), { statusCode: 403 });
+  assert.equal(state.writes, 1);
+});
+
+test('opening a gated free edition respects anonymous/user/subscriber gates', async () => {
+  const { service, state } = setup([category({ accessGate: { type: 'ad_reward' } })]);
+  await assert.rejects(service.open(a, date, { openingId: firstOpening }), { statusCode: 401 });
+  await assert.rejects(service.open(a, date, { openingId: firstOpening }, { user }), { statusCode: 403, errorCode: 'RESOURCE_LOCKED' });
+  assert.equal(state.writes, 0);
+  state.unlocked = true;
+  assert.equal((await service.open(a, date, { openingId: firstOpening }, { user })).counted, true);
+  state.unlocked = false; state.subscription = true;
+  assert.equal((await service.open(a, date, { openingId: secondOpening }, { user })).openingCount, 2);
+});
+
+test('opening missing, future, inactive, archived or remapped editions never writes receipts', async () => {
+  for (const mutation of [{ isActive: false }, { catalogueArchived: true }, { editorialSource: null }, { editorialSource: 'rdj_turf_quinte' }]) {
+    const { service, state } = setup(); Object.assign(state.categories[0], mutation);
+    await assert.rejects(service.open(a, date, { openingId: firstOpening }, { user }), { statusCode: 404 });
+    assert.equal(state.writes, 0);
+  }
+  const { service, state } = setup();
+  await assert.rejects(service.open(a, '2026-10-26', { openingId: firstOpening }), { statusCode: 404 });
+  await assert.rejects(service.open(a, '2026-10-24', { openingId: firstOpening }), { statusCode: 404 });
+  await assert.rejects(service.open({ $ne: null }, date, { openingId: firstOpening }), { statusCode: 404 });
+  assert.equal(state.writes, 0);
+});
+
+test('the opening operation freezes the publisher day exactly once before async DAL reads', async () => {
+  const { repo } = setup(); let calls = 0, instant = '2026-10-25T22:59:59.999Z';
+  const original = repo.category; repo.category = async key => { instant = '2026-10-25T23:00:00.001Z'; return original(key); };
+  const service = createEditorialService({ repository: repo, clock: () => { calls++; return new Date(instant); } });
+  assert.equal((await service.open(a, date, { openingId: firstOpening })).editionDate, date);
+  assert.equal(calls, 1);
 });

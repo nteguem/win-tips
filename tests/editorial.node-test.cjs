@@ -311,7 +311,9 @@ test('new route bootstrap wires admin, worker and optional-user guards without s
   const admin = load('admin/editorialRoutes.js'), worker = load('common/editorialWorkerRoutes.js'), reader = load('common/editorialRoutes.js');
   assert.equal(admin[0].args[0], guards.admin); assert.equal(admin[1].args[0], '/sources');
   assert.equal(worker[0].args[0], guards.worker); assert.deepEqual(worker.slice(1).map(call => call.args[0]), ['/config', '/import', '/notifications/drain']);
-  assert.equal(reader[0].args[0], guards.optionalUser); assert.deepEqual(reader.slice(1).map(call => call.args[0]), ['/feed', '/items/:id/analysis', '/library', '/categories/:categoryId/editions/:date', '/categories/:categoryId/editions/:date/content', '/categories/:categoryId/editions/:date/reviews', '/categories/:categoryId/editions/:date/reviews']);
+  assert.equal(reader[0].args[0], guards.optionalUser); assert.deepEqual(reader.slice(1).map(call => call.args[0]), ['/feed', '/items/:id/analysis', '/library', '/categories/:categoryId/editions/:date', '/categories/:categoryId/editions/:date/content', '/categories/:categoryId/editions/:date/open', '/categories/:categoryId/editions/:date/reviews', '/categories/:categoryId/editions/:date/reviews']);
+  const opening = reader.find(call => call.args[0] === '/categories/:categoryId/editions/:date/open');
+  assert.equal(opening.method, 'post'); assert.equal(opening.args[1], controller.open);
   assert.equal(reader.at(-1).method, 'put'); assert.equal(reader.at(-1).args[1], guards.protectedUser);
   const index = fs.readFileSync(path.join(__dirname, '../src/api/routes/index.js'), 'utf8');
   for (const mount of ['/admin/editorial', '/internal/editorial', '/editorial']) assert.equal(index.includes(`router.use('${mount}'`), true);

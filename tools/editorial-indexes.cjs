@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Explicit, bounded schema provisioning. No application/job imports.
 const COLLECTION = 'editorialitems';
-const { REVIEW_IDENTITY_INDEX, matchesIndexDefinition } = require('../src/api/services/common/editorialIndexIdentity');
+const { REVIEW_IDENTITY_INDEX, OPENING_IDENTITY_INDEX, matchesIndexDefinition } = require('../src/api/services/common/editorialIndexIdentity');
 const SPECS = [
   { key: { categoryId: 1, source: 1, editionDate: 1, sourceId: 1 }, name: 'editorial_identity_unique', unique: true },
   { key: { categoryId: 1, source: 1, editionDate: 1 }, name: 'editorial_duo_one_per_day', unique: true, partialFilterExpression: { source: 'rdj_football_duo' } },
@@ -15,6 +15,7 @@ const COLLECTIONS = {
     REVIEW_IDENTITY_INDEX,
     { key: { categoryId: 1, editionDate: 1, createdAt: -1, _id: -1 }, name: 'editorial_review_edition_recent' },
   ],
+  editorialopenings: [OPENING_IDENTITY_INDEX],
   // This one per-edition document serializes Duo/Goals reservations in the
   // same transaction as their items. Never create it from a request/job.
   editorialticketstates: [

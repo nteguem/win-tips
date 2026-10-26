@@ -21,6 +21,14 @@ function reviewInput(body) {
       body.comment !== undefined && (!cleanText(body.comment) || body.comment.length > 1500)) throw failure('Avis invalide');
   return { rating: body.rating, comment: (body.comment || '').trim() };
 }
+function openingInput(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).length !== 1 ||
+      !Object.prototype.hasOwnProperty.call(body, 'openingId') || typeof body.openingId !== 'string' || body.openingId.length !== 36 ||
+      !/^[a-f\d]{8}-[a-f\d]{4}-4[a-f\d]{3}-[89ab][a-f\d]{3}-[a-f\d]{12}$/i.test(body.openingId)) {
+    throw failure('Identifiant d ouverture invalide');
+  }
+  return body.openingId.toLowerCase();
+}
 function authorName(user, lang) {
   // Neither email nor phone is used as the public review identity.
   const candidate = user.pseudo || user.firstName;
@@ -69,7 +77,7 @@ function createEditorialLibrary({ repository, clock, sourceMatchesCategory, summ
     const unique = [...new Set(labels)];
     return { description: unique.slice(0, 3).join(' \u2022 ') + (unique.length > 3 ? ` +${unique.length - 3}` : '') };
   }
-  async function card(category, items, date, copies, stats, lang, user, requestDate) {
+  async function card(category, items, date, copies, stats, lang, user, requestDate, openings) {
     const state = await editorialAccess(repository, category, user);
     const source = sourceByKey(category.editorialSource);
     return { id: id(category), categoryId: id(category), name: pick(category.name, lang),
@@ -78,6 +86,7 @@ function createEditorialLibrary({ repository, clock, sourceMatchesCategory, summ
       source: { key: source.key, label: source.label, kinds: [...source.kinds] },
       locked: state.locked, requiresAuth: state.requiresAuth, gate: state.gate,
       itemCount: items.length, available: items.length > 0, editionDate: date, currentDate: requestDate,
+      openingCount: openings.find(row => id(row.categoryId) === id(category))?.openingCount || 0,
       coverKey: category.editorialSource, reviewSummary: safeSummary(stats.find(row => id(row.categoryId) === id(category))),
       // Force the allowlisted preview even for subscribers. Raw summaries can
       // contain a selection; only the separately screened teaser is public.
@@ -105,22 +114,33 @@ function createEditorialLibrary({ repository, clock, sourceMatchesCategory, summ
         .sort((a, b) => SOURCES.findIndex(source => source.key === a.editorialSource) - SOURCES.findIndex(source => source.key === b.editorialSource) || id(a).localeCompare(id(b)));
       // The default is today's edition. A missing publisher issue must never be
       // silently relabelled as today's content; ten real dates remain selectable.
-      const [availableDates, rows, copies, stats] = await Promise.all([
+      const [availableDates, rows, copies, stats, openings] = await Promise.all([
         dates(categories, requestDate), repository.items(categories.map(category => category._id), editionDate),
         repository.copies ? repository.copies([...new Set(categories.map(category => category.editorialSource))], editionDate) : [],
         repository.reviewSummaries(categories.map(category => category._id), editionDate),
+        repository.openingCounts ? repository.openingCounts(categories.map(category => category._id), editionDate) : [],
       ]);
       return { date: editionDate, currentDate: requestDate, availableDates, categories: await Promise.all(categories.map(category =>
-        card(category, rowsFor(category, rows, editionDate), editionDate, copies, stats, language, user, requestDate))) };
+        card(category, rowsFor(category, rows, editionDate), editionDate, copies, stats, language, user, requestDate, openings))) };
     },
     async edition(categoryId, date, { lang = 'fr', user = null } = {}) {
       const requestDate = currentDate();
       const { category, editionDate, items } = await loadEdition(categoryId, date, requestDate);
-      const [copies, stats] = await Promise.all([
+      const [copies, stats, openings] = await Promise.all([
         repository.copies ? repository.copies([category.editorialSource], editionDate) : [],
         repository.reviewSummaries([category._id], editionDate),
+        repository.openingCounts ? repository.openingCounts([category._id], editionDate) : [],
       ]);
-      return card(category, items, editionDate, copies, stats, languageOf(lang), user, requestDate);
+      return card(category, items, editionDate, copies, stats, languageOf(lang), user, requestDate, openings);
+    },
+    async open(categoryId, date, body, { user = null } = {}) {
+      const openingId = openingInput(body);
+      const instant = clock(), requestDate = editionDateFor(instant);
+      const { category, editionDate } = await loadEdition(categoryId, date, requestDate);
+      requireEditorialAccess(await editorialAccess(repository, category, user), category, user);
+      if (!repository.recordOpening) throw failure('Compteur des ouvertures indisponible', 503);
+      const result = await repository.recordOpening(category._id, editionDate, openingId, instant);
+      return { categoryId: id(category), editionDate, openingCount: result.openingCount, counted: result.counted };
     },
     async content(categoryId, date, { lang = 'fr', user = null } = {}) {
       const requestDate = currentDate();
@@ -154,4 +174,4 @@ function createEditorialLibrary({ repository, clock, sourceMatchesCategory, summ
   };
 }
 
-module.exports = { createEditorialLibrary, pagination, reviewInput, reviewView };
+module.exports = { createEditorialLibrary, pagination, reviewInput, reviewView, openingInput };

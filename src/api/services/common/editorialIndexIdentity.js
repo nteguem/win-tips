@@ -4,6 +4,10 @@ const REVIEW_IDENTITY_INDEX = Object.freeze({
   key: Object.freeze({ categoryId: 1, editionDate: 1, userId: 1 }),
   name: 'editorial_review_reader_edition_unique', unique: true,
 });
+const OPENING_IDENTITY_INDEX = Object.freeze({
+  key: Object.freeze({ categoryId: 1, editionDate: 1, openingId: 1 }),
+  name: 'editorial_opening_edition_action_unique', unique: true,
+});
 const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
 const same = (left, right) => JSON.stringify(left) === JSON.stringify(right);
 function matchesIndexDefinition(index, spec) {
@@ -17,4 +21,4 @@ function matchesIndexDefinition(index, spec) {
   }
   return true;
 }
-module.exports = { REVIEW_IDENTITY_INDEX, matchesIndexDefinition };
+module.exports = { REVIEW_IDENTITY_INDEX, OPENING_IDENTITY_INDEX, matchesIndexDefinition };

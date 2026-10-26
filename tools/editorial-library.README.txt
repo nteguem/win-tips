@@ -152,3 +152,50 @@ Verification
 Node tests (use the project's installed dependencies or a process-local
 NODE_PATH pointing to the existing dependency tree; no install is required):
   node --test tests/editorial-library.node-test.cjs tests/editorial.node-test.cjs
+
+Opening totals (native coupon editions)
+--------------------------------------
+The library and edition detail expose openingCount, shared by all readers and
+languages for the exact categoryId + editionDate. This is the number of counted
+opening actions, not a number of unique readers. There is no invented historical
+baseline: counting begins when an updated mobile client sends these actions.
+
+POST /api/editorial/categories/:categoryId/editions/:date/open
+Body: {"openingId":"4f5ca989-95f4-4e8e-a335-73de107ebc67"}
+Response: {"success":true,"data":{"categoryId":"...","editionDate":"YYYY-MM-DD",
+  "openingCount":1,"counted":true}}
+The body must contain only openingId, a UUIDv4; UUID casing is normalized.
+Repeating this UUID in the same category/date returns counted:false and the
+current shared total. A new intentional visit must use a new UUID. The same UUID
+in a different category/date is a separate action. No UUID or reader identity is
+returned. Missing editions and current VIP/rewarded-gate refusals never count.
+All GETs (library, detail, content, reviews) remain side-effect free.
+
+Call this endpoint only for the explicit reading navigation after the opening
+advertisement/access flow; use the same UUID for a bounded transport/5xx retry.
+This tracking call does not return protected content or grant access. Existing
+content access remains enforced separately, including if tracking fails.
+
+Persistence is one atomic unique receipt in editorialopenings. Each receipt has
+categoryId, editionDate, openingId and createdAt (plus a deterministic _id), with
+no user/device/token/IP/analysis/selection. There is no redundant counter to lose
+updates and no replica-set transaction requirement: standalone Mongo works too.
+Totals use the unique index prefix categoryId + editionDate; library reads batch
+all of its categories in one aggregation. No TTL removes idempotency receipts.
+Category/date counts survive service restarts and remain attached to that same
+category/date if the BO later remaps its source.
+
+Before enabling the POST in production, explicitly provision the new collection
+and exact index with the existing reviewed operator workflow:
+  node tools/editorial-indexes.cjs --check
+  node tools/editorial-indexes.cjs --apply --confirm-editorial-indexes
+Runtime requests never create collections or indexes. A missing/incompatible
+unique index rejects POST with 503; legacy GET data remains readable with zero
+receipts. This document and local tests do not deploy or provision production.
+
+Targeted pure tests:
+  node --test tests/editorial-library.node-test.cjs tests/editorial-openings.node-test.cjs
+Standalone Mongo/HTTP concurrency tests require an explicit cached disposable
+runtime and binary in WINTIPS_TEST_MONGO_RUNTIME/WINTIPS_TEST_MONGO_BINARY, with
+MONGOMS_RUNTIME_DOWNLOAD=false; then run:
+  node --test tests/editorial-openings.mongo-test.cjs
