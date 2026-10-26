@@ -81,14 +81,16 @@ test('empty, duplicate, oversized and unpublished-extra inventories are never pr
   }
   assert.equal((await harness(Array(51).fill(row())).service.workerConfig()).publishedSourceWindows.sources.every(w => !w.ready), true);
 });
-test('historic bilingual structure is checked without retroactive numeric qualification', async () => {
+test('published source identity does not depend on translation availability or quality', async () => {
   const h = harness(); h.rows[0].payload.analysis.en[0].paragraphs[0] = 'Two original analyses.';
   h.rows[0].contentHash = crypto.createHash('sha256').update(JSON.stringify(h.rows[0].payload)).digest('hex');
   assert.equal(windowFor(await h.service.workerConfig()).ready, true);
-  await assert.rejects(h.service.importBatch({ source: petit, editionDate: day, items: [h.rows[0].payload] }));
+  h.repository.upsertBatch = async () => ({ upsertedCount: 1 });
+  const current = createEditorialService({ repository: h.repository, clock: () => new Date(`${day}T10:00:00Z`), importEnabled: () => true });
+  assert.equal((await current.importBatch({ source: petit, editionDate: day, items: [h.rows[0].payload] })).imported, 1);
   delete h.rows[0].payload.analysis.en;
   h.rows[0].contentHash = crypto.createHash('sha256').update(JSON.stringify(h.rows[0].payload)).digest('hex');
-  assert.equal(windowFor(await h.service.workerConfig()).ready, false);
+  assert.equal(windowFor(await h.service.workerConfig()).ready, true);
 });
 test('Paris midnight always queries the new edition and rejects stale rows', async () => {
   const h = harness(undefined, undefined, `${day}T22:00:00Z`), c = await h.service.workerConfig();

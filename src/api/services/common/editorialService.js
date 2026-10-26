@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const { SOURCES, sourceByKey, validateCategorySource, failure } = require('./editorialSources');
-const { validateBatch, normalizeItem, dateOnly, hasCompleteEnglish, requireCompleteEnglish } = require('./editorialValidation');
+const { validateBatch, normalizeItem, dateOnly, hasCompleteEnglish, requireCompleteEnglish, completeEnglishWithFallback } = require('./editorialValidation');
 const { editionDateFor } = require('./editorialCalendar');
 const { editorialAccess, requireEditorialAccess } = require('./editorialAccess');
 
@@ -8,15 +8,6 @@ const pickLang = (value, lang) => typeof value === 'string' ? value : (value && 
 const id = value => String(value && value._id || value);
 const own = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
 const WINDOW_SOURCES = ['rdj_petit_journal', 'rdj_turf_quinte'];
-const storedEnglishStructure = item => {
-  const translated = value => typeof value?.en === 'string' && !!value.en.trim();
-  return translated(item.title) && (!item.summary?.fr || translated(item.summary)) && translated(item.selection?.label) &&
-    Array.isArray(item.analysis?.en) && item.analysis.en.length === item.analysis.fr.length &&
-    item.analysis.fr.every((section, index) => typeof item.analysis.en[index].heading === 'string' &&
-      !!item.analysis.en[index].heading.trim() && Array.isArray(item.analysis.en[index].paragraphs) &&
-      item.analysis.en[index].paragraphs.length === section.paragraphs.length &&
-      item.analysis.en[index].paragraphs.every(p => typeof p === 'string' && !!p.trim()));
-};
 
 // An inventory of published identities, not a declaration that a publisher's
 // whole edition is complete. The worker must still match the current inventory.
@@ -47,9 +38,8 @@ async function publishedSourceWindows(repository, categories, editionDate, insta
             !/^[a-f\d]{64}$/.test(row.contentHash || '') ||
             crypto.createHash('sha256').update(JSON.stringify(row.payload)).digest('hex') !== row.contentHash) throw new Error('row');
         const item = normalizeItem(row.payload, source, editionDate);
-        // This read-only identity proof does not re-publish/re-qualify historic
-        // wording under today's numeric-equivalence rules. Import stays strict.
-        if (!storedEnglishStructure(item)) throw new Error('english_structure');
+        // Inventory proves source identities and clocks. Existing publication
+        // remains valid even when an English translation is unavailable.
         if (!item.startsAtUtc || new Date(row.startsAtUtc).toISOString() !== item.startsAtUtc || item.status !== 'upcoming') throw new Error('clock');
         return { sourceId: item.sourceId, sourceUrl: item.sourceUrl, kind: item.kind, startsAtUtc: item.startsAtUtc,
           sport: { key: item.sport.key },
@@ -112,7 +102,10 @@ function createEditorialService({ repository, clock = () => new Date(), importEn
     async importBatch(body) {
       if (!importEnabled()) throw failure('Import editorial non active', 403);
       const batch = validateBatch(body, clock());
-      if (requireEnglish()) requireCompleteEnglish(batch.items);
+      if (requireEnglish()) {
+        completeEnglishWithFallback(batch.items);
+        requireCompleteEnglish(batch.items);
+      }
       const categories = (await repository.categories()).filter(c => c.editorialSource === batch.source && sourceMatchesCategory(c));
       if (!categories.length) return { source: batch.source, date: batch.editionDate, ignored: true, reason: 'no_active_category_mapping', imported: 0, notificationsSent: 0 };
       // Every item and every target is validated before the first DAL write.

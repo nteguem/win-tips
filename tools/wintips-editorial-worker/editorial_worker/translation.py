@@ -719,21 +719,75 @@ def require_bilingual(payload):
     return True
 
 
-def translate_batch(payload, translator):
-    """No partial result is returned if even one paragraph/leg is rejected."""
+def _translation_reason(error):
+    code = getattr(error, 'code', '')
+    return code if isinstance(code, str) and re.fullmatch(r'[a-z][a-z0-9_]{0,99}', code) else 'translation_unavailable'
+
+
+class SourceFallbackTranslator:
+    """Continue publishing the original source when no provider can start."""
+    version = 'source-fallback-v1'
+    def __init__(self, error):
+        self.reason = _translation_reason(error)
+        self.records = []
+    def text(self, source, item):
+        raise TranslationRejected(self.reason)
+    market = text
+
+
+def translate_batch(payload, translator, *, best_effort=False):
+    """Add EN without changing source facts; publication uses best effort.
+
+    In publication mode provider outages, unknown market wording and quality
+    diagnostics cannot remove a publisher selection. Keep a usable translated
+    string; when none exists keep its original French in that EN slot.
+    """
     first_attempt = len(getattr(translator, 'attempts', []))
     prepare = getattr(translator, 'prepare_batch', None)
+    warnings, prepare_failed = [], False
     if prepare is not None:
-        prepare(payload)
+        try:
+            prepare(deepcopy(payload) if best_effort else payload)
+        except Exception as exc:
+            if not best_effort:
+                raise
+            prepare_failed = True
+            warnings.append({'stage': 'prepare', 'code': _translation_reason(exc)})
     result = deepcopy(payload)
     before = len(translator.records)
+
+    def translated(method, source, item, field):
+        if not best_effort:
+            return getattr(translator, method)(source, item)
+        context = deepcopy(item)
+        try:
+            if prepare_failed:
+                # Retain successful earlier batches and deterministic labels.
+                # Do not retry an unavailable provider for every paragraph.
+                deterministic = getattr(translator, 'deterministic', None)
+                target = deterministic(source, context) if deterministic else None
+                if target is None:
+                    make_job = getattr(translator, 'job', None)
+                    job = make_job(source, context) if make_job else None
+                    if not job or job['key'] not in getattr(translator, 'prepared', {}):
+                        raise TranslationRejected('translation_batch_unavailable')
+                    target = getattr(translator, method)(source, context)
+            else:
+                target = getattr(translator, method)(source, context)
+            if not isinstance(target, str) or (source.strip() and not target.strip()):
+                raise TranslationRejected('translation_response_empty')
+            return target
+        except Exception as exc:
+            warnings.append({'field': field, 'code': _translation_reason(exc), 'fallback': 'source_fr'})
+            return source
+
     for top in result.get("items", []):
         for item in _walk(top):
             for field in ("title", "summary"):
-                item[field]["en"] = translator.text(item[field]["fr"], item)
-            item["selection"]["label"]["en"] = translator.market(item["selection"]["label"]["fr"], item)
-            item["analysis"]["en"] = [{"heading": translator.text(section["heading"], item),
-                "paragraphs": [translator.text(p, item) for p in section["paragraphs"]]} for section in item["analysis"]["fr"]]
+                item[field]["en"] = translated('text', item[field]["fr"], item, field)
+            item["selection"]["label"]["en"] = translated('market', item["selection"]["label"]["fr"], item, 'selection')
+            item["analysis"]["en"] = [{"heading": translated('text', section["heading"], item, 'analysis.heading'),
+                "paragraphs": [translated('text', p, item, 'analysis.paragraph') for p in section["paragraphs"]]} for section in item["analysis"]["fr"]]
     require_bilingual(result)
     # Structural proof that adding EN has not modified any French or source fact.
     restored = deepcopy(result)
@@ -752,6 +806,10 @@ def translate_batch(payload, translator):
         raise TranslationRejected("french_or_structural_fact_changed")
     audit = {"version": getattr(translator, 'version', VERSION), "records": translator.records[before:],
              "frAndStructuralFactsPreserved": True, "languageReviewRequired": True}
+    if best_effort:
+        audit.update({'qualityPolicy': 'advisory-v1', 'translationBlocksPublication': False,
+            'warnings': warnings, 'sourceFallbacks': sum(row.get('fallback') == 'source_fr' for row in warnings) +
+                sum(row.get('proof', {}).get('sourceFallback') is True for row in audit['records'])})
     if getattr(translator, 'provider', None) in {'azure', 'gemini'}:
         audit['provider'] = translator.provider
         audit['cloudAttempts'] = deepcopy(translator.attempts[first_attempt:])

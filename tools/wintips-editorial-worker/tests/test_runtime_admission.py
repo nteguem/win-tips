@@ -142,11 +142,11 @@ class RunnerAdmissionTests(unittest.TestCase):
             if source == 'rdj_petit_journal':
                 item.update(source=source, sourceId='123456', sourceUrl='https://www.ruedesjoueurs.com/paris-sportifs/le-petit-journal/123456-journal-23-octobre-2026.html')
             return {'status': 'ready', 'items': [item], 'issues': []}
-        def translate(payload, translator):
+        def translate(payload, translator, **options):
             calls.append(payload['source'])
             if len(calls) == 2:
                 model_runtime.require_admission(utc(8, 55))
-            return original(payload, translator)
+            return original(payload, translator, **options)
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {'WINTIPS_EDITORIAL_MANAGE_MODEL': 'true'}), \
                 patch.object(runner, 'collect', side_effect=collect), patch.object(translation, 'translate_batch', side_effect=translate):
             api = Two()

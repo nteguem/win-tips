@@ -176,8 +176,8 @@ def match_item(detail, page, source, edition, *, resolver, pick=None, odds=None,
     try:
         result["selection"]["betType"] = describe_market(pick, [detail["home"], detail["away"]], detail["sport"])[0]
     except MarketError:
-        # Existing supported journal markets keep their original label; the
-        # guarded translator will explicitly accept or reject that grammar.
+        # Preserve every authored journal label. Unknown market wording uses
+        # Gemini prose translation, or original-source fallback if unavailable.
         pass
     return result
 

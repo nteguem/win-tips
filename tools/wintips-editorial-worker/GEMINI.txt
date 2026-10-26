@@ -6,7 +6,8 @@ WINTIPS_EDITORIAL_GEMINI_KEY=<secret dans l'environnement privé seulement>
 
 La factory accepte aussi GEMINI_API_KEY, puis GOOGLE_API_KEY si la clé dédiée
 est absente. Aucune recherche de fichier contenant une clé, aucun secret dans
-Git, les URL, les caches ou les audits. Une clé absente bloque la traduction.
+Git, les URL, les caches ou les audits. Une clé absente conserve le FR dans
+les champs EN et laisse publier avec un audit de repli.
 Le choix Gemini ne démarre aucun modèle local, même si MANAGE_MODEL=true.
 Azure, Marian/Qwen et Ollama restent disponibles par sélection explicite.
 
@@ -15,17 +16,23 @@ candidate STOP. Pas de recherche web, outil, SDK supplémentaire ou repli cloud
 automatique. Chaque fragment est un paragraphe complet ou un champ du contenu.
 Les noms connus et valeurs numériques sont protégés dans des spans HTML ; leur
 contenu, multiplicité, attributs et présence sont vérifiés avant retrait du HTML.
-Les marchés restent déterministes. Aucune garde d'ordre lexical de LLM local.
-Un lot incomplet ou un fait protégé modifié ne devient jamais publiable.
-La validation de complétude anglaise et les validations API restent obligatoires.
-Ces contrôles ne prouvent pas la fidélité sémantique : qualifier les vraies sorties.
+Les marchés connus gardent une traduction déterministe. Tout autre libellé
+(y compris un nouveau marché joueur) est traduit par Gemini comme du texte.
+La factory active qualityPolicy=advisory-v1 : noms, chiffres et fidélité restent
+des diagnostics ; une traduction imparfaite ne bloque jamais la publication.
+Sans résultat exploitable, le fragment FR est conservé dans son champ EN.
+La source FR et les faits structurés restent inchangés. Source, date, schéma,
+droits et déduplication restent contrôlés. La sortie est du texte simple ;
+les balises et le contenu script/style du fournisseur sont retirés.
 
 Limites par défaut : délai requête45s, délai global180s pour la factory directe
 (runner : au plus600s et le budget CLI demandé), 12requêtes physiques maximum,
 12fragments/12000unités UTF-16 HTML par lot, sortie8192tokens maximum.
 429/500/502/503/504 seulement : deux reprises maximum avec quota à chaque essai.
 Retry-After entier respecté dans la limite du budget ; sinon arrêt sans reprise.
-Toute autre erreur, réponse tronquée, JSON ambigu ou ID incorrect ferme le lot.
+Toute autre erreur, réponse tronquée, JSON ambigu ou ID incorrect interrompt
+l'appel de traduction ; les fragments indisponibles conservent leur source FR.
+Une panne fournisseur ne provoque pas un nouvel appel par paragraphe.
 
 WINTIPS_EDITORIAL_GEMINI_DAILY_CHARACTERS=1000000
 WINTIPS_EDITORIAL_GEMINI_MONTHLY_CHARACTERS=10000000
@@ -36,11 +43,14 @@ sont ni des quotas Google contractuels, ni une estimation du coût en tokens.
 Le quota doit rester dans un répertoire durable privé partagé par les exécutions.
 
 Caches privés distincts : translation-cache/gemini/{responses,native}.
-Identité : provider/modèle/endpoint/consigne/options/source/ancrages/contexte FR.
+Identité : provider/modèle/endpoint/consigne/options/source/ancrages/contexte FR
+et qualityPolicy=advisory-v1, distincte des anciens caches stricts.
 Toute réponse réutilisée est revalidée. Les drapeaux passed anciens ne sont pas
 une preuve. Les audits cloud gardent les tentatives et l'usage Google retourné.
-Les refus sont dans translation-audits/EDITION/SOURCE.failed.json, avec motifs,
-candidats et contexte disponibles, sans texte d'exception réseau ni clé.
+Les diagnostics sont dans translation-audits/EDITION/SOURCE.json : policy,
+warnings, sourceFallbacks et preuves par fragment. Les anciennes traces
+SOURCE.failed.json sont historiques et ne bloquent pas une nouvelle tentative.
+Aucun texte d'exception réseau ni clé n'est exporté.
 
 Documentation primaire consultée le24octobre2026 :
 https://ai.google.dev/api/generate-content

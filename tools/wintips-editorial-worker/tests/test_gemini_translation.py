@@ -489,7 +489,7 @@ class GeminiRunnerTests(unittest.TestCase):
             self.assertTrue(report['sources'][0]['bilingual'])
             self.assertNotIn('deferred', report)
 
-    def test_failure_retains_guard_evidence_attempts_and_never_claims_publication(self):
+    def test_quality_rejection_is_advisory_and_preview_retains_attempt_evidence(self):
         class Broken(TestTranslator):
             provider = 'gemini'
             def __init__(self): self.attempts = []
@@ -501,13 +501,14 @@ class GeminiRunnerTests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             report = self.run_case(directory, Broken())
             row = report['sources'][0]
-            audit = json.loads(Path(row['translationFailureAuditFile']).read_bytes())
-            self.assertEqual(audit['details']['errors'], ['number_changed'])
-            self.assertEqual(audit['details']['candidate'], 'Nine horses.')
+            audit = json.loads((Path(directory) / 'translation-audits/2026-10-23/rdj_turf_quinte.json').read_bytes())
+            self.assertGreater(audit['sourceFallbacks'], 0)
+            self.assertTrue(any(warning['code'] == 'gemini_output_structure_or_facts_changed' for warning in audit['warnings']))
             self.assertEqual(audit['cloudAttempts'][0]['rejection']['code'], 'number_changed')
-            self.assertFalse(audit['publicationAllowed'])
+            self.assertFalse(audit['translationBlocksPublication'])
             self.assertNotIn(KEY, json.dumps(audit))
-            self.assertTrue(report['blocked'])
+            self.assertFalse(report.get('blocked', False))
+            self.assertTrue(row['bilingual'])
             self.assertFalse(report['published'])
 
     def test_missing_key_never_calls_cloud_or_local_runtime(self):

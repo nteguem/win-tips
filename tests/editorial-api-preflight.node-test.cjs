@@ -61,7 +61,7 @@ test('API preflight byte hashes distinguish whitespace-equivalent JSON inputs', 
   assert.notEqual(first.payloadSha256, second.payloadSha256);
 });
 
-test('API preflight refuses missing English fields and returns only safe field paths', () => {
+test('API preflight uses source fallback for missing English and reports advisory field paths', () => {
   for (const [field, remove] of [
     ['title', item => { delete item.title.en; }],
     ['summary', item => { delete item.summary.en; }],
@@ -69,34 +69,51 @@ test('API preflight refuses missing English fields and returns only safe field p
     ['analysis[0].heading', item => { delete item.analysis.en; }],
   ]) {
     const value = payload(); remove(value.items[0]);
-    const result = rejected(value, now(), 'requireCompleteEnglish');
-    assert.equal(result.code, 'api_complete_english_invalid');
+    const result = validate(bytes(value), now());
+    assert.equal(result.passed, true);
+    assert.equal(result.code, 'validated');
     assert.ok(result.diagnostics.some(row => row.sourceId === '5795487' && row.field === field));
     for (const row of result.diagnostics) assert.deepEqual(Object.keys(row).sort(), ['code', 'field', 'sourceId']);
   }
 });
 
-test('API preflight rejects missing, changed and added quantities before POST without disclosing prose', () => {
+test('API preflight reports changed English quantities without blocking or disclosing prose', () => {
   for (const target of [
     'CANDIDATE_TEXT_MUST_NOT_LEAK Equipe A has 4 wins in 5 matches (2-1).',
     'CANDIDATE_TEXT_MUST_NOT_LEAK Equipe A has wins in 5 matches (2-1).',
     'CANDIDATE_TEXT_MUST_NOT_LEAK Equipe A has 3 wins in 5 matches (2-1) and 7 titles.',
   ]) {
     const value = payload(); value.items[0].analysis.en[0].paragraphs[0] = target;
-    const result = rejected(value, now(), 'requireCompleteEnglish');
+    const result = validate(bytes(value), now());
+    assert.equal(result.passed, true);
     assert.deepEqual(result.diagnostics, [{ sourceId: '5795487', field: 'analysis[0].paragraphs[0]', code: 'english_field_missing_or_numeric_mismatch' }]);
     assert.equal(JSON.stringify(result).includes('CANDIDATE_TEXT_MUST_NOT_LEAK'), false);
     assert.equal(JSON.stringify(result).includes(value.items[0].sourceUrl), false);
   }
 });
 
-test('API preflight rejects incomplete English paragraph coverage with the exact missing path', () => {
+test('API preflight fills incomplete English paragraph coverage and keeps advisory paths', () => {
   const value = payload(); value.items[0].analysis.fr[0].paragraphs.push('La sélection reste incertaine.');
-  const result = rejected(value, now(), 'requireCompleteEnglish');
+  const result = validate(bytes(value), now());
+  assert.equal(result.passed, true);
   assert.deepEqual(result.diagnostics, [
     { sourceId: '5795487', field: 'analysis[0].paragraphs', code: 'english_structure_mismatch' },
     { sourceId: '5795487', field: 'analysis[0].paragraphs[1]', code: 'english_field_missing_or_numeric_mismatch' },
   ]);
+});
+test('API preflight accepts malformed or overlong English through source fallback before POST', () => {
+  for (const mutate of [
+    item => { item.title.en = 'X'.repeat(501); },
+    item => { item.selection.label.en = { unexpected: true }; },
+    item => { item.analysis.en = []; },
+    item => { item.analysis.en[0].heading = ''; },
+    item => { item.analysis.en[0].paragraphs[0] = 'X'.repeat(6001); },
+  ]) {
+    const value = payload(); mutate(value.items[0]);
+    const raw = bytes(value), result = validate(raw, now());
+    assert.equal(result.passed, true);
+    assert.equal(result.payloadSha256, sha(raw));
+  }
 });
 
 test('API preflight refuses invalid schema, duplicate identities and invalid publisher URLs safely', () => {

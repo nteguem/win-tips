@@ -530,6 +530,8 @@ class AzureTranslator:
         for top in payload.get('items', []):
             for item in _walk(top):
                 values = [item[field]['fr'] for field in ('title', 'summary')]
+                if getattr(self, 'quality_policy', None) == 'advisory':
+                    values.append(item['selection']['label']['fr'])
                 for section in item['analysis']['fr']:
                     values.extend([section['heading'], *section['paragraphs']])
                 for source in values:

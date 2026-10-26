@@ -65,13 +65,15 @@ class AzureRunnerTests(unittest.TestCase):
                 '/api/internal/editorial/import', '/api/internal/editorial/notifications/drain'])
             self.assertEqual(api.calls[1][1]['items'][0]['analysis']['fr'], payload_item()['analysis']['fr'])
 
-    def test_missing_key_blocks_source_without_french_only_import(self):
+    def test_missing_key_keeps_source_and_imports_without_translation(self):
         with TemporaryDirectory() as directory:
             api = Api()
             report = self.run_case(directory, api, None, publish=True)
-            self.assertEqual(report['sources'][0]['status'], 'translation_blocked')
-            self.assertIn('azure_key_required', report['sources'][0]['issues'])
-            self.assertFalse(any(route.endswith('/import') for route, _ in api.calls))
+            self.assertEqual(report['sources'][0]['status'], 'ready')
+            self.assertTrue(report['sources'][0]['imported'])
+            self.assertGreater(report['sources'][0]['translationSourceFallbacks'], 0)
+            sent = next(payload for route, payload in api.calls if route.endswith('/import'))
+            self.assertEqual(sent['items'][0]['summary']['en'], sent['items'][0]['summary']['fr'])
 
     def test_batch_preloader_gets_original_fields_before_translation_without_mutation(self):
         calls = []

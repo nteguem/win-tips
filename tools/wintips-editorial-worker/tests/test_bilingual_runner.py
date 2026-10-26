@@ -92,17 +92,19 @@ class BilingualRunnerTests(unittest.TestCase):
             self.assertEqual(report['notificationsAccepted'], 1)
             self.assertTrue(report['notificationsSent'])
 
-    def test_translation_failure_never_posts_french_only_content(self):
+    def test_translation_failure_publishes_original_source_fallback(self):
         class Broken(TestTranslator):
             def text(self, *args):
                 raise TranslationRejected('fixture_translation_rejected')
         with tempfile.TemporaryDirectory() as directory:
             api = Api()
             report = self.run_case(directory, api, Broken(), publish=True)
-            self.assertTrue(report['blocked'])
-            self.assertFalse(any(route.endswith('/import') for route, _ in api.calls))
-            self.assertEqual(report['sources'][0]['status'], 'translation_blocked')
-            self.assertFalse((Path(directory) / 'editions/2026-10-23/rdj_turf_quinte.json').exists())
+            self.assertFalse(report.get('blocked', False))
+            self.assertTrue(report['sources'][0]['imported'])
+            self.assertGreater(report['sources'][0]['translationSourceFallbacks'], 0)
+            sent = next(payload for route, payload in api.calls if route.endswith('/import'))
+            self.assertEqual(sent['items'][0]['summary']['en'], sent['items'][0]['summary']['fr'])
+            self.assertTrue((Path(directory) / 'editions/2026-10-23/rdj_turf_quinte.json').exists())
 
     def test_empty_collection_still_drains_existing_pending_notifications(self):
         with tempfile.TemporaryDirectory() as directory:

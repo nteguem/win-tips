@@ -24,7 +24,7 @@ from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_ope
 from .azure_translation import (AzureTranslator, Quota, ProtectedText, NUMBERS,
     EXTRA_NUMBER, EXTRA_ONE, _characters, _json_bytes,
     _private_regular, _quota_lock, _write_private, protect, validate_output)
-from .translation import TranslationRejected, _walk
+from .translation import TranslationRejected, LocalTranslator, _walk
 
 
 VERSION = 'gemini-html-facts-v6-explicit-html-contract'
@@ -135,6 +135,48 @@ def _validated(source, item, html):
     if _source_prose_unchanged(source, item, html):
         raise TranslationRejected('gemini_source_prose_not_translated')
     return target, {**proof, 'validatorVersion': VERSION}
+
+
+def _advisory_validated(source, item, html):
+    """Quality diagnostics never reject a readable provider translation.
+
+    Responses remain plain text in the API: extract text rather than trusting
+    provider HTML. Empty/oversized responses still use the caller's source
+    fallback. A failed quality proof is evidence for review, not a publish gate.
+    """
+    try:
+        target, proof = _validated(source, item, html)
+        return target, {**proof, 'qualityPolicy': 'advisory-v1', 'warnings': []}
+    except TranslationRejected as exc:
+        warning = exc.code
+    fallback = {'passed': False, 'qualityPolicy': 'advisory-v1',
+        'warnings': [warning], 'validatorVersion': VERSION,
+        'semanticQualityProven': False, 'sourceFallback': True}
+    if not isinstance(html, str) or len(html) > 200_000:
+        return source, fallback
+    class ReadableText(HTMLParser):
+        def __init__(self):
+            super().__init__(convert_charrefs=True)
+            self.parts, self.hidden = [], 0
+        def handle_starttag(self, tag, attrs):
+            if tag in {'script', 'style'}: self.hidden += 1
+            elif not self.hidden and tag in {'br', 'p', 'div', 'li'}: self.parts.append('\n')
+        def handle_endtag(self, tag):
+            if tag in {'script', 'style'} and self.hidden: self.hidden -= 1
+            elif not self.hidden and tag in {'p', 'div', 'li'}: self.parts.append('\n')
+        def handle_data(self, value):
+            if not self.hidden: self.parts.append(value)
+    parser = ReadableText()
+    try:
+        parser.feed(html)
+        parser.close()
+    except (ValueError, TypeError):
+        return source, fallback
+    target = ''.join(parser.parts).strip()
+    if not target:
+        return source, fallback
+    return target, {'passed': False, 'qualityPolicy': 'advisory-v1',
+        'warnings': [warning], 'validatorVersion': VERSION, 'semanticQualityProven': False}
 
 
 def _closed_json(raw):
@@ -630,7 +672,10 @@ class GeminiTranslator(AzureTranslator):
     version = VERSION
 
     def __init__(self, config, *, cache_dir, quota_dir, request=None, now=None,
-            monotonic=time.monotonic, sleep=time.sleep):
+            monotonic=time.monotonic, sleep=time.sleep, quality_policy='strict'):
+        if quality_policy not in {'strict', 'advisory'}:
+            raise ValueError('invalid_translation_quality_policy')
+        self.quality_policy = quality_policy
         self.config, self.directory = config, Path(cache_dir) / 'gemini'
         import importlib
         adapter = importlib.import_module(__package__.split('.vendor.')[0] + '.content_hub')
@@ -670,8 +715,30 @@ class GeminiTranslator(AzureTranslator):
             'factContextSha256': sha256(_json_bytes(facts)).hexdigest()}
         if item.get('contextVersion') == 'rdj-neutral-narrative-v1':
             identity['contextContract'] = item['contextVersion']
+        if self.quality_policy == 'advisory':
+            identity['qualityPolicy'] = 'advisory-v1'
         return {'key': sha256(_json_bytes(identity)).hexdigest(), 'identity': identity,
             'source': source, 'item': item, 'html': html}
+
+    def validate_candidate(self, source, item, html):
+        validate = _advisory_validated if self.quality_policy == 'advisory' else _validated
+        return validate(source, item, html)
+
+    def deterministic(self, source, item):
+        if self.quality_policy == 'advisory' and source == item.get('selection', {}).get('label', {}).get('fr'):
+            try:
+                return LocalTranslator.market(self, source, item)
+            except TranslationRejected:
+                # New publisher markets are ordinary text to translate. They
+                # need no release of a closed market vocabulary to appear.
+                return None
+        return super().deterministic(source, item)
+
+    def market(self, source, item):
+        if self.quality_policy != 'advisory':
+            return super().market(source, item)
+        target = self.deterministic(source, item)
+        return target if target is not None else self.text(source, item)
 
     def cached(self, job):
         path = self.directory / 'responses' / (job['key'] + '.json')
@@ -681,7 +748,7 @@ class GeminiTranslator(AzureTranslator):
             if path.stat().st_size > 2_000_000: raise ValueError()
             record = _closed_json(path.read_bytes())
             if not isinstance(record, dict) or record.get('identity') != job['identity'] or not isinstance(record.get('html'), str): raise ValueError()
-            target, proof = _validated(job['source'], job['item'], record['html'])
+            target, proof = self.validate_candidate(job['source'], job['item'], record['html'])
             native_key, fragment_id = record.get('nativeResponseKey'), record.get('nativeFragmentId')
             if not isinstance(native_key, str) or not re.fullmatch(r'[a-f0-9]{64}', native_key): raise ValueError()
             native_path = self.directory / 'native' / (native_key + '.json')
@@ -776,7 +843,7 @@ class GeminiTranslator(AzureTranslator):
                 rejections = []
                 for (index, job), html in zip(active, translated):
                     try:
-                        target, proof = _validated(job['source'], job['item'], html)
+                        target, proof = self.validate_candidate(job['source'], job['item'], html)
                     except TranslationRejected as exc:
                         rejections.append({'id': str(index), 'cacheKey': job['key'], 'source': job['source'],
                             'candidateHtml': html, 'code': exc.code, 'diagnostics': _repair_diagnostics(job, html)})
@@ -793,7 +860,7 @@ class GeminiTranslator(AzureTranslator):
                 validated = []
                 for index, job in enumerate(jobs):
                     html, _, _, row_native_key, row_reservation = accepted[index]
-                    target, proof = _validated(job['source'], job['item'], html)
+                    target, proof = self.validate_candidate(job['source'], job['item'], html)
                     validated.append((index, job, html, target, proof, row_native_key, row_reservation))
                 self.remaining()
                 for index, job, html, target, proof, row_native_key, row_reservation in validated:
@@ -885,4 +952,4 @@ def create_translator_from_env(cache_dir, max_seconds=180):
     quota = Path(os.environ.get('WINTIPS_EDITORIAL_GEMINI_QUOTA_DIR', '/var/lib/wintips-editorial-worker/gemini-quota'))
     if not quota.is_absolute():
         raise TranslationRejected('gemini_absolute_quota_directory_required')
-    return GeminiTranslator(config, cache_dir=cache_dir, quota_dir=quota)
+    return GeminiTranslator(config, cache_dir=cache_dir, quota_dir=quota, quality_policy='advisory')

@@ -110,7 +110,7 @@ test('Goals accepts two/three goals-only selections and rejects winners or a fou
   assert.throws(() => validateBatch(batch('rdj_football_goals', row), clock()));
   assert.throws(() => validateBatch(batch('rdj_football_goals', ticket('rdj_football_goals', 4)), clock()));
 });
-test('all new sources retain exact edition, publisher identity, 30 minute lead and English-before-write guards', async () => {
+test('all new sources retain source/time guards and allow English fallback in combined legs', async () => {
   const row = ticket(), source = 'rdj_football_duo';
   row.legs[1].startsAtUtc = day + 'T08:29:59Z'; assert.throws(() => validateBatch(batch(source, row), clock()));
   row.legs[1].startsAtUtc = day + 'T08:30:00Z'; row.startsAtUtc = null; assert.equal(validateBatch(batch(source, row), clock()).items.length, 1);
@@ -120,8 +120,8 @@ test('all new sources retain exact edition, publisher identity, 30 minute lead a
   const repository = { categories: async () => [{ _id: 'a'.repeat(24), isActive: true, isVip: true, editorialSource: source }], upsertBatch: async () => { writes++; return {}; } };
   const service = createEditorialService({ repository, clock, importEnabled: () => true });
   const untranslated = ticket(); delete untranslated.legs[0].analysis.en;
-  await assert.rejects(service.importBatch(batch(source, untranslated))); assert.equal(writes, 0);
-  await service.importBatch(batch(source, ticket())); assert.equal(writes, 1);
+  await service.importBatch(batch(source, untranslated)); assert.equal(writes, 1);
+  await service.importBatch(batch(source, ticket())); assert.equal(writes, 2);
 });
 test('Multisports supports only basketball and volleyball single analyses', () => {
   for (const sport of ['basketball', 'volleyball']) assert.equal(validateBatch(batch('rdj_multisport_analysis', match(111, sport)), clock()).items[0].sport.key, sport);

@@ -1,5 +1,15 @@
 WINTIPS — WORKER ÉDITORIAL RDJ
 
+POLITIQUE DE PUBLICATION — 26 OCTOBRE 2026
+La traduction ne bloque plus une source valide. La publication et la preview
+--translate utilisent translate_batch(..., best_effort=True). Gemini traduit
+les marchés inconnus ; les diagnostics de noms/chiffres/style sont consultables,
+sans refuser une traduction imparfaite. Sans résultat exploitable, le fragment
+FR est conservé dans son champ EN. Clé absente ou quota épuisé ne suppriment
+aucun pronostic. Source, date, heure, schéma, droits et déduplication restent
+contrôlés. Les modes locaux sont historiques : leurs refus de qualité internes
+sont également convertis en repli FR par le runner de publication.
+
 PRÉPARATION LOCALE, ACTIVATION SÉPARÉE
 Aucun service ou timer n'est installé automatiquement. L'installateur explicite
 décrit ci-dessous laisse toujours les unités non armées. Aucun import, index, mapping
@@ -14,7 +24,7 @@ standard : pas de navigateur, requests ou BeautifulSoup. Europe/Paris est résol
 par ZoneInfo ; le petit TZif IANA fourni avec provenance/licences sert uniquement
 de repli quand la base système manque, notamment sous Windows.
 
-La publication exige un vrai contenu bilingue. Azure F0 utilise la bibliothèque
+La publication complète les champs FR/EN au mieux. Azure F0 utilise la bibliothèque
 standard et une clé privée, sans modèle local : lire AZURE-F0.txt. Les modes
 locaux suivants sont historiques et optionnels. Le mode Marian int8 nécessite
 CTranslate2 et SentencePiece déjà installés dans le répertoire opérateur, plus les
@@ -39,7 +49,7 @@ Depuis tools/wintips-editorial-worker :
 
 Le mode par défaut est dry-run, même si ce drapeau est omis. Sans --translate,
 la prévisualisation peut conserver le français seul. Avec --translate, la même
-traduction et les mêmes gardes bilingues que la publication sont exigées, mais
+politique de traduction au mieux que la publication est utilisée, mais
 aucun POST d'import ou notification n'est exécuté.
 
 Sans --api-base, les sept adaptateurs sont inspectés. Avec --api-base (ou
@@ -71,10 +81,10 @@ LES TROIS PHASES D'UN TOUR
 1. Collecter les sources publiques, vérifier identités/date/heure et sauvegarder
    les lots FR. La collecte HTTP se termine avant l'inférence : le temps de
    traduction ne consomme pas son budget de quatre minutes.
-2. Traduire et valider les lots complets FR/EN, conserver les audits privés et
+2. Traduire au mieux les lots FR/EN, conserver les audits privés et
    libérer un éventuel runtime local détenu avant les imports et l'attente FCM.
-   Une source absente ne publie rien. Une source invalide ou traduction rejetée
-   est bloquée sans envoyer son lot FR seul ; les autres sources restent isolées.
+   Une source absente ne publie rien. Une source invalide reste bloquée ; une
+   traduction indisponible conserve le FR original dans les champs EN.
 3. Revalider l'édition courante et le délai avant chaque POST import. L'API
    conserve l'autorité sur les catégories, les gates et les droits VIP. Puis,
    quand les notifications sont autorisées, POST notifications/drain avec
@@ -93,7 +103,7 @@ du LLM local n'est pas utilisé dans ce mode. Aucune qualité sémantique parfai
 n'est garantie : une première vraie revue reste nécessaire après réception d'une clé.
 30 secondes/requête, 180 secondes globales, quotas durables UTC jour/mois avant
 chaque tentative, markup et retries inclus ; maximum mensuel autorisé 2000000.
-Sans clé, pas d'appel. Sans quota, pas de repli local ni import FR seul. Le mode
+Sans clé ou quota, pas d'appel ni repli local : les champs EN conservent le FR. Le mode
 Azure ne prend aucun verrou BigWin et ignore l'admission du modèle local, même
 si une ancienne configuration contient MANAGE_MODEL=true. Lire AZURE-F0.txt
 pour les paramètres privés, le cache, les limites et les prérequis du tarif F0.
@@ -174,12 +184,11 @@ preuves historiques, jamais une garantie de délai pour une prochaine édition.
 translate_batch retourne une copie bilingue et un audit séparé. title.en,
 summary.en, selection.label.en et analysis.en sont complétés, y compris chaque
 rencontre d'un combiné. Les paragraphes FR et faits structurés ne sont pas modifiés.
-Un intitulé connu peut avoir une traduction déterministe ; les vraies analyses
-sont traduites par les modèles locaux. Rien n'est simplement étiqueté anglais.
-Les gardes contrôlent notamment noms, chiffres, résultats, négations et chronologie,
-y compris les réponses en cache. Une sortie partielle ou rejetée bloque le lot.
-Ces gardes ne prouvent pas toutes les nuances : la revue des textes FR/EN réels
-reste nécessaire, particulièrement avant la première activation.
+Un intitulé connu peut avoir une traduction déterministe ; Gemini traduit les
+analyses et les marchés nouveaux. Le repli FR est explicitement audité.
+Les diagnostics contrôlent notamment noms, chiffres, résultats et chronologie,
+y compris en cache. Une sortie imparfaite est conservée ; une sortie inexploitable
+utilise le FR sans bloquer le lot. Les audits restent disponibles pour revue.
 
 SOURCES ET LIMITES D'ADAPTATEUR
 rdj_petit_journal : /paris-sportifs/le-petit-journal.html

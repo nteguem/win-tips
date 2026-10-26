@@ -2,7 +2,6 @@ const crypto = require('crypto');
 const { preferredLanguage } = require('./devicePreferences');
 const { sourceByKey, failure } = require('./editorialSources');
 const { editionDateFor } = require('./editorialCalendar');
-const { hasCompleteEnglish } = require('./editorialValidation');
 const { notificationSnapshot, digest } = require('./editorialCopy');
 
 const id = value => String(value && value._id || value);
@@ -72,7 +71,9 @@ function createEditorialNotificationService({ repository, push, clock = () => ne
       if (appId() !== 'wintips') return { disabled: true, reason: 'wrong_app', sent: 0 };
       if (!dryRun && !activated()) return { disabled: true, reason: 'notifications_disabled', sent: 0 };
       const groups = (await repository.groups({ source, editionDate: date })).map(group => {
-        const items = group.items.filter(row => eligibleItem(row.payload, now) && (!requireEnglish() || hasCompleteEnglish(row.payload)));
+        // Notification text is rendered for each recipient language separately.
+        // A missing or imperfect article translation must never silence it.
+        const items = group.items.filter(row => eligibleItem(row.payload, now));
         const copy = group.editorialCopy;
         return { ...group, items, editorialCopy: copy && copy.choice.focusIds.every(sourceId => items.some(row => row.payload.sourceId === sourceId)) ? copy : null };
       }).filter(group => group.items.length);

@@ -45,6 +45,10 @@ function validate(raw, now = new Date()) {
     batch = validation.validateBatch(payload, now);
   } catch (_) { return { ...report, code: 'api_payload_schema_or_clock_invalid', stage: 'validateBatch' }; }
   Object.assign(report, { source: batch.source, editionDate: batch.editionDate, itemCount: batch.items.length });
+  // Preserve safe field-path diagnostics, but translation quality is advisory.
+  // Match importBatch's source-language fallback before testing usability.
+  report.diagnostics = batch.items.flatMap(item => diagnostics(item));
+  validation.completeEnglishWithFallback(batch.items);
   try { validation.requireCompleteEnglish(batch.items); }
   catch (_) { return { ...report, code: 'api_complete_english_invalid', stage: 'requireCompleteEnglish', diagnostics: batch.items.flatMap(item => diagnostics(item)) }; }
   return { ...report, passed: true, code: 'validated', stage: 'ready_for_final_api_validation' };

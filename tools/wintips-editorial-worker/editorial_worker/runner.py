@@ -528,16 +528,21 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
             first_attempt = len(getattr(translator, 'attempts', []))
             try:
                 if bilingual:
-                    from .translation import translate_batch, require_bilingual
+                    from .translation import translate_batch, require_bilingual, SourceFallbackTranslator
                     if translator is None:
-                        translator = make_translator(args, output, resources)
-                    payload, audit = translate_batch(payload, translator)
+                        try:
+                            translator = make_translator(args, output, resources)
+                        except Exception as exc:
+                            translator = SourceFallbackTranslator(exc)
+                    payload, audit = translate_batch(payload, translator, best_effort=True)
                     require_bilingual(payload)
                     final_file = output / 'editions' / edition / (source + '.json')
                     write_json(final_file, payload)
                     write_json(output / 'translation-audits' / edition / (source + '.json'), audit)
                     row['payloadFile'] = str(final_file)
                     row['bilingual'] = True
+                    row['translationPolicy'] = 'advisory-v1'
+                    row['translationSourceFallbacks'] = audit['sourceFallbacks']
                 prepared.append((source, payload, row))
             except Exception as exc:
                 if os.environ.get('WINTIPS_EDITORIAL_TRANSLATOR', 'ollama') not in {'azure', 'gemini'}:

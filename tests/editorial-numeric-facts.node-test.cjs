@@ -402,9 +402,9 @@ test('complete English retains section, paragraph and leg requirements', () => {
   delete item.legs; item.analysis.en[0].paragraphs = []; assert.equal(hasCompleteEnglish(item), false);
   item.analysis.en = []; assert.equal(hasCompleteEnglish(item), false);
 });
-test('complete English still refuses missing and changed quantities', () => {
+test('complete English checks availability, not numeric translation quality', () => {
   const item = translatedItem();
-  item.analysis.en[0].paragraphs[0] = 'four points, 11.1%'; assert.equal(hasCompleteEnglish(item), false);
+  item.analysis.en[0].paragraphs[0] = 'four points, 11.1%'; assert.equal(hasCompleteEnglish(item), true);
   item.analysis.en[0].paragraphs[0] = ''; assert.equal(hasCompleteEnglish(item), false);
   delete item.summary.en; assert.equal(hasCompleteEnglish(item), false);
 });

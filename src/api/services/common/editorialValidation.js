@@ -21,7 +21,10 @@ function i18n(value, name, max, optional = false) {
   if (!value && optional) return { fr: '' };
   keys(value, ['fr', 'en'], name);
   const out = { fr: text(value.fr, `${name}.fr`, max, optional) };
-  if (value.en !== undefined && value.en !== '') out.en = text(value.en, `${name}.en`, max);
+  if (value.en !== undefined && value.en !== '') {
+    try { out.en = text(value.en, `${name}.en`, max); }
+    catch (_) { out.en = out.fr; }
+  }
   return out;
 }
 function integer(value, name, max = 100000, optional = false) {
@@ -93,14 +96,31 @@ function overnightProof(input, item) {
 function analysis(value) {
   keys(value, ['fr', 'en'], 'analysis');
   const out = {};
-  for (const lang of ['fr', 'en']) {
-    const sections = value[lang];
-    if (lang === 'en' && sections === undefined) continue;
-    if (!Array.isArray(sections) || sections.length < 1 || sections.length > 16) throw failure(`analysis.${lang} invalide`);
-    out[lang] = sections.map(section => {
+  // The source is strictly validated. A malformed/overlong English candidate
+  // falls back locally instead of turning a translation failure into an outage.
+  const sections = value.fr;
+  if (!Array.isArray(sections) || sections.length < 1 || sections.length > 16) throw failure('analysis.fr invalide');
+  out.fr = sections.map(section => {
       keys(section, ['heading', 'paragraphs'], 'section');
       if (!Array.isArray(section.paragraphs) || !section.paragraphs.length || section.paragraphs.length > 20) throw failure('Paragraphes invalides');
       return { heading: text(section.heading, 'heading', 180), paragraphs: section.paragraphs.map(p => text(p, 'paragraph', 6000)) };
+  });
+  if (value.en !== undefined) {
+    const original = section => ({ heading: section.heading, paragraphs: [...section.paragraphs] });
+    if (!Array.isArray(value.en) || value.en.length < 1 || value.en.length > 16) out.en = out.fr.map(original);
+    else out.en = value.en.map((section, index) => {
+      const source = out.fr[index] || out.fr[0];
+      try { keys(section, ['heading', 'paragraphs'], 'section'); }
+      catch (_) { return original(source); }
+      let heading;
+      try { heading = text(section.heading, 'heading', 180); }
+      catch (_) { heading = source.heading; }
+      if (!Array.isArray(section.paragraphs) || !section.paragraphs.length || section.paragraphs.length > 20)
+        return { heading, paragraphs: [...source.paragraphs] };
+      return { heading, paragraphs: section.paragraphs.map((paragraph, number) => {
+        try { return text(paragraph, 'paragraph', 6000); }
+        catch (_) { return source.paragraphs[number] || source.paragraphs[0]; }
+      }) };
     });
   }
   return out;
@@ -256,21 +276,46 @@ function validateBatch(body, now = new Date()) {
 }
 
 function hasCompleteEnglish(item) {
-  const { equivalentNumericFacts } = require('./editorialNumericFacts');
-  const translated = value => value && typeof value.en === 'string' && value.en.trim() && equivalentNumericFacts(value.fr, value.en);
+  // Publication requires usable text, not proof that a translator chose the
+  // same wording or numeric representation. Quality diagnostics are advisory.
+  const translated = value => value && typeof value.en === 'string' && value.en.trim();
   if (!translated(item.title) || (item.summary && item.summary.fr && !translated(item.summary)) || !translated(item.selection && item.selection.label)) return false;
-  const fr = item.analysis && item.analysis.fr, en = item.analysis && item.analysis.en;
-  if (!Array.isArray(fr) || !Array.isArray(en) || fr.length !== en.length) return false;
-  if (!fr.every((section, index) => {
-    const other = en[index];
-    return other && typeof other.heading === 'string' && other.heading.trim() && equivalentNumericFacts(section.heading, other.heading) &&
-      Array.isArray(other.paragraphs) && section.paragraphs.length === other.paragraphs.length &&
-      section.paragraphs.every((p, i) => typeof other.paragraphs[i] === 'string' && other.paragraphs[i].trim() && equivalentNumericFacts(p, other.paragraphs[i]));
+  const en = item.analysis && item.analysis.en;
+  if (!Array.isArray(en) || !en.length) return false;
+  if (!en.every(section => {
+    return section && typeof section.heading === 'string' && section.heading.trim() &&
+      Array.isArray(section.paragraphs) && section.paragraphs.length &&
+      section.paragraphs.every(p => typeof p === 'string' && p.trim());
   })) return false;
   return !item.legs || item.legs.every(hasCompleteEnglish);
 }
+function completeEnglishWithFallback(items) {
+  // Operate only on schema-normalized content. Preserve every supplied English
+  // string; when a translation is unavailable the original is preferable to a
+  // missing edition. Structured source facts (odds, clocks, teams) stay intact.
+  for (const item of items) {
+    for (const value of [item.title, item.summary, item.selection.label]) {
+      if (value && value.fr && !(typeof value.en === 'string' && value.en.trim())) value.en = value.fr;
+    }
+    const analysis = item.analysis;
+    if (!Array.isArray(analysis.en)) analysis.en = [];
+    analysis.fr.forEach((section, index) => {
+      if (!analysis.en[index]) analysis.en[index] = { heading: section.heading, paragraphs: [...section.paragraphs] };
+      else {
+        const other = analysis.en[index];
+        if (!(typeof other.heading === 'string' && other.heading.trim())) other.heading = section.heading;
+        if (!Array.isArray(other.paragraphs)) other.paragraphs = [];
+        section.paragraphs.forEach((paragraph, number) => {
+          if (!(typeof other.paragraphs[number] === 'string' && other.paragraphs[number].trim())) other.paragraphs[number] = paragraph;
+        });
+      }
+    });
+    if (item.legs) completeEnglishWithFallback(item.legs);
+  }
+  return items;
+}
 function requireCompleteEnglish(items) {
-  if (!items.every(hasCompleteEnglish)) throw failure('Traduction anglaise complete et coherente requise avant publication');
+  if (!items.every(hasCompleteEnglish)) throw failure('Texte anglais ou original de remplacement requis');
 }
 
-module.exports = { validateBatch, normalizeItem, dateOnly, hasCompleteEnglish, requireCompleteEnglish };
+module.exports = { validateBatch, normalizeItem, dateOnly, hasCompleteEnglish, requireCompleteEnglish, completeEnglishWithFallback };

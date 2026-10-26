@@ -134,24 +134,76 @@ test('terminal ledger monitoring reads only status and summary by exact durable 
   assert.equal(await repo.ledgerState(key), state); assert.deepEqual(filter, key);
   assert.equal(projection, 'status stats -_id');
 });
-test('late or untranslated content is never announced; a multi-item message routes to its feed', async () => {
+test('late content is not announced; missing or imperfect translation cannot suppress notifications', async () => {
   const { service, state } = harness(); state.groups[0].items[0].payload.startsAtUtc = date + 'T08:20:00Z';
   assert.equal((await service.drain({ dryRun: false })).groups.length, 0); assert.equal(state.claims, 0);
   state.groups[0] = group(); delete state.groups[0].items[0].payload.analysis.en;
-  assert.equal((await service.drain({ dryRun: false })).groups.length, 0);
+  const sent = await service.drain({ dryRun: false });
+  assert.equal(sent.groups.length, 1); assert.equal(state.claims, 1);
+  assert.deepEqual(state.calls.map(call => call.notification.extra.language), ['fr', 'en']);
+  const poor = harness(); poor.state.groups[0].items[0].payload.analysis.en[0].paragraphs[0] = 'Lyon won 999 matches.';
+  assert.equal((await poor.service.drain({ dryRun: false })).groups.length, 1);
+  assert.equal(poor.state.calls.length, 2);
   const multiple = group(); multiple.items.push({ _id: 'c'.repeat(24), payload: item() });
   const m = message('wintips', multiple, 'en'); assert.equal(m.extra.action, 'view_editorial_feed'); assert.equal(m.extra.itemId, undefined);
   assert.equal(notificationId('wintips', group()), notificationId('wintips', group())); assert.notEqual(notificationId('predictfoot', group()), notificationId('wintips', group()));
 });
-test('default import requires complete EN, including structure, numeric facts and every combined leg', async () => {
-  let writes = 0; const repository = { categories: async () => [{ _id: catId, isActive: true, isVip: false, editorialSource: 'rdj_petit_journal' }], upsertBatch: async () => { writes++; return {}; } };
+test('default import keeps imperfect English and completes missing text with the French source', async () => {
+  let writes = 0, saved;
+  const repository = { categories: async () => [{ _id: catId, isActive: true, isVip: false, editorialSource: 'rdj_petit_journal' }], upsertBatch: async operations => { writes++; saved = operations[0].updateOne.update.$set.payload; return {}; } };
   const service = createEditorialService({ repository, clock, importEnabled: () => true });
   const original = item(); delete original.analysis.en;
-  await assert.rejects(service.importBatch(batch(original))); assert.equal(writes, 0);
-  const partial = item(); partial.analysis.en[0].paragraphs.push('Extra invented context.'); await assert.rejects(service.importBatch(batch(partial))); assert.equal(writes, 0);
-  const altered = item(); altered.analysis.en[0].paragraphs[0] = 'Brest won 4 of their 5 matches.'; await assert.rejects(service.importBatch(batch(altered))); assert.equal(writes, 0);
+  await service.importBatch(batch(original)); assert.equal(writes, 1);
+  assert.deepEqual(saved.analysis.en, original.analysis.fr);
+  assert.equal(original.analysis.en, undefined, 'caller payload is not mutated');
+  const partial = item(); partial.analysis.en[0].paragraphs.push('Extra invented context.');
+  await service.importBatch(batch(partial)); assert.equal(writes, 2);
+  assert.deepEqual(saved.analysis.en, partial.analysis.en, 'supplied translation is retained');
+  const altered = item(); altered.analysis.en[0].paragraphs[0] = 'Brest won 4 of their 5 matches.';
+  await service.importBatch(batch(altered)); assert.equal(writes, 3);
+  assert.equal(saved.analysis.en[0].paragraphs[0], altered.analysis.en[0].paragraphs[0]);
+  assert.equal(saved.selection.odds, original.selection.odds);
+  assert.equal(saved.startsAtUtc, new Date(original.startsAtUtc).toISOString());
   assert.equal(hasCompleteEnglish({ ...item(), legs: [original] }), false);
-  await service.importBatch(batch()); assert.equal(writes, 1); assert.equal((await service.workerConfig()).requireEnglish, true);
+  const novel = item(); novel.selection.label = { fr: 'Dou\u00e9 d\u00e9cisif', en: 'Dou\u00e9 decisive' }; novel.selection.betType = 'player_contribution';
+  await service.importBatch(batch(novel)); assert.equal(writes, 4);
+  assert.equal(saved.selection.label.fr, novel.selection.label.fr);
+  assert.equal(saved.selection.label.en, novel.selection.label.en);
+  await service.importBatch(batch()); assert.equal(writes, 5); assert.equal((await service.workerConfig()).requireEnglish, true);
+});
+test('invalid English candidates fall back before schema checks without weakening French or source facts', async () => {
+  let saved, writes = 0;
+  const repository = { categories: async () => [{ _id: catId, isActive: true, isVip: false, editorialSource: 'rdj_petit_journal' }],
+    upsertBatch: async operations => { writes++; saved = operations[0].updateOne.update.$set.payload; return {}; } };
+  const service = createEditorialService({ repository, clock, importEnabled: () => true });
+  const mutations = [
+    row => { row.title.en = 'X'.repeat(501); },
+    row => { row.summary.en = { html: '<script>untrusted()</script>' }; },
+    row => { row.selection.label.en = null; },
+    row => { row.selection.label.en = 'text\u0000'; },
+    row => { row.analysis.en = 'not structured prose'; },
+    row => { row.analysis.en = []; },
+    row => { row.analysis.en[0].heading = ''; },
+    row => { row.analysis.en[0].paragraphs = []; },
+    row => { row.analysis.en[0].paragraphs[0] = 'X'.repeat(6001); },
+    row => { row.analysis.en[0].paragraphs[0] = { unexpected: true }; },
+    row => { row.analysis.en[0].unknown = 'untrusted field'; },
+  ];
+  for (const mutate of mutations) {
+    const row = item(); mutate(row);
+    assert.equal((await service.importBatch(batch(row))).imported, 1);
+    assert.equal(hasCompleteEnglish(saved), true);
+    assert.deepEqual(saved.analysis.fr, row.analysis.fr);
+    assert.equal(saved.selection.odds, 1.5);
+    assert.deepEqual(saved.teams, row.teams);
+    assert.equal(saved.startsAtUtc, new Date(row.startsAtUtc).toISOString());
+  }
+  const completed = writes;
+  for (const mutate of [row => { row.title.fr = ''; }, row => { row.analysis.fr[0].paragraphs = []; },
+    row => { row.selection.odds = -1; }, row => { row.sourceUrl = 'https://attacker.invalid/article'; }]) {
+    const row = item(); mutate(row); await assert.rejects(service.importBatch(batch(row)));
+  }
+  assert.equal(writes, completed);
 });
 test('import sends only after successful persistence; notification failure does not undo published data', async () => {
   const order = [], repository = { categories: async () => [{ _id: catId, isActive: true, isVip: false, editorialSource: 'rdj_petit_journal' }], upsertBatch: async () => { order.push('persist'); return {}; } };
