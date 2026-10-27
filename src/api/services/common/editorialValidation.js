@@ -269,8 +269,13 @@ function validateBatch(body, now = new Date()) {
   if (new Set(items.map(item => item.sourceId)).size !== items.length) throw failure('sourceId duplique dans le lot');
   const batch = { source: source.key, editionDate, items };
   if (Object.prototype.hasOwnProperty.call(body, 'editorialCopy')) {
-    const { factsFromBatch, validateCopy } = require('./editorialCopy');
-    batch.editorialCopy = validateCopy(factsFromBatch(batch), body.editorialCopy);
+    const { factsFromBatch, validateCopy, V2_VERSION } = require('./editorialCopy');
+    try { batch.editorialCopy = validateCopy(factsFromBatch(batch), body.editorialCopy); }
+    catch (error) {
+      // A new cosmetic hook must never prevent a valid source batch from
+      // publishing. Preserve the established v1 validation contract.
+      if (body.editorialCopy?.version !== V2_VERSION || error.errorCode !== 'EDITORIAL_COPY_INVALID') throw error;
+    }
   }
   return batch;
 }

@@ -28,7 +28,7 @@ def write_json(path, value):
 
 
 def build_editorial_copy(payload, translator):
-    """Optional grounded hook; source paragraphs/summaries are never rewritten."""
+    """Optional contextual description/notification; preserve all source fields."""
     try:
         from .content_hub import module
         package = module()

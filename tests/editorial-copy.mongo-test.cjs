@@ -10,7 +10,7 @@ const { createEditorialRepository } = require('../src/api/services/common/editor
 const { createEditorialNotificationRepository } = require('../src/api/services/common/editorialNotificationRepository');
 const EditorialItem = require('../src/api/models/common/EditorialItem');
 const EditorialNotification = require('../src/api/models/common/EditorialNotification');
-const { digest, fallback, factsFromBatch, boundCopy, notificationSnapshot, render, validateCopy } = require('../src/api/services/common/editorialCopy');
+const { digest, fallback, factsFromBatch, boundCopy, notificationSnapshot, render, renderV2, validateCopy, V2_VERSION } = require('../src/api/services/common/editorialCopy');
 const { copyId } = require('../src/api/services/common/editorialCopyStorage');
 const crypto = require('node:crypto');
 const source = 'rdj_petit_journal', editionDate = '2026-10-25', category = new mongoose.Types.ObjectId();
@@ -27,6 +27,15 @@ function alternativeContext() {
   value.editorialCopy = validateCopy(facts, { ...value.editorialCopy, method: 'gemini', model: 'gemini-3.5-flash-lite',
     cacheKey: '1'.repeat(64), nativeSha256: '2'.repeat(64), choice, body: render(facts, choice) });
   return value;
+}
+function v2Context() {
+  const facts = factsFromBatch({ source, editionDate, items: [payload()] });
+  const choice = { angle: 'context', focusIds: ['101'], entries: [{ id: '101',
+    description: { fr: 'Alpha retrouve son public : quel elan pour ce rendez-vous ?', en: 'Alpha return home: what momentum do they bring?' },
+    notification: { fr: 'Quel elan pour Alpha ?', en: 'What momentum for Alpha?' } }] };
+  return { source, editionDate, editorialCopy: validateCopy(facts, { version: V2_VERSION, sourceHash: digest(facts), sourceIds: ['101'], choice,
+    body: renderV2(facts, choice), notificationBody: renderV2(facts, choice, 'notification'), method: 'gemini',
+    model: 'gemini-3.5-flash-lite', cacheKey: '1'.repeat(64), nativeSha256: '2'.repeat(64) }) };
 }
 before(async () => {
   mongo = await MongoMemoryReplSet.create({ binary: { systemBinary: process.env.WINTIPS_TEST_MONGO_BINARY },
@@ -50,6 +59,41 @@ test('new source/day copy and items commit together; exact retry preserves the i
   const next = await collection.findOne({ _id: initial._id });
   for (const key of ['copy', 'copySha256', 'itemHashes', 'legacy', 'initialized']) assert.deepEqual(next[key], initial[key]);
   assert.equal(await EditorialItem.countDocuments(), 1);
+});
+
+test('new v2 description and short notification commit once with the exact item hashes and cannot be replaced on retry', async () => {
+  const input = v2Context(); await repo.upsertBatch([operation()], input);
+  const initial = await collection.findOne({ _id: copyId(source, editionDate) });
+  assert.deepEqual(boundCopy(initial, await EditorialItem.find().lean()), input.editorialCopy);
+  assert.notEqual(initial.copy.body.en, initial.copy.notificationBody.en);
+  const before = await EditorialItem.findOne().lean();
+  await repo.upsertBatch([operation()], alternativeContext());
+  const after = await collection.findOne({ _id: initial._id });
+  for (const key of ['copy', 'copySha256', 'itemHashes', 'legacy', 'initialized']) assert.deepEqual(after[key], initial[key]);
+  const article = await EditorialItem.findOne().lean();
+  assert.deepEqual(article.payload, before.payload); assert.equal(article.contentHash, before.contentHash);
+});
+
+test('a v2 retry preserves the exact stored v1 copy and completed notification snapshot without reclaiming delivery', async () => {
+  const original = context(); await repo.upsertBatch([operation()], original);
+  const before = await collection.findOne({ _id: copyId(source, editionDate) });
+  const snapshot = notificationSnapshot({ items: await EditorialItem.find().lean(), editorialCopy: original.editorialCopy });
+  const dal = createEditorialNotificationRepository({ EditorialNotification });
+  const key = { appId: 'wintips', categoryId: category, source, editionDate }, now = new Date(editionDate + 'T08:00:00Z');
+  const claimed = await dal.claim(key, 'stable', now, snapshot);
+  await dal.finish(key, claimed.lockToken, { status: 'completed', stats: { accepted: 1 } }, now);
+  const sent = await EditorialNotification.findOne().lean();
+  await repo.upsertBatch([operation()], v2Context());
+  const after = await collection.findOne({ _id: before._id });
+  for (const field of ['copy', 'copySha256', 'itemHashes', 'legacy', 'initialized']) assert.deepEqual(after[field], before[field]);
+  assert.deepEqual(await EditorialNotification.findOne().lean(), sent);
+  const replacement = notificationSnapshot({ items: await EditorialItem.find().lean(), editorialCopy: v2Context().editorialCopy });
+  assert.equal(await dal.claim(key, 'replacement', now, replacement), null);
+  const terminal = await EditorialNotification.findOne().lean();
+  for (const field of ['editorialCopy', 'editorialCopySha256', 'itemHash', 'notificationId', 'status', 'completedAt', 'stats', 'passes', 'lockToken']) {
+    assert.deepEqual(terminal[field], sent[field]);
+  }
+  assert.equal(await EditorialNotification.countDocuments(), 1);
 });
 test('concurrent first imports select one copy and share one source/day registry across category mappings', async () => {
   const one = context(), two = alternativeContext();

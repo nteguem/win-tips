@@ -41,7 +41,7 @@ function message(appId, group, language) {
   const body = (language === 'en' ? 'Analysis and statistics: ' : 'Analyses et statistiques : ') + names.join(' · ');
   const single = group.items.length === 1;
   return {
-    id: notificationId(appId, group), title: labels[group.source][language], body: group.editorialCopy ? group.editorialCopy.body[language] : body.length > 180 ? body.slice(0, 177) + '…' : body,
+    id: notificationId(appId, group), title: labels[group.source][language], body: group.editorialCopy ? (group.editorialCopy.notificationBody || group.editorialCopy.body)[language] : body.length > 180 ? body.slice(0, 177) + '…' : body,
     businessChannel: group.category.isVip ? 'vip' : 'tips', route: '/home', requiresVip: group.category.isVip === true,
     extra: { action: single ? 'view_editorial' : 'view_editorial_feed', ...(single ? { itemId: id(group.items[0]) } : {}),
       categoryId: id(group.category), isVip: group.category.isVip ? 'true' : 'false', editionDate: group.editionDate, language },

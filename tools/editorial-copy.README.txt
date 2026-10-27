@@ -1,12 +1,23 @@
-Daily editorial copy (rdj-editorial-copy-v1)
+Daily editorial copy (rdj-editorial-copy-v2, archived v1 compatible)
 
-The optional batch editorialCopy is a closed bilingual question for ALL source
-IDs in order, not a translation or a model-written body. Node mirrors the hub
-protocol and its eight exact fixtures. The FR source paragraphs, selections,
-odds and item payloads are unchanged. Facts include full FR paragraph context;
-only their SHA is retained by the envelope. Bodies are limited to 800 Unicode
-code points. Exceptionally long names use every complete label, never a cut
-identity; if even that exceeds the limit the worker omits this optional field.
+The optional v2 batch editorialCopy contains a distinct contextual description
+and short notification for each source event, in French and English. Gemini
+receives the complete FR source context and returns choice.entries with exact
+ordered source IDs. Node checks the same factual hash, labels, entry structure
+and deterministic rendered bodies as the shared hub. Source paragraphs,
+summaries, selections, odds and item payloads are never rewritten by this copy.
+
+The v2 envelope adds notificationBody; choice uses angle:context, focusIds for
+ALL source IDs, and entries:[{id,description:{fr,en},notification:{fr,en}}].
+Descriptions allow 180 Unicode code points per hook, notifications 90. Aggregate
+display keeps a fitting prefix plus +N other-event suffix, with UTF-8 budgets
+of 1800 bytes for body and 900 for notificationBody. Exceptionally long first
+labels are safely shortened for display only. Every ID and entry remains bound
+in the envelope. The API drops an invalid optional v2 copy and imports the valid
+source batch normally; no semantic or word-count quality gate is introduced.
+Generation failures use a source_excerpt_fallback or omit the optional copy.
+The archived v1 renderer, fallback, validation and historical fixtures retain
+their exact previous behavior.
 
 Provision BEFORE activating the new import code, from the reviewed checkout:
   node tools/editorial-indexes.cjs --copies-only --check
@@ -30,23 +41,27 @@ cannot retrofit or replace it. No migration of old days is performed.
 
 GET worker config exposes editorialCopyState:{state:new|frozen|unknown,legacy}
 per source for the CURRENT Europe/Paris edition. This read creates no records.
-Only new/non-legacy may request an angle; frozen/unknown omit generation. A new
+Only new/non-legacy may request hooks; frozen/unknown omit generation. A new
 day naturally starts independently. Missing/unavailable storage yields unknown.
 
 The feed adds localized editorialDescription only when all original article
-IDs, full payload hashes and copy facts still match. It preserves category BO
-description and all item summaries. A changed/partial batch hides stale cosmetic
-copy rather than generating a replacement.
+IDs, full payload hashes and copy facts still match. Library/native edition
+cards prefer bound v2 descriptions before the existing contextual source
+excerpts. Older editions retain their existing excerpt/copy fallback order.
+Stored category BO text and item summaries are unchanged. A changed/partial
+batch hides stale cosmetic copy rather than generating a replacement.
 
 On the FIRST notification ledger insert only, freeze editorialCopy (or null),
 its SHA and the exact eligible, ordered item hash. Pending/completed/legacy
 ledgers are never retrofitted. A changed new snapshot enters review_required
-before any send. Existing notification ID, device deduplication, opt-in, language,
+before any send. Delivery uses notificationBody when present, otherwise the
+original v1 body. Existing notification ID, device deduplication, opt-in, language,
 entitlement and delivery retry policies remain authoritative. No extra send is
 triggered by reads or this cosmetic feature.
 
 Offline tests:
   node --test tests/editorial-copy.node-test.cjs
+  node --test tests/editorial-copy-v2.node-test.cjs
   node --test tests/editorial-copy.mongo-test.cjs
 The second command requires EXPLICIT disposable Mongo runtime/binary variables;
 it never loads .env, an application bootstrap, jobs or any provider.

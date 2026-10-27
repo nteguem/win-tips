@@ -65,9 +65,11 @@ function createEditorialLibrary({ repository, clock, sourceMatchesCategory, summ
     return selected;
   }
   function dailyDescription(category, items, copies, lang) {
+    const { boundCopy, V2_VERSION } = require('./editorialCopy');
+    const copy = boundCopy(copies.find(record => record.source === category.editorialSource), items);
+    if (copy?.version === V2_VERSION) return { description: copy.body[lang], editorialDescription: copy.body[lang] };
     const contextual = contextualDescription(items, lang);
     if (contextual) return { description: contextual, editorialDescription: contextual };
-    const copy = require('./editorialCopy').boundCopy(copies.find(record => record.source === category.editorialSource), items);
     if (copy) return { description: copy.body[lang], editorialDescription: copy.body[lang] };
     if (!items.length) return { description: lang === 'en' ? 'This edition is not available yet.' : 'Cette edition n\u2019est pas encore disponible.' };
     // No request-time AI and no unverified streaks. The factual fallback only

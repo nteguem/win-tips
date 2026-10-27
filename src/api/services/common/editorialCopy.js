@@ -1,8 +1,11 @@
-// Mirrors rdj-source-hub/editorial_copy.py. This renders a closed factual
-// question; the model selects an angle and never supplies publishable prose.
+// Mirrors rdj-source-hub/editorial_copy.py. Historical v1 questions retain
+// their exact renderer; v2 binds per-event bilingual hooks to the same facts.
 const crypto = require('crypto');
 const { failure } = require('./editorialSources');
 const VERSION = 'rdj-editorial-copy-v1';
+const V2_VERSION = 'rdj-editorial-copy-v2';
+const BODY_BYTES = 1800;
+const NOTIFICATION_BYTES = 900;
 const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
 const clone = value => JSON.parse(JSON.stringify(value));
 const invalid = () => { throw failure('Copie editoriale invalide', 400, 'EDITORIAL_COPY_INVALID'); };
@@ -89,7 +92,7 @@ function fallback(facts) {
   return { version: VERSION, sourceHash: digest(facts), sourceIds, choice, body,
     method: 'deterministic_fallback', model: null, cacheKey: null, nativeSha256: null };
 }
-function validateCopy(facts, value) {
+function validateCopyV1(facts, value) {
   exact(value, ['version', 'sourceHash', 'sourceIds', 'choice', 'body', 'method', 'model', 'cacheKey', 'nativeSha256']);
   if (value.version !== VERSION || value.sourceHash !== digest(facts) || canonical(value.sourceIds) !== canonical(facts.items.map(row => row.id))) invalid();
   if (value.method === 'deterministic_fallback') {
@@ -99,6 +102,73 @@ function validateCopy(facts, value) {
       ['cacheKey', 'nativeSha256'].some(key => typeof value[key] !== 'string' || !/^[a-f0-9]{64}$/.test(value[key])) || canonical(value.body) !== canonical(render(facts, value.choice))) invalid();
   } else invalid();
   return clone(value);
+}
+function hook(value, limit) {
+  // Text shape and size only: editorial style and word choice do not gate
+  // source publication. An invalid optional envelope is dropped at import.
+  if (typeof value !== 'string' || !value.trim() || [...value].length > limit || /[<>\p{Cc}\p{Cf}\p{Cs}]/u.test(value)) invalid();
+  return value;
+}
+function byteClamp(value, limit) {
+  if (Buffer.byteLength(value, 'utf8') <= limit) return value;
+  let prefix = '', bytes = 0;
+  for (const character of value) {
+    const length = Buffer.byteLength(character, 'utf8');
+    if (bytes + length > limit - 3) break;
+    prefix += character; bytes += length;
+  }
+  return prefix.trimEnd() + '\u2026';
+}
+function compose(parts, language, limit) {
+  const selected = [];
+  const suffix = remaining => remaining ? ' \u2022 +' + remaining + (language === 'fr' ? ' autres rencontres' : ' more events') : '';
+  for (const part of parts) {
+    const remaining = parts.length - selected.length - 1;
+    const tail = suffix(remaining);
+    if (Buffer.byteLength([...selected, part].join(' \u2022 ') + tail, 'utf8') <= limit) selected.push(part);
+    else {
+      if (!selected.length) selected.push(byteClamp(part, limit - Buffer.byteLength(tail, 'utf8')));
+      break;
+    }
+  }
+  return selected.join(' \u2022 ') + suffix(parts.length - selected.length);
+}
+function renderV2(facts, choice, field = 'description') {
+  exact(choice, ['angle', 'focusIds', 'entries']);
+  const sourceIds = facts.items.map(row => row.id);
+  if (choice.angle !== 'context' || canonical(choice.focusIds) !== canonical(sourceIds) ||
+      !Array.isArray(choice.entries) || choice.entries.length !== sourceIds.length ||
+      !['description', 'notification'].includes(field)) invalid();
+  for (let index = 0; index < sourceIds.length; index++) {
+    const entry = choice.entries[index];
+    exact(entry, ['id', 'description', 'notification']);
+    if (entry.id !== sourceIds[index]) invalid();
+    for (const [key, limit] of [['description', 180], ['notification', 90]]) {
+      exact(entry[key], ['fr', 'en']);
+      for (const language of ['fr', 'en']) hook(entry[key][language], limit);
+    }
+  }
+  return Object.fromEntries(['fr', 'en'].map(language => [language, compose(facts.items.map((row, index) => {
+    const label = row.kind === 'horse_racing' ? row.race + ' \u00b7 ' + row.racecourse : row.home + ' \u2014 ' + row.away;
+    return label + (language === 'fr' ? ' : ' : ': ') + choice.entries[index][field][language];
+  }), language, field === 'description' ? BODY_BYTES : NOTIFICATION_BYTES)]));
+}
+function validateCopyV2(facts, value) {
+  exact(value, ['version', 'sourceHash', 'sourceIds', 'choice', 'body', 'notificationBody', 'method', 'model', 'cacheKey', 'nativeSha256']);
+  if (value.version !== V2_VERSION || value.sourceHash !== digest(facts) || canonical(value.sourceIds) !== canonical(facts.items.map(row => row.id))) invalid();
+  if (value.method === 'source_excerpt_fallback') {
+    if (['model', 'cacheKey', 'nativeSha256'].some(key => value[key] !== null)) invalid();
+  } else if (value.method === 'gemini') {
+    if (typeof value.model !== 'string' || !/^gemini-[a-z0-9][a-z0-9.-]{1,79}$/.test(value.model) ||
+        ['cacheKey', 'nativeSha256'].some(key => typeof value[key] !== 'string' || !/^[a-f0-9]{64}$/.test(value[key]))) invalid();
+  } else invalid();
+  if (canonical(value.body) !== canonical(renderV2(facts, value.choice)) ||
+      canonical(value.notificationBody) !== canonical(renderV2(facts, value.choice, 'notification'))) invalid();
+  return clone(value);
+}
+function validateCopy(facts, value) {
+  if (value?.version === V2_VERSION) return validateCopyV2(facts, value);
+  return validateCopyV1(facts, value);
 }
 function notificationSnapshot(group) {
   const items = group.items.map(row => {
@@ -126,4 +196,4 @@ function boundCopy(record, rows) {
     return validateCopy(factsFromBatch({ source: record.source, editionDate: record.editionDate, items }), record.copy);
   } catch (_) { return null; }
 }
-module.exports = { VERSION, canonical, digest, checkedFacts, factsFromBatch, render, fallback, validateCopy, notificationSnapshot, boundCopy };
+module.exports = { VERSION, V2_VERSION, canonical, digest, checkedFacts, factsFromBatch, render, renderV2, fallback, validateCopy, notificationSnapshot, boundCopy };
