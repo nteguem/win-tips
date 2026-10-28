@@ -2,7 +2,7 @@ const { SOURCES, sourceByKey, failure } = require('./editorialSources');
 const { dateOnly } = require('./editorialValidation');
 const { editionDateFor } = require('./editorialCalendar');
 const { editorialAccess, requireEditorialAccess } = require('./editorialAccess');
-const { compactEditorialDescription } = require('./compactEditorialDescription');
+const { editorialDescriptionFields } = require('./editorialDescriptions');
 
 const id = value => String(value && value._id || value);
 const languageOf = lang => lang === 'en' ? 'en' : 'fr';
@@ -68,12 +68,10 @@ function createEditorialLibrary({ repository, clock, sourceMatchesCategory, summ
     const { boundCopy } = require('./editorialCopy');
     const record = copies.find(record => record.source === category.editorialSource);
     const copy = boundCopy(record, items);
-    if (!items.length) return { description: lang === 'en' ? 'This edition is not available yet.' : 'Cette edition n\u2019est pas encore disponible.' };
     // Read-time presentation only: one short hook, regardless of match count.
     // Existing source content and immutable notification snapshots stay intact.
     const teaser = require('./couponTeaser').boundTeaser(record, items);
-    const description = teaser ? teaser.body[lang] : compactEditorialDescription(items, lang, copy);
-    return { description, editorialDescription: description };
+    return editorialDescriptionFields(items, lang, copy, teaser);
   }
   async function card(category, items, date, copies, stats, lang, user, requestDate, openings) {
     const state = await editorialAccess(repository, category, user);
