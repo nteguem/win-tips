@@ -45,6 +45,9 @@ class NotificationService {
 
   // Initialisation lazy
   _init() {
+    if (process.env.DISABLE_PUSH_NOTIFICATIONS === 'true') {
+      throw new AppError('Notifications push desactivees', 503);
+    }
     if (this._initialized) return;
     
     this.appId = process.env.ONESIGNAL_APP_ID;

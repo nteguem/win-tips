@@ -2,6 +2,9 @@
 //
 // Une notification métier -> un message FCM. Concentre tous les pièges de format.
 
+const { createHash } = require('node:crypto');
+const { notificationText } = require('./localizedText');
+
 // Canaux Android par type métier. Ils doivent exister CÔTÉ APP (créés en Kotlin au
 // démarrage) ; un canal déclaré ici mais absent de l'app fait retomber Android sur
 // le canal de repli de FCM, en importance DEFAULT : pas de heads-up, souvent pas de son.
@@ -50,6 +53,16 @@ function normalizeColor(color) {
   return /^[0-9a-fA-F]{6}$/.test(c) ? `#${c}` : undefined;
 }
 
+// Android replaces an already displayed notification with the same tag.
+// collapseKey only merges messages still waiting at FCM. Keep the native tag
+// tied to the event, not translated text or the endpoint's delivery msgId.
+function androidNotificationTag(notificationId) {
+  if (notificationId === null || notificationId === undefined) return undefined;
+  const identity = String(notificationId).trim();
+  if (!identity) return undefined;
+  return `wt-event-${createHash('sha256').update(identity).digest('hex').slice(0, 40)}`;
+}
+
 /**
  * Payload HYBRIDE (notification + data) et NON data-only.
  *
@@ -67,23 +80,26 @@ function normalizeColor(color) {
  */
 function buildFcmMessage(notification, target) {
   const type = notification.businessChannel || 'tips';
+  const tag = androidNotificationTag(notification.id);
+  const text = notificationText(notification, target);
 
   return {
     token: target.fcmToken,
 
     notification: {
-      title: notification.title,
-      body: notification.body,
+      title: text.title,
+      body: text.body,
     },
 
     data: stringifyData({
-      msgId: target.msgId,
-      notificationId: String(notification.id),
       route: notification.route || '',
       vip: notification.requiresVip ? 'true' : 'false',
       type,
       ack: '1',
       ...notification.extra,
+      // Business data must never override the durable delivery/event identity.
+      msgId: target.msgId,
+      notificationId: String(notification.id),
     }),
 
     android: {
@@ -100,6 +116,9 @@ function buildFcmMessage(notification, target) {
       collapseKey: type,
 
       notification: {
+        // Omit a tag when the caller has no event identity: unrelated messages
+        // must never replace one another under a shared "undefined" identity.
+        ...(tag ? { tag } : {}),
         // Les 5 densités de ic_stat_onesignal_default.png existent déjà dans les
         // 7 APK et sont des silhouettes alpha valides : réutilisables tel quel.
         // C'est la seule des deux régressions d'affichage réparable côté serveur.

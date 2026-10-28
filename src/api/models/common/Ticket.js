@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { buildLegacyTicketPublication, publicationOutcome, stripPublicationMarker } = require('../../services/common/legacyTicketPublication');
 
 const TicketSchema = new mongoose.Schema({
   title: {
@@ -17,6 +18,17 @@ const TicketSchema = new mongoose.Schema({
   isVisible: {
     type: Boolean,
     default: false
+  },
+  // Permanent, system-owned publication marker. Pending means no provider has
+  // been called. Sending/uncertain are deliberately never replayed automatically.
+  publicationNotification: {
+    notificationId: String,
+    status: { type: String, enum: ['pending', 'sending', 'sent', 'uncertain', 'not_needed'] },
+    reservedAt: Date,
+    startedAt: Date,
+    finishedAt: Date,
+    reason: String,
+    counts: { accepted: Number, failed: Number, skipped: Number, unreachable: Number }
   },
   closingAt: {
     type: Date,
@@ -91,291 +103,79 @@ TicketSchema.index({
   date: -1
 });
 
-// 🔴 Bibliothèque de messages pour notifications LIVE (10 variétés)
-// Format: Le message + nom catégorie = phrase complète
-const LIVE_NOTIFICATIONS = [
-  {
-    headings: {
-      en: "🔴 LIVE Bet!",
-      fr: "🔴 Pari LIVE!"
-    },
-    contents: {
-      en: "⚡ Live now: {category}",
-      fr: "⚡ En direct: {category}"
-    }
-  },
-  {
-    headings: {
-      en: "🎯 LIVE Tip!",
-      fr: "🎯 Tip LIVE!"
-    },
-    contents: {
-      en: "🔥 Playing live: {category}",
-      fr: "🔥 En jeu: {category}"
-    }
-  },
-  {
-    headings: {
-      en: "⚡ LIVE Alert!",
-      fr: "⚡ Alerte LIVE!"
-    },
-    contents: {
-      en: "💎 Check live: {category}",
-      fr: "💎 Découvre: {category}"
-    }
-  },
-  {
-    headings: {
-      en: "🚨 LIVE Action!",
-      fr: "🚨 Action LIVE!"
-    },
-    contents: {
-      en: "🎲 Active now: {category}",
-      fr: "🎲 Actif maintenant: {category}"
-    }
-  },
-  {
-    headings: {
-      en: "💥 LIVE Drop!",
-      fr: "💥 Drop LIVE!"
-    },
-    contents: {
-      en: "⭐ Just posted live: {category}",
-      fr: "⭐ Posté en direct: {category}"
-    }
-  },
-  {
-    headings: {
-      en: "🔔 LIVE Opportunity!",
-      fr: "🔔 Opportunité LIVE!"
-    },
-    contents: {
-      en: "💰 Don't miss: {category}",
-      fr: "💰 Ne rate pas: {category}"
-    }
-  },
-  {
-    headings: {
-      en: "⚡ LIVE Prono!",
-      fr: "⚡ Prono LIVE!"
-    },
-    contents: {
-      en: "🎁 Hot live: {category}",
-      fr: "🎁 Chaud en direct: {category}"
-    }
-  },
-  {
-    headings: {
-      en: "🎯 LIVE Pick!",
-      fr: "🎯 Pick LIVE!"
-    },
-    contents: {
-      en: "🔥 Catch it: {category}",
-      fr: "🔥 Attrape-le: {category}"
-    }
-  },
-  {
-    headings: {
-      en: "🌟 LIVE Coupon!",
-      fr: "🌟 Coupon LIVE!"
-    },
-    contents: {
-      en: "💎 In play: {category}",
-      fr: "💎 En cours: {category}"
-    }
-  },
-  {
-    headings: {
-      en: "⚡ LIVE Now!",
-      fr: "⚡ LIVE Maintenant!"
-    },
-    contents: {
-      en: "🎲 Happening: {category}",
-      fr: "🎲 C'est parti: {category}"
-    }
+
+// Reserve before changing visibility: a concurrent publication that sees the
+// newly-visible row must distinguish this first publication from an old ticket.
+TicketSchema.pre('findOneAndUpdate', async function () {
+  const update = stripPublicationMarker(this.getUpdate() || {});
+  this.setUpdate(update);
+  const visible = Object.hasOwn(update, 'isVisible') ? update.isVisible : update.$set?.isVisible;
+  if (visible !== true && visible !== false) return;
+  const previous = await this.model.findOne(this.getQuery()).select('_id isVisible publicationNotification').lean();
+  if (!previous || previous.publicationNotification?.notificationId) return;
+  const notificationId = `ticket-published:${previous._id}`;
+  if (previous.isVisible === true) {
+    // Covers both true->true and an old visible ticket being hidden. Neither a
+    // later resave nor hide/republish may send a historical publication again.
+    await this.model.collection.updateOne({ _id: previous._id, isVisible: true,
+      'publicationNotification.notificationId': { $exists: false } }, { $set: {
+      publicationNotification: { notificationId, status: 'not_needed', reason: 'already_published_legacy', finishedAt: new Date() }
+    } });
+  } else if (visible === true) {
+    await this.model.collection.updateOne({ _id: previous._id, isVisible: { $ne: true },
+      'publicationNotification.notificationId': { $exists: false } }, { $set: {
+      publicationNotification: { notificationId, status: 'pending', reservedAt: new Date() }
+    } });
   }
-];
+});
 
-// 💰 Bibliothèque de messages pour notifications normales (10 variétés)
-// Format: Le message + nom catégorie = phrase complète
-const NORMAL_NOTIFICATIONS = [
-  {
-    headings: {
-      en: "💰 New Coupon!",
-      fr: "💰 Nouveau Coupon!"
-    },
-    contents: {
-      en: "🎯 Available: {category}",
-      fr: "🎯 Dispo maintenant: {category}"
-    }
-  },
-  {
-    headings: {
-      en: "🎁 Fresh Tip!",
-      fr: "🎁 Nouveau Tip!"
-    },
-    contents: {
-      en: "⭐ Just posted: {category}",
-      fr: "⭐ Tout juste posté: {category}"
-    }
-  },
-  {
-    headings: {
-      en: "⚡ New Prono!",
-      fr: "⚡ Nouveau Prono!"
-    },
-    contents: {
-      en: "💎 Check it out: {category}",
-      fr: "💎 Découvre: {category}"
-    }
-  },
-  {
-    headings: {
-      en: "🌟 Tip Ready!",
-      fr: "🌟 Tip Prêt!"
-    },
-    contents: {
-      en: "🔥 Don't miss: {category}",
-      fr: "🔥 Ne rate pas: {category}"
-    }
-  },
-  {
-    headings: {
-      en: "🎯 New Pick!",
-      fr: "🎯 Nouveau Pick!"
-    },
-    contents: {
-      en: "⚡ Fresh drop: {category}",
-      fr: "⚡ Nouveau: {category}"
-    }
-  },
-  {
-    headings: {
-      en: "💎 Bet Alert!",
-      fr: "💎 Alerte Pari!"
-    },
-    contents: {
-      en: "⚡ Ready to play: {category}",
-      fr: "⚡ Prêt à jouer: {category}"
-    }
-  },
-  {
-    headings: {
-      en: "🔔 Prono Alert!",
-      fr: "🔔 Alerte Prono!"
-    },
-    contents: {
-      en: "🎁 Published: {category}",
-      fr: "🎁 Publié: {category}"
-    }
-  },
-  {
-    headings: {
-      en: "⭐ Hot Tip!",
-      fr: "⭐ Tip Chaud!"
-    },
-    contents: {
-      en: "💰 Check now: {category}",
-      fr: "💰 Regarde: {category}"
-    }
-  },
-  {
-    headings: {
-      en: "🎲 Prono Drop!",
-      fr: "🎲 Drop Prono!"
-    },
-    contents: {
-      en: "🔥 New drop: {category}",
-      fr: "🔥 Nouveau drop: {category}"
-    }
-  },
-  {
-    headings: {
-      en: "💥 New Opportunity!",
-      fr: "💥 Nouvelle Opportunité!"
-    },
-    contents: {
-      en: "🎯 Opportunity: {category}",
-      fr: "🎯 Opportunité: {category}"
-    }
-  }
-];
-
-// 🎲 Fonction pour sélectionner un message aléatoire
-function getRandomNotification(notificationArray, categoryName) {
-  const randomIndex = Math.floor(Math.random() * notificationArray.length);
-  const template = notificationArray[randomIndex];
-  
-  return {
-    headings: template.headings,
-    contents: {
-      en: template.contents.en.replace('{category}', categoryName),
-      fr: template.contents.fr.replace('{category}', categoryName)
-    }
-  };
-}
-
-// Hook pour findByIdAndUpdate / findOneAndUpdate
 TicketSchema.post('findOneAndUpdate', async function (doc) {
-  if (doc) {
-    const update = this.getUpdate();
-    const wasVisibilityChanged = update.isVisible === true || update.$set?.isVisible === true;
-    
-    if (wasVisibilityChanged && doc.isVisible) {
-      try {
-        // Récupérer le nom de la catégorie.
-        // Depuis la migration i18n, name et description sont des objets
-        // { fr, en } — on doit aplatir avant tout traitement string. pickLang
-        // tolère aussi les anciennes valeurs sous forme de chaîne brute.
-        const Category = mongoose.model('Category');
-        const category = await Category.findById(doc.category);
-        const categoryName = (category && (
-          Category.pickLang(category.description, 'fr') ||
-          Category.pickLang(category.name, 'fr')
-        )) || 'Catégorie inconnue';
-        
-        // Vérifier si c'est un LIVE
-        const isLive = categoryName.toUpperCase().includes('LIVE');
-        
-        // Import du service de notification
-        const notificationService = require("../../services/common/notificationService");
-        
-        // 🎯 Sélection aléatoire du message approprié
-        const randomMessage = isLive 
-          ? getRandomNotification(LIVE_NOTIFICATIONS, categoryName)
-          : getRandomNotification(NORMAL_NOTIFICATIONS, categoryName);
-        
-        // Construction de la notification
-        const notification = {
-          headings: randomMessage.headings,
-          contents: randomMessage.contents,
-          data: {
-            type: isLive ? "live" : "ticket",
-            ticket_id: doc._id.toString(),
-            category_name: categoryName,
-            action: isLive ? "view_live" : "view_ticket"
-          },
-          options: {
-            android_accent_color: isLive ? "FF0000" : "FF6B35",
-            small_icon: "ic_notification",
-            large_icon: "ic_launcher"
-          }
-        };
-
-        // Envoyer la notification à tous les utilisateurs
-        const result = await notificationService.sendToAll(notification);
-    
-      } catch (error) {
-        console.error('❌ Erreur envoi notification:', error.message);
-        
-        // Log détaillé pour le debug en cas d'erreur
-        console.error('Détails erreur:', {
-          ticketId: doc._id,
-          categoryId: doc.category,
-          error: error.stack
-        });
-      }
+  const update = this.getUpdate() || {};
+  if (!doc || (update.isVisible !== true && update.$set?.isVisible !== true)) return;
+  if (doc.publicationNotification?.notificationId && doc.publicationNotification.status !== 'pending') return;
+  const notificationId = `ticket-published:${doc._id}`;
+  const pending = { _id: doc._id, isVisible: true,
+    'publicationNotification.notificationId': notificationId, 'publicationNotification.status': 'pending' };
+  let claimed = false;
+  try {
+    const Category = mongoose.model('Category');
+    const category = await Category.findById(doc.category);
+    const skipReason = !category ? 'category_missing' : category.isActive === false ? 'category_inactive'
+      : category.catalogueArchived === true ? 'category_archived' : category.editorialSource ? 'editorial_category'
+      : process.env.DISABLE_PUSH_NOTIFICATIONS === 'true' ? 'notifications_disabled' : null;
+    if (skipReason) {
+      await this.model.collection.updateOne(pending, { $set: {
+        'publicationNotification.status': 'not_needed', 'publicationNotification.reason': skipReason,
+        'publicationNotification.finishedAt': new Date()
+      } });
+      return;
     }
+    const notification = buildLegacyTicketPublication(doc, category);
+    // Atomic transition before any provider call, including OneSignal. Another
+    // request/restart cannot reclaim sending, sent, uncertain or not_needed.
+    const result = await this.model.collection.updateOne(pending, { $set: {
+      'publicationNotification.status': 'sending', 'publicationNotification.startedAt': new Date()
+    } });
+    if (result.modifiedCount !== 1) return;
+    claimed = true;
+    const response = await require('../../services/common/notificationService').sendToAll(notification);
+    const outcome = publicationOutcome(response);
+    await this.model.collection.updateOne({ _id: doc._id,
+      'publicationNotification.notificationId': notificationId, 'publicationNotification.status': 'sending' }, { $set: {
+      'publicationNotification.status': outcome.status, 'publicationNotification.counts': outcome.counts,
+      ...(outcome.reason ? { 'publicationNotification.reason': outcome.reason } : {}),
+      'publicationNotification.finishedAt': new Date()
+    } });
+  } catch (error) {
+    if (claimed) await this.model.collection.updateOne({ _id: doc._id,
+      'publicationNotification.notificationId': notificationId, 'publicationNotification.status': 'sending' }, { $set: {
+      'publicationNotification.status': 'uncertain', 'publicationNotification.reason': 'transport_interrupted',
+      'publicationNotification.finishedAt': new Date()
+    } }).catch(() => {});
+    // A failure before the sending claim leaves pending safe to retry. A failed
+    // marker write after transport leaves sending/uncertain, never replayable.
+    console.error('Legacy ticket notification not confirmed', { ticketId: String(doc._id),
+      phase: claimed ? 'transport_or_receipt' : 'before_transport', code: error.code || error.name });
   }
 });
 

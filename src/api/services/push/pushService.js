@@ -205,7 +205,9 @@ async function applyResults(appId, results) {
   // Statut de livraison, pour le pilotage de la bascule.
   const deliveryOps = results.map((r) => ({
     updateOne: {
-      filter: { deviceId: r.deviceId, msgId: r.msgId },
+      // An ACK may arrive before the provider response has been persisted.
+      // Never overwrite that stronger delivery state with sent/failed.
+      filter: { deviceId: r.deviceId, msgId: r.msgId, status: { $ne: 'acked' } },
       update: {
         $set: {
           status: r.ok ? 'sent' : 'failed',
@@ -254,10 +256,10 @@ async function send(appId, notification, options = {}) {
     forceProvider: policy.forceProvider || null,
   };
 
-  const stats = { fcm: 0, onesignal: 0, skipped: 0, unreachable: 0, failed: 0 };
+  const stats = { fcm: 0, onesignal: 0, skipped: 0, unreachable: 0, failed: 0, dryRun: effectiveDryRun };
   const cursor = Device.find(audienceFilter({ appId, ...targeting, respectNotificationPreferences: options.respectNotificationPreferences === true,
     respectEditorialSchemaVersion: options.respectEditorialSchemaVersion === true }))
-    .select('deviceId playerId fcmToken fcmTokenSource fcmTokenUpdatedAt pushProvider')
+    .select('deviceId playerId fcmToken fcmTokenSource fcmTokenUpdatedAt pushProvider language deviceLanguage')
     .lean()
     .cursor();
 
@@ -265,13 +267,20 @@ async function send(appId, notification, options = {}) {
   // avant d'envoyer. La réclamation reste le verrou anti-doublon, mais elle
   // coûte un aller-retour par LOT au lieu d'un par device.
   let buf = [];
+  // Historical aliases can share one physical push endpoint. Deduplicate for
+  // the entire cursor, not only inside a batch, before reserving deliveries.
+  const seenTokens = new Set();
+  const seenPlayers = new Set();
 
   const flush = async (force = false) => {
     if (!buf.length || (!force && buf.length < AUDIENCE_BATCH)) return;
     const lot = buf;
     buf = [];
 
-    const claimed = await claimMany(appId, notificationId, lot, { retryFailures: options.retryFailures === true });
+    // A validation pass must not consume claims or mark simulated sends sent.
+    const claimed = effectiveDryRun
+      ? new Map(lot.map((device) => [device.deviceId, buildMsgId(notificationId, device.deviceId)]))
+      : await claimMany(appId, notificationId, lot, { retryFailures: options.retryFailures === true });
     stats.skipped += lot.length - claimed.size;
 
     const cibles = lot
@@ -289,7 +298,7 @@ async function send(appId, notification, options = {}) {
     if (bufFcm.length) {
       const res = await FcmAdapter.send(appDoc, { ...notification, id: notificationId }, bufFcm, { dryRun: effectiveDryRun });
       res.forEach((r) => { r.msgId = msgIdParDevice.get(r.deviceId); });
-      await applyResults(appId, res);
+      if (!effectiveDryRun) await applyResults(appId, res);
       stats.fcm += res.filter((r) => r.ok).length;
       stats.failed += res.filter((r) => !r.ok).length;
     }
@@ -298,7 +307,7 @@ async function send(appId, notification, options = {}) {
         ? bufOs.map((t) => ({ deviceId: t.deviceId, ok: true, action: 'none', msgId: t.msgId }))
         : await OneSignalAdapter.send(appDoc, { ...notification, id: notificationId }, bufOs);
       res.forEach((r) => { r.msgId = msgIdParDevice.get(r.deviceId); });
-      await applyResults(appId, res);
+      if (!effectiveDryRun) await applyResults(appId, res);
       stats.onesignal += res.filter((r) => r.ok).length;
       stats.failed += res.filter((r) => !r.ok).length;
     }
@@ -307,6 +316,13 @@ async function send(appId, notification, options = {}) {
   for await (const device of cursor) {
     const { provider } = providerRouter.resolve(device, resolvedPolicy);
     if (!provider) { stats.unreachable++; continue; }
+    if ((device.fcmToken && seenTokens.has(device.fcmToken)) ||
+        (device.playerId && seenPlayers.has(device.playerId))) {
+      stats.skipped++;
+      continue;
+    }
+    if (device.fcmToken) seenTokens.add(device.fcmToken);
+    if (device.playerId) seenPlayers.add(device.playerId);
     buf.push({ ...device, provider });
     await flush();
   }

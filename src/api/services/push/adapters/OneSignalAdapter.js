@@ -10,6 +10,7 @@
 
 const axios = require('axios');
 const logger = require('../../../../utils/logger');
+const { oneSignalTexts } = require('../localizedText');
 
 const ONESIGNAL_API = 'https://onesignal.com/api/v1';
 
@@ -40,8 +41,8 @@ async function send(appDoc, notification, targets) {
         {
           app_id: cfg.appId,
           include_player_ids: lot.map((t) => t.playerId),
-          headings: { en: notification.title, fr: notification.title },
-          contents: { en: notification.body, fr: notification.body },
+          headings: oneSignalTexts(notification.title, 'Notification'),
+          contents: oneSignalTexts(notification.body),
           data: {
             // Le msgId voyage aussi par OneSignal : c'est lui qui permet à l'app
             // de dédupliquer si jamais les deux canaux se croisaient.

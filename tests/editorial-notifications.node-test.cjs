@@ -229,6 +229,7 @@ test('OneSignal retries a confirmed 429, never ambiguous server/network outcomes
   let status = 429;
   const adapter = load('src/api/services/push/adapters/OneSignalAdapter.js', {
     axios: { post: async () => { throw { response: { status } }; } }, '../../../../utils/logger': { error() {} },
+    '../localizedText': require('../src/api/services/push/localizedText'),
   });
   const app = { getOneSignalConfig: () => ({ appId: 'fixture', restApiKey: 'fixture' }) };
   let result = await adapter.send(app, { id: 'message' }, [{ deviceId: 'one' }]); assert.equal(result[0].retrySafe, true);

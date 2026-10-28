@@ -28,6 +28,7 @@ const TYPE_TO_CHANNEL = {
 // NotificationAction ; on transmet les deux pour ne rien casser.
 const ACTION_TO_ROUTE = {
   view_ticket: '/home',
+  view_predictions: '/home',
   view_live: '/live',
   view_daily_coupon: '/home',
   view_subscription: '/subscription',
@@ -55,7 +56,9 @@ function toPushNotification(legacy = {}, notificationId = null) {
   // L'identifiant doit être STABLE pour que l'idempotence fonctionne : deux
   // déclenchements du même hook Mongoose sur le même ticket doivent produire
   // le même id, sinon le verrou ne sert à rien. On le dérive du contenu.
-  const id = notificationId || crypto.createHash('sha1')
+  // Explicit publication IDs survive wording and language changes. Preserve
+  // the historical content-derived ID for callers that supply no event ID.
+  const id = notificationId || data.notificationId || opts.idempotency_key || legacy.id || crypto.createHash('sha1')
     .update(JSON.stringify({
       t: pickText(legacy.headings),
       c: pickText(legacy.contents),
@@ -66,8 +69,8 @@ function toPushNotification(legacy = {}, notificationId = null) {
 
   return {
     id,
-    title: pickText(legacy.headings, 'Notification'),
-    body: pickText(legacy.contents, ''),
+    title: legacy.headings || 'Notification',
+    body: legacy.contents || '',
     businessChannel: TYPE_TO_CHANNEL[type] || 'tips',
     route: ACTION_TO_ROUTE[data.action] || '',
     requiresVip: type === 'premium' || data.vip === true || data.vip === 'true',
@@ -92,7 +95,7 @@ function toPushNotification(legacy = {}, notificationId = null) {
 function toLegacyResponse(notificationId, stats) {
   return {
     id: notificationId,
-    recipients: (stats.fcm || 0) + (stats.onesignal || 0),
+    recipients: stats.dryRun ? 0 : (stats.fcm || 0) + (stats.onesignal || 0),
     // Champs supplémentaires, ignorés par les appelants historiques mais
     // précieux pour le pilotage de la bascule.
     _stats: stats,
