@@ -73,6 +73,7 @@ function createEditorialRepository({ Category, EditorialItem, EditorialReview, s
   item: id => EditorialItem.findOne({ _id: id, isPublished: true }).lean(),
   copies: (sources, date) => copies().read(sources, date),
   copyStates: (sources, date) => copies().states(sources, date),
+  teaserStates: (sources, date) => copies().teaserStates(sources, date),
   hasCategoryAccess: (userId, categoryId) => subscriptionService.hasAccessToCategory(userId, categoryId),
   hasAnySubscription: async userId => (await subscriptionService.getActiveSubscriptions(userId)).some(sub => sub.package),
   gate: (userId, category, isSubscriber) => accessGateService.getCategoryGateState(userId, category, { isSubscriber }),

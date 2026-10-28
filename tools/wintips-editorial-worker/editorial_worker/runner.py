@@ -76,6 +76,61 @@ def editorial_copy_allowed(configured, source, edition):
     return isinstance(state, dict) and state.get('state') == 'new' and state.get('legacy') is False
 
 
+def build_coupon_teaser(payload, translator):
+    """One optional short card description for the whole source/day coupon."""
+    try:
+        from .content_hub import module
+        package = module()
+        if package is None:
+            return None
+        from rdj_hub.coupon_teaser import facts_from_wintips, generate, fallback, validate_teaser
+        facts = facts_from_wintips(payload)
+    except Exception:
+        return None
+
+    def safe_fallback():
+        try:
+            value = fallback(facts)
+            validate_teaser(facts, value)
+            return value
+        except Exception:
+            return None
+
+    try:
+        hub = package.open_hub(payload['editionDate'])
+        if hub is None or os.environ.get('WINTIPS_EDITORIAL_TRANSLATOR', 'ollama') != 'gemini':
+            return safe_fallback()
+        from . import gemini_translation as gemini
+        from dataclasses import replace
+        import math
+        remaining = float(translator.remaining())
+        if not math.isfinite(remaining) or remaining <= 0:
+            return safe_fallback()
+        budget = min(15, remaining)
+        settings = replace(translator.config, max_seconds=budget,
+            request_timeout=min(translator.config.request_timeout, budget))
+        quota = Path(os.environ.get('WINTIPS_EDITORIAL_GEMINI_QUOTA_DIR', '/var/lib/wintips-editorial-worker/gemini-quota'))
+        if not quota.is_absolute():
+            return safe_fallback()
+        value = generate(facts, provider=gemini, config=settings, quota_dir=quota, hub=hub)
+        validate_teaser(facts, value)
+        return value
+    except Exception:
+        return safe_fallback()
+
+
+def coupon_teaser_allowed(configured, source, edition):
+    """Only explicit current missing state permits optional card authoring."""
+    if not isinstance(configured, dict) or configured.get('date') != edition:
+        return False
+    sources = configured.get('sources')
+    if not isinstance(sources, list):
+        return False
+    rows = [row for row in sources
+        if isinstance(row, dict) and row.get('key') == source]
+    return len(rows) == 1 and rows[0].get('couponTeaserState') == 'missing'
+
+
 def ticket_reservations(configured, edition):
     """Protected server state, never a local last-run guess or an input payload."""
     state = configured.get('ticketState') if configured else None
@@ -576,6 +631,24 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
                 except Exception:
                     payload.pop('editorialCopy', None)
                     row['editorialCopyMethod'] = 'unavailable'
+        # Card descriptions are separate cosmetics, including when the original
+        # editorial copy/notification snapshot is already frozen. One call per
+        # coupon, never a concatenation or generation loop over its matches.
+        if bilingual:
+            for source, payload, row in prepared:
+                if not coupon_teaser_allowed(configured, source, edition):
+                    continue
+                try:
+                    teaser = build_coupon_teaser(payload, translator)
+                    if teaser is not None:
+                        payload['couponTeaser'] = teaser
+                        write_json(Path(row['payloadFile']), payload)
+                        row['couponTeaserStatus'] = 'ready'
+                    else:
+                        row['couponTeaserStatus'] = 'unavailable'
+                except Exception:
+                    payload.pop('couponTeaser', None)
+                    row['couponTeaserStatus'] = 'unavailable'
         # Do not keep model RAM/shared locks during database writes or FCM waits.
         try:
             resources.close()

@@ -91,10 +91,11 @@ function createEditorialService({ repository, clock = () => new Date(), importEn
       const instant = clock(), editionDate = editionDateFor(instant);
       const ticketState = repository.ticketState ? await repository.ticketState(editionDate) : undefined;
       const copyStates = repository.copyStates ? await repository.copyStates(SOURCES.map(source => source.key), editionDate) : [];
+      const teaserStates = repository.teaserStates ? await repository.teaserStates(SOURCES.map(source => source.key), editionDate) : [];
       return { date: editionDate, importEnabled: !!importEnabled(), notificationsEnabled: !!(notifications && notifications.enabled()), requireEnglish: !!requireEnglish(),
         ...(ticketState ? { ticketState } : {}),
         publishedSourceWindows: await publishedSourceWindows(repository, categories, editionDate, instant),
-        sources: SOURCES.map(s => ({ ...s, editorialCopyState: (() => {
+        sources: SOURCES.map(s => ({ ...s, couponTeaserState: teaserStates.find(row => row.source === s.key)?.state || 'unknown', editorialCopyState: (() => {
           const state = copyStates.find(row => row.source === s.key);
           return state ? { state: state.state, legacy: state.legacy } : { state: 'unknown', legacy: false };
         })(), categoryIds: categories.filter(c => c.editorialSource === s.key && sourceMatchesCategory(c)).map(c => id(c)) })).filter(s => s.categoryIds.length) };
@@ -122,7 +123,8 @@ function createEditorialService({ repository, clock = () => new Date(), importEn
           } });
         }
       }
-      const result = await repository.upsertBatch(operations, { source: batch.source, editionDate: batch.editionDate, editorialCopy: batch.editorialCopy || null });
+      const result = await repository.upsertBatch(operations, { source: batch.source, editionDate: batch.editionDate,
+        editorialCopy: batch.editorialCopy || null, ...(batch.couponTeaser ? { couponTeaser: batch.couponTeaser } : {}) });
       let notificationResult = { disabled: true, sent: 0 };
       if (notifications && notifications.enabled()) {
         try { notificationResult = await notifications.drain({ source: batch.source, editionDate: batch.editionDate, dryRun: false }); }
@@ -151,8 +153,10 @@ function createEditorialService({ repository, clock = () => new Date(), importEn
       for (const category of categories) {
         const state = await access(category, user);
         const items = rows.filter(row => id(row.categoryId) === id(category) && row.source === category.editorialSource);
-        const dailyCopy = require('./editorialCopy').boundCopy(copies.find(copy => copy.source === category.editorialSource), items);
-        const description = compactEditorialDescription(items, language, dailyCopy)
+        const record = copies.find(copy => copy.source === category.editorialSource);
+        const dailyCopy = require('./editorialCopy').boundCopy(record, items);
+        const teaser = require('./couponTeaser').boundTeaser(record, items);
+        const description = (teaser ? teaser.body[language] : compactEditorialDescription(items, language, dailyCopy))
           || (language === 'en' ? 'This edition is not available yet.' : 'Cette edition n\u2019est pas encore disponible.');
         output.push({ id: id(category), name: pickLang(category.name, language),
           description, ...(items.length ? { editorialDescription: description } : {}),

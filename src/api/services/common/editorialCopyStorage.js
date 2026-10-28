@@ -27,7 +27,15 @@ function createCopyStorage(EditorialItem) {
       if (locked.matchedCount !== 1) throw failure('Reservation de copie indisponible', 409);
       const record = await collection().findOne(key, { session });
       if (!record || record.appId !== APP || record.source !== source || record.editionDate !== editionDate) throw failure('Identite de copie incoherente', 409);
-      if (record.initialized === true) return;
+      const couponTeaser = require('./couponTeaser').teaserForOperations(context, operations);
+      if (record.initialized === true) {
+        // This independent, cosmetic caption can be added to a published issue.
+        // Never rewrite the frozen copy or its notification hashes/snapshots.
+        if (couponTeaser && !require('./couponTeaser').teaserForOperations({ ...context, couponTeaser: record.couponTeaser }, operations)) {
+          await collection().updateOne(key, { $set: { couponTeaser } }, { session });
+        }
+        return;
+      }
       // Include archived categories and unpublished rows. An old source/day,
       // even with no prior copy, must never gain a newly generated message.
       const previous = await EditorialItem.collection.findOne({ source, editionDate }, { session, projection: { _id: 1 } });
@@ -45,6 +53,7 @@ function createCopyStorage(EditorialItem) {
       const saved = await collection().updateOne({ ...key, initialized: false }, { $set: {
         initialized: true, legacy, copy: value, copySha256: value ? digest(value) : null,
         itemHashes: value ? [...unique].map(([sourceId, contentHash]) => ({ sourceId, contentHash })) : [],
+        ...(couponTeaser ? { couponTeaser } : {}),
       } }, { session });
       if (saved.matchedCount !== 1) throw failure('Reservation de copie perdue', 409);
     },
@@ -67,6 +76,20 @@ function createCopyStorage(EditorialItem) {
           const oldLedger = await EditorialItem.db.db.collection('editorialnotifications').findOne({ appId: APP, source, editionDate }, { projection: { _id: 1 } });
           return { source, state: oldItem || oldLedger ? 'frozen' : 'new', legacy: !!(oldItem || oldLedger) };
         }));
+      } catch (_) { return unknown(); }
+    },
+    async teaserStates(sources, editionDate) {
+      const unknown = () => sources.map(source => ({ source, state: 'unknown' }));
+      try {
+        await assertReady();
+        const [records, rows] = await Promise.all([
+          collection().find({ appId: APP, source: { $in: sources }, editionDate, initialized: true }).toArray(),
+          EditorialItem.collection.find({ source: { $in: sources }, editionDate, isPublished: true }).limit(301).toArray(),
+        ]);
+        if (rows.length > 300) return unknown();
+        const { boundTeaser } = require('./couponTeaser');
+        return sources.map(source => ({ source, state: boundTeaser(records.find(row => row.source === source),
+          rows.filter(row => row.source === source)) ? 'ready' : 'missing' }));
       } catch (_) { return unknown(); }
     },
   };

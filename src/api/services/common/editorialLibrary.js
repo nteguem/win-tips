@@ -66,11 +66,13 @@ function createEditorialLibrary({ repository, clock, sourceMatchesCategory, summ
   }
   function dailyDescription(category, items, copies, lang) {
     const { boundCopy } = require('./editorialCopy');
-    const copy = boundCopy(copies.find(record => record.source === category.editorialSource), items);
+    const record = copies.find(record => record.source === category.editorialSource);
+    const copy = boundCopy(record, items);
     if (!items.length) return { description: lang === 'en' ? 'This edition is not available yet.' : 'Cette edition n\u2019est pas encore disponible.' };
     // Read-time presentation only: one short hook, regardless of match count.
     // Existing source content and immutable notification snapshots stay intact.
-    const description = compactEditorialDescription(items, lang, copy);
+    const teaser = require('./couponTeaser').boundTeaser(record, items);
+    const description = teaser ? teaser.body[lang] : compactEditorialDescription(items, lang, copy);
     return { description, editorialDescription: description };
   }
   async function card(category, items, date, copies, stats, lang, user, requestDate, openings) {

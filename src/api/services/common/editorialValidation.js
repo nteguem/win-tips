@@ -248,7 +248,7 @@ function normalizeItem(input, source, editionDate, leg = false) {
   return normalized;
 }
 function validateBatch(body, now = new Date()) {
-  keys(body, ['source', 'editionDate', 'items', 'editorialCopy'], 'batch');
+  keys(body, ['source', 'editionDate', 'items', 'editorialCopy', 'couponTeaser'], 'batch');
   const source = sourceByKey(body.source);
   if (!source) throw failure('Source editoriale inconnue');
   const editionDate = dateOnly(body.editionDate);
@@ -276,6 +276,12 @@ function validateBatch(body, now = new Date()) {
       // publishing. Preserve the established v1 validation contract.
       if (body.editorialCopy?.version !== V2_VERSION || error.errorCode !== 'EDITORIAL_COPY_INVALID') throw error;
     }
+  }
+  if (Object.prototype.hasOwnProperty.call(body, 'couponTeaser')) {
+    try {
+      const { validateTeaser, teaserFactsFromBatch } = require('./couponTeaser');
+      batch.couponTeaser = validateTeaser(teaserFactsFromBatch(batch), body.couponTeaser);
+    } catch (_) { /* Optional card wording never blocks valid source content. */ }
   }
   return batch;
 }
