@@ -2,7 +2,7 @@ const { SOURCES, sourceByKey, failure } = require('./editorialSources');
 const { dateOnly } = require('./editorialValidation');
 const { editionDateFor } = require('./editorialCalendar');
 const { editorialAccess, requireEditorialAccess } = require('./editorialAccess');
-const { contextualDescription } = require('./editorialTeaser');
+const { compactEditorialDescription } = require('./compactEditorialDescription');
 
 const id = value => String(value && value._id || value);
 const languageOf = lang => lang === 'en' ? 'en' : 'fr';
@@ -65,19 +65,13 @@ function createEditorialLibrary({ repository, clock, sourceMatchesCategory, summ
     return selected;
   }
   function dailyDescription(category, items, copies, lang) {
-    const { boundCopy, V2_VERSION } = require('./editorialCopy');
+    const { boundCopy } = require('./editorialCopy');
     const copy = boundCopy(copies.find(record => record.source === category.editorialSource), items);
-    if (copy?.version === V2_VERSION) return { description: copy.body[lang], editorialDescription: copy.body[lang] };
-    const contextual = contextualDescription(items, lang);
-    if (contextual) return { description: contextual, editorialDescription: contextual };
-    if (copy) return { description: copy.body[lang], editorialDescription: copy.body[lang] };
     if (!items.length) return { description: lang === 'en' ? 'This edition is not available yet.' : 'Cette edition n\u2019est pas encore disponible.' };
-    // No request-time AI and no unverified streaks. The factual fallback only
-    // uses today's public team/race labels, never picks or analysis paragraphs.
-    const labels = items.map(row => row.payload.race ? `${row.payload.race.name} \u00b7 ${row.payload.race.racecourse || ''}`.trim() :
-      (row.payload.legs || [row.payload]).map(item => item.teams ? `${item.teams.home.name} \u2014 ${item.teams.away.name}` : pick(item.title, lang)).join(' / '));
-    const unique = [...new Set(labels)];
-    return { description: unique.slice(0, 3).join(' \u2022 ') + (unique.length > 3 ? ` +${unique.length - 3}` : '') };
+    // Read-time presentation only: one short hook, regardless of match count.
+    // Existing source content and immutable notification snapshots stay intact.
+    const description = compactEditorialDescription(items, lang, copy);
+    return { description, editorialDescription: description };
   }
   async function card(category, items, date, copies, stats, lang, user, requestDate, openings) {
     const state = await editorialAccess(repository, category, user);

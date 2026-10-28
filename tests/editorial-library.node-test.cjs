@@ -160,9 +160,9 @@ test('daily editorial copy is reused only while its original item hash binding r
   state.copies.push({ appId: 'wintips', _id: `wintips:rdj_petit_journal:${date}`, source: 'rdj_petit_journal', editionDate: date,
     initialized: true, legacy: false, copy, copySha256: digest(copy), itemHashes: state.rows.map(item => ({ sourceId: item.sourceId, contentHash: item.contentHash })) });
   let result = await service.library({ lang: 'en' }); assert.equal(result.categories[0].editorialDescription, copy.body.en);
-  assert.equal(result.categories[0].description, copy.body.en);
+  assert.equal(result.categories[0].description, result.categories[0].editorialDescription);
   state.rows[0].payload.teams.home.name = 'Changed';
-  result = await service.library(); assert.equal(result.categories[0].editorialDescription, undefined); assert.equal(result.categories[0].description.includes('Changed'), true);
+  result = await service.library(); assert.equal(result.categories[0].editorialDescription, result.categories[0].description); assert.equal(result.categories[0].description.includes('Changed'), true);
 });
 test('library and detail use factual daily team context from the exact category, source and edition', async () => {
   const selected = row(1), otherCategory = row(2, b), yesterday = row(3, a, 'rdj_petit_journal', '2026-10-24');
@@ -177,6 +177,37 @@ test('library and detail use factual daily team context from the exact category,
     assert.equal((await service.edition(a, date, { lang })).description, card.description);
     assert.equal(/hier|Yesterday|autre|Another/.test(card.description), false);
   }
+});
+
+test('ten matches keep one short complete card hook while the reader retains every full analysis', async () => {
+  const rows = Array.from({ length: 10 }, (_, index) => row(index + 1));
+  for (const [index, item] of rows.entries()) {
+    item.payload.teams = { home: { name: `Club ${index + 1}` }, away: { name: `Rival ${index + 1}` } };
+    item.payload.summary = { fr: `Club ${index + 1} reste sur 4 victoires.`, en: `Club ${index + 1} have recorded 4 wins.` };
+    item.payload.analysis.fr[0].paragraphs.push('Analyse complete conservee dans la lecture.');
+  }
+  const before = JSON.parse(JSON.stringify(rows));
+  const { service } = setup([category()], rows);
+  for (const lang of ['fr', 'en']) {
+    const library = (await service.library({ lang })).categories[0];
+    const edition = await service.edition(a, date, { lang });
+    const expected = `Club 1 \u2014 Rival 1 \u00b7 ${rows[0].payload.summary[lang]}`;
+    for (const card of [library, edition]) {
+      assert.equal(card.description, expected);
+      assert.equal(card.editorialDescription, expected);
+      assert.ok([...card.description].length <= 140);
+      assert.doesNotMatch(card.description, /\u2026|\.\.\.|Club 2/);
+      assert.equal(card.itemCount, 10);
+      assert.equal(card.previewItems.length, 10);
+    }
+    const content = await service.content(a, date, { lang });
+    assert.equal(content.items.length, 10);
+    for (const [index, item] of content.items.entries()) {
+      assert.deepEqual(item.analysis, before[index].payload.analysis);
+      assert.deepEqual(item.selection, before[index].payload.selection);
+    }
+  }
+  assert.deepEqual(rows, before);
 });
 test('review input allows one to five integer stars and plain bounded comments only', () => {
   for (const input of [{ rating: 0 }, { rating: 6 }, { rating: '5' }, { rating: 2.5 }, { rating: 5, userId: user._id },

@@ -3,6 +3,7 @@ const { SOURCES, sourceByKey, validateCategorySource, failure } = require('./edi
 const { validateBatch, normalizeItem, dateOnly, hasCompleteEnglish, requireCompleteEnglish, completeEnglishWithFallback } = require('./editorialValidation');
 const { editionDateFor } = require('./editorialCalendar');
 const { editorialAccess, requireEditorialAccess } = require('./editorialAccess');
+const { compactEditorialDescription } = require('./compactEditorialDescription');
 
 const pickLang = (value, lang) => typeof value === 'string' ? value : (value && (value[lang] || value.fr || value.en)) || '';
 const id = value => String(value && value._id || value);
@@ -151,9 +152,10 @@ function createEditorialService({ repository, clock = () => new Date(), importEn
         const state = await access(category, user);
         const items = rows.filter(row => id(row.categoryId) === id(category) && row.source === category.editorialSource);
         const dailyCopy = require('./editorialCopy').boundCopy(copies.find(copy => copy.source === category.editorialSource), items);
+        const description = compactEditorialDescription(items, language, dailyCopy)
+          || (language === 'en' ? 'This edition is not available yet.' : 'Cette edition n\u2019est pas encore disponible.');
         output.push({ id: id(category), name: pickLang(category.name, language),
-          description: dailyCopy ? dailyCopy.body[language] : pickLang(category.description, language),
-          ...(dailyCopy ? { editorialDescription: dailyCopy.body[language] } : {}),
+          description, ...(items.length ? { editorialDescription: description } : {}),
           icon: category.icon || '', isVip: category.isVip, editorialSource: category.editorialSource, source: { ...sourceByKey(category.editorialSource) },
           locked: state.locked, requiresAuth: state.requiresAuth, gate: state.gate,
           items: items.map(row => summary(row, state.locked, language)) });

@@ -154,7 +154,7 @@ test('invalid optional v2 copy is omitted while valid source facts still import 
   assert.throws(() => validateBatch(legacy, clock()), { errorCode: 'EDITORIAL_COPY_INVALID' });
 });
 
-test('bound v2 copy takes priority over available source excerpts in feed, library and native edition cards', async () => {
+test('bound v2 copy provides one short hook in feed, library and native edition cards without rewriting its full body', async () => {
   const h = publishedFixture(), before = clone({ rows: h.rows, record: h.record, category: h.category });
   const service = createEditorialService({ repository: h.repository, clock });
   for (const lang of ['fr', 'en']) {
@@ -162,18 +162,22 @@ test('bound v2 copy takes priority over available source excerpts in feed, libra
     assert.notEqual(legacyExcerpt, h.value.body[lang]);
     for (const card of [(await service.feed({ lang })).categories[0], (await service.library({ lang })).categories[0],
       await service.edition(categoryId, h.batch.editionDate, { lang })]) {
-      assert.equal(card.description, h.value.body[lang]); assert.equal(card.editorialDescription, h.value.body[lang]);
+      const expected = `Marseille \u2014 Le Havre \u00b7 ${contexts[0][lang === 'en' ? 7 : 6]}`;
+      assert.equal(card.description, expected); assert.equal(card.editorialDescription, expected);
+      assert.ok([...card.description].length <= 140);
+      assert.doesNotMatch(card.description, /\u2026|\.\.\.|Inter|Monaco/);
     }
   }
   assert.deepEqual({ rows: h.rows, record: h.record, category: h.category }, before);
   h.record.copy = copy.fallback(h.facts); h.record.copySha256 = copy.digest(h.record.copy);
   const archived = clone(h.record);
-  assert.equal((await service.library()).categories[0].description, contextualDescription(h.rows, 'fr'));
-  assert.equal((await service.edition(categoryId, h.batch.editionDate)).description, contextualDescription(h.rows, 'fr'));
+  const expectedSource = 'Marseille \u2014 Le Havre \u00b7 Marseille reste sur 4 victoires.';
+  assert.equal((await service.library()).categories[0].description, expectedSource);
+  assert.equal((await service.edition(categoryId, h.batch.editionDate)).description, expectedSource);
   assert.deepEqual(h.record, archived);
 });
 
-test('changed, partial or tampered v2 binding falls back to the existing source excerpt without rewriting the record', async () => {
+test('changed, partial or tampered v2 binding falls back to one short source excerpt without rewriting the record', async () => {
   for (const scenario of ['content', 'partial', 'tampered', 'legacy']) {
     const h = publishedFixture();
     if (scenario === 'content') h.rows[0].payload.analysis.fr[0].paragraphs.push('Nouveau contexte.');
@@ -183,7 +187,7 @@ test('changed, partial or tampered v2 binding falls back to the existing source 
     const before = clone(h.record);
     assert.equal(copy.boundCopy(h.record, h.rows), null);
     assert.equal((await createEditorialService({ repository: h.repository, clock }).library()).categories[0].description,
-      contextualDescription(h.rows, 'fr'));
+      'Marseille \u2014 Le Havre \u00b7 Marseille reste sur 4 victoires.');
     assert.deepEqual(h.record, before);
   }
 });

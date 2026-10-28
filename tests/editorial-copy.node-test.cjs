@@ -102,7 +102,7 @@ test('feed exposes the localized copy in the description read by existing phones
   assert.deepEqual(category, originalCategory);
 });
 
-test('feed keeps the localized BO description when the daily copy is absent, legacy or no longer bound', async () => {
+test('feed keeps one short public match label when the daily copy is absent, legacy or no longer bound', async () => {
   for (const scenario of ['absent', 'legacy', 'tampered', 'changed-payload']) {
     const { row, record } = publishedFixture();
     const category = { _id: row.categoryId, isActive: true, isVip: false, editorialSource: row.source,
@@ -117,8 +117,9 @@ test('feed keeps the localized BO description when the daily copy is absent, leg
     const service = createEditorialService({ repository, clock });
     for (const language of ['fr', 'en']) {
       const out = (await service.feed({ lang: language })).categories[0];
-      assert.equal(out.description, category.description[language], scenario + ':' + language);
-      assert.equal(out.editorialDescription, undefined, scenario + ':' + language);
+      assert.equal(out.description, 'Alpha \u2014 Bravo', scenario + ':' + language);
+      assert.equal(out.editorialDescription, out.description, scenario + ':' + language);
+      assert.ok([...out.description].length <= 140);
       assert.deepEqual(out.items[0].summary, originalPayload.summary);
     }
     assert.deepEqual(category, originalCategory);
