@@ -127,3 +127,12 @@ test('English long fallback does not promote a French-only analysis or summary',
   assert.doesNotMatch(result.longDescription, /reste|victoires|PRIVÉ/);
   assert.match(result.longDescription, /Marseille/);
 });
+
+test('a race ordered selection cannot appear in its public long description', () => {
+  const rows = [{ payload: { kind: 'horse_racing', race: { name: 'Prix du Test', racecourse: 'Longchamp',
+    meetingNumber: 1, raceNumber: 5, distanceMeters: 2500, runnersCount: 16 },
+    selection: { orderedNumbers: [7, 3, 2] } } }];
+  const result = editorialDescriptionFields(rows, 'fr', { body: { fr: 'La combinaison 7-3-2 apparaît dans cette édition.' } });
+  assert.doesNotMatch(result.longDescription, /7-3-2/);
+  assert.match(result.longDescription, /Prix du Test|2500/);
+});

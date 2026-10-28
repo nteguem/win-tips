@@ -17,6 +17,9 @@ function publicLong(value, rows) {
   const labels = events(rows).flatMap(item => Object.values(item.selection?.label || {}))
     .filter(label => typeof label === 'string').map(normalize).filter(label => label.split(' ').length >= 2);
   if (labels.some(label => normalized.includes(' ' + label + ' '))) return null;
+  const orderedSelections = events(rows).map(item => item.selection?.orderedNumbers)
+    .filter(numbers => Array.isArray(numbers) && numbers.length >= 2 && numbers.every(Number.isSafeInteger));
+  if (orderedSelections.some(numbers => normalized.includes(' ' + numbers.join(' ') + ' '))) return null;
   // Horse names remain inside the protected race reader, even if a generated
   // contextual hook inadvertently names a selected runner without saying pick.
   const horses = events(rows).flatMap(item => item.kind === 'horse_racing' ? item.race?.runners || [] : [])
