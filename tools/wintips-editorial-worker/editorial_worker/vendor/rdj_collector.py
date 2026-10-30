@@ -483,13 +483,13 @@ def _canonical_analysis(paragraphs, source_url, source_html):
         'rawAnalysisSha256': sha('\n\n'.join(raw)), 'canonicalAnalysisSha256': sha('\n\n'.join(canonical))}
 
 
-def _detail(page: FetchedPage) -> dict:
+def _detail(page: FetchedPage, clock_reference: datetime | None = None) -> dict:
     if not os.environ.get('RDJ_CONTENT_HUB_DIR'): return _detail_uncached(page)
     from ..content_hub import open_hub
     hub = open_hub()
     if hub is not None:
         from rdj_hub.petit import detail
-        return detail(hub, page)
+        return detail(hub, page, clock_reference=clock_reference)
     return _detail_uncached(page)
 
 

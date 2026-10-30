@@ -122,7 +122,7 @@ def paragraphs(values, heading="L’état de forme"):
     return {"fr": [{"heading": heading, "paragraphs": texts}]}
 
 
-def match_item(detail, page, source, edition, *, resolver, pick=None, odds=None, kickoff=None):
+def match_item(detail, page, source, edition, *, resolver, pick=None, odds=None, kickoff=None, journal_fixture=None):
     root = page_root(page)
     if kickoff is None:
         # The publication's UTC offset is never an event-time proof.
@@ -157,7 +157,25 @@ def match_item(detail, page, source, edition, *, resolver, pick=None, odds=None,
             "selection": {"label": {"fr": pick}, "odds": odds}, "status": "upcoming"}
     local = kickoff.astimezone(paris_timezone())
     day = date.fromisoformat(edition)
-    if detail["sport"] == "basketball" and rdj.folded(detail["competition"]) in {"nba", "national basketball association"} and local.date() == day + timedelta(days=1):
+    if source == 'rdj_petit_journal' and local.date() == day + timedelta(days=1) and journal_fixture is not None:
+        fixture = journal_fixture
+        checked(fixture.get('id') == result['sourceId'] and fixture.get('home') == detail['home']
+                and fixture.get('away') == detail['away'] and iso(fixture['kickoff_utc']) == kickoff,
+                'petit_following_day_fixture_conflict')
+        clocks = fixture.get('kickoff_local', {})
+        result['editionConvention'] = 'journal_following_day'
+        proof = {'sourceUrl': fixture['journal_source_url'], 'sourceId': fixture['id'],
+            'method': 'rdj_journal_clock', 'provider': 'rdj', 'editionDate': edition,
+            'matchedParticipants': [detail['home'], detail['away']],
+            'startsAtUtc': result['startsAtUtc'], 'status': 'upcoming',
+            'journalClock': clocks.get('journal'), 'detailClock': clocks.get('detail')}
+        normalization = fixture.get('provenance', {}).get('kickoff_normalization')
+        if normalization is not None:
+            proof['normalization'] = normalization
+        result['scheduleProof'] = proof
+        result['sourceUrl'] = fixture['journal_source_url']
+        checked(_petit_following_day_proof(proof, result, edition), 'petit_following_day_proof_invalid')
+    elif detail["sport"] == "basketball" and rdj.folded(detail["competition"]) in {"nba", "national basketball association"} and local.date() == day + timedelta(days=1):
         checked(local.hour < 12, "nba_following_night_window_closed")
         fixture = {"home": detail["home"], "away": detail["away"], "sport": "basketball", "competition": "NBA", "source_url": page.url, "journal_source_url": page.url}
         checked(resolver is not None, "nba_following_night_schedule_required")
@@ -187,6 +205,9 @@ def eligible(item, edition, now, lead=30):
     local = instant.astimezone(paris_timezone())
     day = date.fromisoformat(edition)
     membership = local.date() == day
+    if (local.date() == day + timedelta(days=1) and item.get('source') == 'rdj_petit_journal'
+            and item.get('editionConvention') == 'journal_following_day'):
+        membership = _petit_following_day_proof(item.get('scheduleProof'), item, edition)
     if (local.date() == day + timedelta(days=1) and local.hour < 12 and item.get("sport", {}).get("key") == "basketball"
             and item.get("competition", {}).get("name") == "NBA" and item.get("editionConvention") == "nba_following_night"):
         proof = item.get("scheduleProof", {})
@@ -196,6 +217,58 @@ def eligible(item, edition, now, lead=30):
                       and proof.get("matchedParticipants") == [item.get("teams", {}).get(side, {}).get("name") for side in ("home", "away")]
                       and _night_schedule_valid(proof))
     return membership and instant >= now + timedelta(minutes=lead)
+
+
+def _petit_following_day_proof(proof, item, edition):
+    """Only a complete dated canonical journal can carry its own next-day card.
+
+    This does not grant another source a schedule-provider exception and never
+    derives an event time from an article publication timestamp.
+    """
+    if not isinstance(proof, dict) or item.get('source') != 'rdj_petit_journal':
+        return False
+    try:
+        parts = urlsplit(proof.get('sourceUrl', ''))
+        dated = re.fullmatch(r'/paris-sportifs/le-petit-journal/\d+-[\w-]+-(\d{1,2})(?:er)?-'
+            r'(janvier|fevrier|mars|avril|mai|juin|juillet|aout|septembre|octobre|novembre|decembre)-(\d{4})\.html', parts.path)
+        months = {'janvier': 1, 'fevrier': 2, 'mars': 3, 'avril': 4, 'mai': 5, 'juin': 6,
+            'juillet': 7, 'aout': 8, 'septembre': 9, 'octobre': 10, 'novembre': 11, 'decembre': 12}
+        if (parts.scheme != 'https' or parts.hostname != 'www.ruedesjoueurs.com' or parts.port
+                or parts.username or parts.password or parts.query or parts.fragment or not dated
+                or date(int(dated[3]), months[dated[2]], int(dated[1])).isoformat() != edition
+                or proof.get('sourceUrl') != item.get('sourceUrl') or proof.get('sourceId') != item.get('sourceId')
+                or not re.fullmatch(r'\d+', str(proof.get('sourceId', '')))
+                or proof.get('method') != 'rdj_journal_clock' or proof.get('provider') != 'rdj'
+                or proof.get('editionDate') != edition or proof.get('status') != 'upcoming'
+                or proof.get('matchedParticipants') != [item['teams'][side]['name'] for side in ('home', 'away')]
+                or iso(proof['startsAtUtc']) != iso(item['startsAtUtc'])):
+            return False
+        instant = iso(item['startsAtUtc'])
+        if instant.astimezone(paris_timezone()).date() != date.fromisoformat(edition) + timedelta(days=1):
+            return False
+        journal = datetime.fromisoformat(proof['journalClock'])
+        detail = datetime.fromisoformat(proof['detailClock'])
+        rdj._reconcile_clocks(journal, detail, instant, {})
+        normalization = proof.get('normalization')
+        if normalization is not None:
+            if (not isinstance(normalization, dict) or normalization.get('method') != 'rdj_24h_corroborated_v1'
+                    or normalization.get('reference') != proof['journalClock']
+                    or normalization.get('normalized') != proof['detailClock']
+                    or not re.search(r'(?<!\d)24\s*[:h]\s*[0-5]\d(?!\d)', normalization.get('raw', ''), re.I)
+                    or not re.fullmatch(r'/pronostic/[\w-]+-' + re.escape(item['sourceId']) + r'\.html',
+                        urlsplit(source_url(normalization.get('source_url'))).path)
+                    or not isinstance(normalization.get('candidates'), list) or len(normalization['candidates']) != 2):
+                return False
+            candidates = [datetime.fromisoformat(value) for value in normalization['candidates']]
+            raw_minutes = re.findall(r'(?<!\d)24\s*[:h]\s*([0-5]\d)(?!\d)', normalization['raw'], re.I)
+            if (any(value.tzinfo is not None or value.hour != 0 for value in candidates)
+                    or candidates[1] - candidates[0] != timedelta(days=1) or detail not in candidates
+                    or len(raw_minutes) != 1 or candidates[0].date() != rdj.only_date(normalization['raw'])
+                    or any(value.minute != int(raw_minutes[0]) or value.second or value.microsecond for value in candidates)):
+                return False
+        return True
+    except (ValueError, TypeError, KeyError, AttributeError, OverflowError):
+        return False
 
 
 def _night_schedule_valid(proof):
@@ -224,9 +297,12 @@ def collect_petit(edition, fetcher, *, now, resolver, lead=30, limit=8):
     items, normalizations = [], []
     for fixture in packet["fixtures"]:
         p = fetcher.html(fixture["source_url"])
-        detail = rdj._detail(p)
+        clock = fixture.get('kickoff_local', {}).get('journal')
+        reference = datetime.fromisoformat(clock) if isinstance(clock, str) else iso(fixture['kickoff_utc'])
+        detail = rdj._detail(p, clock_reference=reference)
         item = match_item(detail, p, "rdj_petit_journal", edition, resolver=resolver,
-                          pick=fixture["pick_fr"], odds=fixture["odds"], kickoff=iso(fixture["kickoff_utc"]))
+                          pick=fixture["pick_fr"], odds=fixture["odds"], kickoff=iso(fixture["kickoff_utc"]),
+                          journal_fixture=fixture)
         item["sourceUrl"] = fixture["journal_source_url"]
         if not eligible(item, edition, now, lead):
             return {"status": "outside_publication_window", "items": [], "issues": []}

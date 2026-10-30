@@ -55,7 +55,7 @@ function nbaFollowingNight(iso, editionDate, input) {
   const localHour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Paris', hour: '2-digit', hourCycle: 'h23' }).format(new Date(iso)));
   return editionDateFor(iso) === next && localHour < 12;
 }
-function timestamp(value, editionDate, required = false, input = null) {
+function timestamp(value, editionDate, required = false, input = null, source = null) {
   if (value === null || value === undefined) {
     if (required) throw failure('Heure verifiee requise pour un combine');
     return null;
@@ -63,13 +63,20 @@ function timestamp(value, editionDate, required = false, input = null) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/.test(value) || Number.isNaN(Date.parse(value))) throw failure('startsAtUtc invalide');
   dateOnly(value.slice(0, 10), 'startsAtUtc');
   const iso = new Date(value).toISOString();
-  if (editionDateFor(iso) !== editionDate && !nbaFollowingNight(iso, editionDate, input)) throw failure('La rencontre ne correspond pas a la date Europe/Paris de cette edition');
+  const next = new Date(Date.parse(editionDate + 'T12:00:00Z') + 86400000).toISOString().slice(0, 10);
+  const petitFollowingDay = source === 'rdj_petit_journal' && input?.kind === 'match' && editionDateFor(iso) === next;
+  if (editionDateFor(iso) !== editionDate && !petitFollowingDay && !nbaFollowingNight(iso, editionDate, input)) throw failure('La rencontre ne correspond pas a la date Europe/Paris de cette edition');
   return iso;
 }
 function overnightProof(input, item) {
   const overnight = !!item.startsAtUtc && editionDateFor(item.startsAtUtc) !== item.editionDate;
   if (!overnight) {
     if (input.editionConvention !== undefined || input.scheduleProof !== undefined) throw failure('La convention de nuit est reservee a une rencontre NBA du lendemain');
+    return;
+  }
+  if (item.source === 'rdj_petit_journal' && input.editionConvention === 'journal_following_day') {
+    item.scheduleProof = require('./petitJournalClockProof').normalizePetitJournalClockProof(input, item);
+    item.editionConvention = 'journal_following_day';
     return;
   }
   if (!nbaFollowingNight(item.startsAtUtc, item.editionDate, item) || input.editionConvention !== 'nba_following_night') throw failure('Convention NBA de nuit explicite requise');
@@ -178,7 +185,7 @@ function normalizeItem(input, source, editionDate, leg = false) {
     sourceId: text(input.sourceId, 'sourceId', 220),
     sourceUrl: leg ? validatePublisherUrl(input.sourceUrl, 'rdj_football_analysis') : validatePublisherUrl(input.sourceUrl, source),
     kind: input.kind, title: i18n(input.title, 'title', 220), summary: i18n(input.summary, 'summary', 700, true),
-    startsAtUtc: timestamp(input.startsAtUtc, editionDate, leg, input),
+    startsAtUtc: timestamp(input.startsAtUtc, editionDate, leg, input, source),
     analysis: analysis(input.analysis), selection: selection(input.selection),
     status: input.status || 'unknown',
   };
