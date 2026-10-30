@@ -1,10 +1,12 @@
 """Offline process/runner contracts; no database, provider or HTTP call."""
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import io
 import json
 from pathlib import Path
+import os
+import shutil
 import subprocess
 import tempfile
 from types import SimpleNamespace
@@ -13,6 +15,7 @@ from unittest.mock import patch
 from urllib.error import HTTPError
 
 from editorial_worker import api_preflight as preflight, runner
+from editorial_worker.calendar import edition_day
 from test_bilingual_runner import Api, TestTranslator, arguments, payload_item
 
 
@@ -81,9 +84,10 @@ class PreflightProcessTests(unittest.TestCase):
                 self.call(self.receipt(**change))
             self.assertEqual(caught.exception.code, 'api_validator_receipt_binding_invalid')
 
-    def test_copy_and_coupon_teaser_validators_are_part_of_the_exact_checkout_pins(self):
+    def test_copy_coupon_teaser_and_journal_clock_validators_are_part_of_the_exact_checkout_pins(self):
         for name in ['src/api/services/common/editorialCopy.js',
-                     'src/api/services/common/couponTeaser.js']:
+                     'src/api/services/common/couponTeaser.js',
+                     'src/api/services/common/petitJournalClockProof.js']:
             with self.subTest(name=name):
                 self.assertIn(name, preflight.SOURCES)
                 receipt = self.receipt()
@@ -197,6 +201,72 @@ class RunnerPreflightTests(unittest.TestCase):
         self.assertFalse(result['published'])
         self.assertEqual(result['sources'][0]['apiResult'], outcome)
         self.assertEqual(sum(route.endswith('/import') for route, _ in api.calls), 1)
+
+    def test_real_node_cli_receipt_is_accepted_by_default_python_runner_before_import(self):
+        """Exercise both contract owners, not a fabricated accepted receipt.
+
+        Only the isolated test checkout receives a synthetic local Git commit.
+        The API client is an in-memory recorder; no HTTP/model/push is used.
+        """
+        root = Path(__file__).resolve().parents[3]
+        now = datetime.now(timezone.utc)
+        edition = edition_day(now)
+        next_day = edition + timedelta(days=1)
+        instant = datetime.combine(next_day, datetime.min.time(), tzinfo=timezone.utc).replace(hour=14, minute=30)
+        clock = instant.replace(tzinfo=None).isoformat()
+        months = ('janvier', 'fevrier', 'mars', 'avril', 'mai', 'juin', 'juillet', 'aout', 'septembre', 'octobre', 'novembre', 'decembre')
+        journal = f'https://www.ruedesjoueurs.com/paris-sportifs/le-petit-journal/74999-journal-{edition.day}-{months[edition.month-1]}-{edition.year}.html'
+        item = {'source': 'rdj_petit_journal', 'editionDate': edition.isoformat(), 'sourceId': '6014934',
+            'sourceUrl': journal, 'kind': 'match', 'title': {'fr': 'Toronto — Orlando', 'en': 'Toronto — Orlando'},
+            'summary': {'fr': 'Le programme source.', 'en': 'The source programme.'},
+            'startsAtUtc': instant.isoformat().replace('+00:00', 'Z'), 'status': 'upcoming',
+            'sport': {'key': 'basketball', 'name': 'Basketball'}, 'competition': {'name': 'NBA'},
+            'teams': {'home': {'name': 'Toronto'}, 'away': {'name': 'Orlando'}},
+            'analysis': {'fr': [{'heading': 'Le contexte', 'paragraphs': ['Analyse source intégrale.']}],
+                'en': [{'heading': 'Context', 'paragraphs': ['Complete source analysis.']}]},
+            'selection': {'label': {'fr': 'Victoire Toronto', 'en': 'Toronto win'}, 'odds': 1.7},
+            'editionConvention': 'journal_following_day',
+            'scheduleProof': {'sourceUrl': journal, 'sourceId': '6014934', 'method': 'rdj_journal_clock', 'provider': 'rdj',
+                'editionDate': edition.isoformat(), 'matchedParticipants': ['Toronto', 'Orlando'],
+                'startsAtUtc': instant.isoformat().replace('+00:00', 'Z'), 'status': 'upcoming',
+                'journalClock': clock, 'detailClock': clock}}
+        class RecordedApi:
+            def __init__(self): self.calls = []
+            def request(self, route, payload=None):
+                self.calls.append((route, deepcopy(payload)))
+                if route.endswith('/config'):
+                    return {'date': edition.isoformat(), 'importEnabled': True, 'notificationsEnabled': False,
+                        'sources': [{'key': 'rdj_petit_journal', 'categoryIds': ['a' * 24]}]}
+                if route.endswith('/import'): return {'imported': 1, 'notificationsSent': 0}
+                raise AssertionError('unexpected API route: ' + route)
+        with tempfile.TemporaryDirectory() as checkout, tempfile.TemporaryDirectory() as output:
+            checkout = Path(checkout).resolve()
+            for relative in preflight.SOURCES:
+                target = checkout / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(root / relative, target)
+            module_path = checkout / 'tools/wintips-editorial-worker/editorial_worker/api_preflight.py'
+            module_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(Path(preflight.__file__), module_path)
+            def git(*args):
+                return subprocess.run(['git', *args], cwd=checkout, check=True, capture_output=True, timeout=20)
+            git('init', '--quiet')
+            git('config', 'core.autocrlf', 'false')
+            git('add', '.')
+            git('-c', 'user.name=Local test', '-c', 'user.email=local-test@example.invalid', 'commit', '--quiet', '-m', 'Isolated validator fixture')
+            api = RecordedApi()
+            with patch.object(preflight, '__file__', str(module_path)), \
+                    patch.dict(os.environ, {'RDJ_CONTENT_HUB_DIR': ''}), \
+                    patch.object(runner, 'collect', return_value={'status': 'ready', 'items': [item], 'issues': []}):
+                report = runner.run(arguments(output, edition=edition.isoformat(), source=['rdj_petit_journal'], publish=True),
+                    fetcher=object(), now=now, clock=lambda: now, api_client=api)
+            self.assertTrue(report['published'], report)
+            self.assertFalse(report.get('blocked', False), report)
+            receipt = report['sources'][0]['apiPreflight']
+            self.assertTrue(receipt['passed'])
+            self.assertEqual(set(receipt['checkout']['sourceSha256']), preflight.SOURCES)
+            self.assertIn('src/api/services/common/petitJournalClockProof.js', receipt['checkout']['sourceSha256'])
+            self.assertEqual([route for route, _ in api.calls], ['/api/internal/editorial/config', '/api/internal/editorial/import'])
 
 
 class ApiHttpDiagnosticsTests(unittest.TestCase):
