@@ -172,6 +172,12 @@ def match_item(detail, page, source, edition, *, resolver, pick=None, odds=None,
         normalization = fixture.get('provenance', {}).get('kickoff_normalization')
         if normalization is not None:
             proof['normalization'] = normalization
+        if clocks.get('journal') is None:
+            fallback = fixture.get('provenance', {}).get('kickoff_card_fallback', {})
+            clock_proof = fixture.get('provenance', {}).get('kickoff_resolution', {})
+            proof['cardClockFallback'] = {'reason': fallback.get('reason'),
+                'sourceUrl': fallback.get('source_url'), 'sourceDate': fallback.get('source_date'),
+                'clockPolicy': clock_proof.get('method')}
         result['scheduleProof'] = proof
         result['sourceUrl'] = fixture['journal_source_url']
         checked(_petit_following_day_proof(proof, result, edition), 'petit_following_day_proof_invalid')
@@ -246,25 +252,52 @@ def _petit_following_day_proof(proof, item, edition):
         instant = iso(item['startsAtUtc'])
         if instant.astimezone(paris_timezone()).date() != date.fromisoformat(edition) + timedelta(days=1):
             return False
-        journal = datetime.fromisoformat(proof['journalClock'])
+        if 'journalClock' not in proof:
+            return False
         detail = datetime.fromisoformat(proof['detailClock'])
-        rdj._reconcile_clocks(journal, detail, instant, {})
+        if proof.get('journalClock') is None:
+            fallback = proof.get('cardClockFallback')
+            if (not isinstance(fallback, dict) or set(fallback) != {'reason', 'sourceUrl', 'sourceDate', 'clockPolicy'}
+                    or fallback.get('reason') != 'kickoff_missing' or proof.get('normalization') is not None):
+                return False
+            raw_detail_url = urlsplit(fallback.get('sourceUrl'))
+            detail_url = urlsplit(source_url(fallback.get('sourceUrl')))
+            if (raw_detail_url.query or raw_detail_url.fragment or not re.fullmatch(
+                    r'/pronostic/[\w-]+-' + re.escape(item['sourceId']) + r'\.html', detail_url.path)):
+                return False
+            card_day = date.fromisoformat(fallback['sourceDate'])
+            if not 0 <= (card_day - date.fromisoformat(edition)).days <= 1:
+                return False
+            if detail.utcoffset() is None:
+                if (fallback.get('clockPolicy') != 'rdj_detail_default_utc'
+                        or detail.replace(tzinfo=timezone.utc) != instant or card_day != detail.date()):
+                    return False
+            elif (fallback.get('clockPolicy') != 'explicit_event_offset' or detail.astimezone(timezone.utc) != instant
+                    or card_day not in {detail.date(), instant.date(), instant.astimezone(paris_timezone()).date()}):
+                return False
+        else:
+            if 'cardClockFallback' in proof:
+                return False
+            journal = datetime.fromisoformat(proof['journalClock'])
+            rdj._reconcile_clocks(journal, detail, instant, {})
         normalization = proof.get('normalization')
         if normalization is not None:
+            raw_minutes = [int(hour_minute or colon_minute or '0') for hour_minute, colon_minute in re.findall(
+                r'(?<![\w:])24\s*(?:h(?:\s*([0-5]\d)(?!\w)|(?!\w|\s*\d))|:\s*([0-5]\d)(?!\w))',
+                normalization.get('raw', '') if isinstance(normalization, dict) else '', re.I)]
             if (not isinstance(normalization, dict) or normalization.get('method') != 'rdj_24h_corroborated_v1'
                     or normalization.get('reference') != proof['journalClock']
                     or normalization.get('normalized') != proof['detailClock']
-                    or not re.search(r'(?<!\d)24\s*[:h]\s*[0-5]\d(?!\d)', normalization.get('raw', ''), re.I)
+                    or len(raw_minutes) != 1
                     or not re.fullmatch(r'/pronostic/[\w-]+-' + re.escape(item['sourceId']) + r'\.html',
                         urlsplit(source_url(normalization.get('source_url'))).path)
                     or not isinstance(normalization.get('candidates'), list) or len(normalization['candidates']) != 2):
                 return False
             candidates = [datetime.fromisoformat(value) for value in normalization['candidates']]
-            raw_minutes = re.findall(r'(?<!\d)24\s*[:h]\s*([0-5]\d)(?!\d)', normalization['raw'], re.I)
             if (any(value.tzinfo is not None or value.hour != 0 for value in candidates)
                     or candidates[1] - candidates[0] != timedelta(days=1) or detail not in candidates
                     or len(raw_minutes) != 1 or candidates[0].date() != rdj.only_date(normalization['raw'])
-                    or any(value.minute != int(raw_minutes[0]) or value.second or value.microsecond for value in candidates)):
+                    or any(value.minute != raw_minutes[0] or value.second or value.microsecond for value in candidates)):
                 return False
         return True
     except (ValueError, TypeError, KeyError, AttributeError, OverflowError):

@@ -50,23 +50,46 @@ function rawCalendarDate(raw) {
 function normalization(value, proof, item) {
   exactKeys(value, ['method', 'source_url', 'raw', 'reference', 'normalized', 'candidates']);
   checked(value.method === 'rdj_24h_corroborated_v1' && value.reference === proof.journalClock && value.normalized === proof.detailClock);
-  checked(typeof value.raw === 'string' && value.raw.length <= 500 && /(?<!\d)24\s*[:h]\s*[0-5]\d(?!\d)/i.test(value.raw));
+  checked(typeof value.raw === 'string' && value.raw.length <= 500);
+  const rawMinutes = [...value.raw.matchAll(/(?<![\w:])24\s*(?:h(?:\s*([0-5]\d)(?!\w)|(?!\w|\s*\d))|:\s*([0-5]\d)(?!\w))/gi)]
+    .map(match => Number(match[1] || match[2] || '0'));
+  checked(rawMinutes.length === 1);
   const url = validatePublisherUrl(value.source_url, 'rdj_football_analysis');
   checked(new RegExp(`-${item.sourceId}\\.html$`).test(new URL(url).pathname));
   checked(Array.isArray(value.candidates) && value.candidates.length === 2);
   const candidates = value.candidates.map(wallTime);
   checked(candidates.every(row => !row.zone && /T00:/.test(row.raw)) && candidates[1].ms - candidates[0].ms === 86400000);
-  const rawMinutes = [...value.raw.matchAll(/(?<!\d)24\s*[:h]\s*([0-5]\d)(?!\d)/gi)].map(match => Number(match[1]));
   checked(rawMinutes.length === 1 && new Date(candidates[0].ms).toISOString().slice(0, 10) === rawCalendarDate(value.raw));
   checked(candidates.every(row => new Date(row.ms).getUTCMinutes() === rawMinutes[0] && new Date(row.ms).getUTCSeconds() === 0 && row.ms % 1000 === 0));
   checked(value.candidates.includes(value.normalized));
   return { ...value, candidates: [...value.candidates] };
 }
+function cardClockFallback(value, proof, item, instant) {
+  exactKeys(value, ['reason', 'sourceUrl', 'sourceDate', 'clockPolicy']);
+  checked(value.reason === 'kickoff_missing' && proof.journalClock === null && proof.normalization === undefined);
+  const url = validatePublisherUrl(value.sourceUrl, 'rdj_football_analysis');
+  checked(new RegExp(`-${item.sourceId}\\.html$`).test(new URL(url).pathname));
+  checked(/^\d{4}-\d{2}-\d{2}$/.test(value.sourceDate));
+  const dateMs = Date.parse(value.sourceDate + 'T00:00:00Z');
+  checked(Number.isFinite(dateMs) && new Date(dateMs).toISOString().slice(0, 10) === value.sourceDate);
+  const distance = (dateMs - Date.parse(item.editionDate + 'T00:00:00Z')) / 86400000;
+  checked(distance === 0 || distance === 1);
+  const detail = wallTime(proof.detailClock);
+  if (detail.zone) {
+    checked(value.clockPolicy === 'explicit_event_offset' && Date.parse(proof.detailClock) === instant);
+    checked([proof.detailClock.slice(0, 10), new Date(instant).toISOString().slice(0, 10),
+      new Date(parisWall(instant)).toISOString().slice(0, 10)].includes(value.sourceDate));
+  } else {
+    checked(value.clockPolicy === 'rdj_detail_default_utc' && detail.ms === instant
+      && proof.detailClock.slice(0, 10) === value.sourceDate);
+  }
+  return { ...value, sourceUrl: url };
+}
 function normalizePetitJournalClockProof(input, item) {
   checked(item.source === 'rdj_petit_journal' && item.kind === 'match' && input.editionConvention === 'journal_following_day');
   const proof = input.scheduleProof;
   exactKeys(proof, ['sourceUrl', 'sourceId', 'method', 'provider', 'editionDate', 'matchedParticipants',
-    'startsAtUtc', 'status', 'journalClock', 'detailClock', 'normalization']);
+    'startsAtUtc', 'status', 'journalClock', 'detailClock', 'normalization', 'cardClockFallback']);
   checked(proof.method === 'rdj_journal_clock' && proof.provider === 'rdj' && proof.editionDate === item.editionDate
     && proof.status === 'upcoming' && proof.sourceId === item.sourceId && /^\d{1,20}$/.test(proof.sourceId));
   const url = validatePublisherUrl(proof.sourceUrl, 'rdj_petit_journal');
@@ -78,8 +101,13 @@ function normalizePetitJournalClockProof(input, item) {
   checked(new Date(parisWall(instant)).toISOString().slice(0, 10) === next);
   checked(Array.isArray(proof.matchedParticipants) && proof.matchedParticipants.length === 2
     && proof.matchedParticipants.every((name, index) => name === item.teams[index ? 'away' : 'home'].name));
-  checked(clockMatches(proof.journalClock, instant) && clockMatches(proof.detailClock, instant));
   const out = { ...proof, sourceUrl: url, startsAtUtc: item.startsAtUtc, matchedParticipants: [...proof.matchedParticipants] };
+  if (proof.journalClock === null) {
+    out.cardClockFallback = cardClockFallback(proof.cardClockFallback, proof, item, instant);
+  } else {
+    checked(proof.cardClockFallback === undefined && clockMatches(proof.journalClock, instant)
+      && clockMatches(proof.detailClock, instant));
+  }
   if (proof.normalization !== undefined) out.normalization = normalization(proof.normalization, proof, item);
   return out;
 }
