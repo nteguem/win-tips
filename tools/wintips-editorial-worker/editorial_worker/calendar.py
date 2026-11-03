@@ -26,6 +26,7 @@ def edition_day(instant: datetime):
 
 
 def source_event_day(instant: datetime):
-    # A naive RDJ display clock is explicitly source-local, never UTC. Callers
-    # still require a verified offset/calendar before producing startsAtUtc.
+    # Preserve the written date of a naive source clock for edition matching.
+    # Event conversion is separate: an explicit offset has priority, otherwise
+    # the approved RDJ editorial policy interprets the displayed time as UTC.
     return instant.date() if instant.tzinfo is None else edition_day(instant)

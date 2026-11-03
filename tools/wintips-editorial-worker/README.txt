@@ -10,6 +10,20 @@ aucun pronostic. Source, date, heure, schéma, droits et déduplication restent
 contrôlés. Les modes locaux sont historiques : leurs refus de qualité internes
 sont également convertis en repli FR par le runner de publication.
 
+LECTURE DES SOURCES — 3 NOVEMBRE 2026
+Les analyses autonomes appliquent la même politique éditoriale UTC que le
+Petit Journal : une heure d'événement RDJ sans offset est interprétée en UTC,
+sans dépendre d'une réponse UEFA. Un offset explicite reste prioritaire. Le
+calendrier des éditions, le délai minimal avant départ et la preuve indépendante
+des rencontres NBA de la nuit suivante restent contrôlés séparément.
+Dans l'unique bloc « Pronostic de nos experts », deux cases actives parmi les
+trois cases 1/N/2 expriment une double chance. Elles ne sont pas remplacées par
+un pari déduit du texte ; leur cote reste vide faute de prix propre vérifié.
+Pour le Quinté, les tableaux imbriqués d'historique des chevaux sont exclus des
+partants, des noms, des cotes et des casaques du tableau principal. Deux vrais
+tableaux principaux restent ambigus. Une course déjà partie n'est pas publiée
+comme à venir. Ces correctifs de lecture ne relancent aucune notification passée.
+
 PRÉPARATION LOCALE, ACTIVATION SÉPARÉE
 Aucun service ou timer n'est installé automatiquement. L'installateur explicite
 décrit ci-dessous laisse toujours les unités non armées. Aucun import, index, mapping

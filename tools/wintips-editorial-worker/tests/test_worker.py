@@ -116,10 +116,14 @@ class RealFixtureTests(unittest.TestCase):
         self.assertNotIn("countryCode", item["competition"])
         self.assertNotIn("en", item["analysis"])
 
-    def test_football_does_not_invent_utc(self):
+    def test_football_naive_event_clock_defaults_to_utc_without_provider(self):
         p = page("football-2026-10-22")
-        with self.assertRaisesRegex(ValueError, "resolver|schedule|proof|complete|clock|offset|timezone|unresolved"):
-            s.match_item(s.rdj._detail(p), p, "rdj_football_analysis", "2026-10-22", resolver=lambda *a: None)
+        detail = s.rdj._detail(p)
+        self.assertIsNone(detail['kickoff'].tzinfo)
+        item = s.match_item(detail, p, "rdj_football_analysis", "2026-10-22",
+            resolver=lambda *a: self.fail('An offset-free RDJ event clock follows the approved UTC default'))
+        self.assertEqual(item['startsAtUtc'], detail['kickoff'].isoformat() + 'Z')
+        self.assertEqual(s.iso(item['startsAtUtc']).utcoffset().total_seconds(), 0)
 
     def test_real_petit_journal_selects_source_cards_only(self):
         fetch = Offline([page(key) for key in ("petit-index", "petit-journal-2026-10-22", "football-2026-10-22", "football-dinamo-2026-10-22")])

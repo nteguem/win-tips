@@ -122,6 +122,31 @@ def paragraphs(values, heading="L’état de forme"):
     return {"fr": [{"heading": heading, "paragraphs": texts}]}
 
 
+def _authored_double_chance(detail, root):
+    """Read two author-selected 1/N/2 boxes, never infer a pick from prose."""
+    if detail.get('sport') != 'football':
+        return None
+    headings = rdj.find(root, lambda n: n.tag == 'h2' and rdj.folded(n.plain()) == 'pronostic de nos experts'
+        and n.parent is not None and n.parent.has_class('table') and n.parent.has_class('bloc'))
+    if len(headings) != 1:
+        return None
+    block = headings[0].parent
+    paragraphs = rdj.find(block, lambda n: n.tag == 'p' and n.parent is block
+        and n.has_class('grey') and n.has_class('line-height-1'))
+    boxes = rdj.find(block, lambda n: n.has_class('box1n2'))
+    if (len(paragraphs) != 1 or not paragraphs[0].plain() or len(boxes) != 3
+            or {node.plain() for node in boxes} != {'1', 'N', '2'}):
+        return None
+    active = [node.plain() for node in boxes if node.has_class('active')]
+    if len(active) != 2:
+        return None
+    return {
+        frozenset({'1', 'N'}): 'Victoire ' + detail['home'] + ' ou match nul',
+        frozenset({'1', '2'}): 'Pas de match nul',
+        frozenset({'N', '2'}): 'Victoire ' + detail['away'] + ' ou match nul',
+    }.get(frozenset(active))
+
+
 def match_item(detail, page, source, edition, *, resolver, pick=None, odds=None, kickoff=None, journal_fixture=None):
     root = page_root(page)
     if kickoff is None:
@@ -129,10 +154,11 @@ def match_item(detail, page, source, edition, *, resolver, pick=None, odds=None,
         if detail["kickoff"].tzinfo is not None:
             kickoff = detail["kickoff"].astimezone(timezone.utc)
         else:
-            fixture = {"home": detail["home"], "away": detail["away"], "sport": detail["sport"],
-                       "competition": detail["competition"], "gender": detail.get("gender"), "source_url": page.url, "journal_source_url": page.url}
-            moment, _ = rdj._utc(fixture, detail["kickoff"], detail["kickoff"], date.fromisoformat(edition), resolver)
-            kickoff = iso(moment)
+            # The editorial clock policy treats an explicit, offset-free RDJ
+            # event time as UTC. A provider outage must not reject this clock.
+            # Explicit offsets above still take priority; the independent NBA
+            # following-night proof below still requires its verified schedule.
+            kickoff = detail["kickoff"].replace(tzinfo=timezone.utc)
     logo_home, logo_away = _team_logos(root, page.url)
     teams = {"home": {"name": detail["home"]}, "away": {"name": detail["away"]}}
     for side, logo in (("home", logo_home), ("away", logo_away)):
@@ -141,12 +167,17 @@ def match_item(detail, page, source, edition, *, resolver, pick=None, odds=None,
     expert = detail.get("expert_headline", {})
     if pick is None:
         outcome = expert.get("outcome_1n2")
-        checked(outcome in {"1", "N", "2"}, "explicit_expert_outcome_missing")
-        pick = {"1": "Victoire " + detail["home"], "N": "Match nul", "2": "Victoire " + detail["away"]}[outcome]
-        pairs = {str(row["odds"]) for row in detail.get("detail_priced_markets", [])
-                 if rdj.folded(row["pick_fr"]) == rdj.folded(pick)}
-        if len(pairs) == 1:
-            odds = float(pairs.pop())
+        if outcome in {"1", "N", "2"}:
+            pick = {"1": "Victoire " + detail["home"], "N": "Match nul", "2": "Victoire " + detail["away"]}[outcome]
+            pairs = {str(row["odds"]) for row in detail.get("detail_priced_markets", [])
+                     if rdj.folded(row["pick_fr"]) == rdj.folded(pick)}
+            if len(pairs) == 1:
+                odds = float(pairs.pop())
+        else:
+            pick = _authored_double_chance(detail, root)
+            checked(pick is not None, "explicit_expert_outcome_missing")
+            # Highlighted outcomes prove the selection, not its combined price.
+            odds = None
     result = {"source": source, "sourceId": MATCH_PATH.fullmatch(urlsplit(page.url).path).group(1),
             "sourceUrl": page.url, "editionDate": edition, "kind": "match",
             "title": {"fr": detail["home"] + " — " + detail["away"]},
@@ -477,18 +508,34 @@ def collect_multisport(edition, fetcher, *, now, resolver, lead=30, limit=6, exc
 
 def _runners(root, url):
     scope = rdj.one(rdj.find(root, lambda n: n.attrs.get("id") == "partants"), "race runners")
-    table = rdj.one(rdj.find(scope, lambda n: n.tag == "table"), "race runners table")
+
+    def containing_table(node):
+        parent = node.parent
+        while parent is not None and parent is not scope:
+            if parent.tag == "table":
+                return parent
+            parent = parent.parent
+        return None
+
+    # Each horse's expanded history has its own nested table. It is neither
+    # another runners table nor a source of runner rows or participant names.
+    table = rdj.one(rdj.find(scope, lambda n: n.tag == "table" and containing_table(n) is None),
+                    "race runners table")
+
+    def owned(root, predicate):
+        return rdj.find(root, lambda n: predicate(n) and containing_table(n) is table)
+
     result = []
-    for row in rdj.find(table, lambda n: n.tag == "tr"):
+    for row in owned(table, lambda n: n.tag == "tr"):
         cells = [n for n in row.children if isinstance(n, rdj.Node) and n.tag == "td"]
         if not cells:
             continue
         checked(len(cells) >= 3 and re.fullmatch(r"\d+", cells[0].plain()), "runner_number_ambiguous")
         number = int(cells[0].plain())
-        names = rdj.find(cells[1], lambda n: n.tag in {"strong", "b"})
+        names = owned(cells[1], lambda n: n.tag in {"strong", "b"})
         if len(names) != 1:
             # The source links expose the exact horse name even if its display markup changes.
-            odds_links = rdj.find(cells[-1], lambda n: n.tag == "a" and n.has_class("cote-link"))
+            odds_links = owned(cells[-1], lambda n: n.tag == "a" and n.has_class("cote-link"))
             labels = [n.attrs.get("title", "") for n in odds_links]
             labels = [re.fullmatch(r"Parier sur (.+) chez .+", label) for label in labels]
             checked(len(labels) == 1 and labels[0], "runner_name_missing")
@@ -496,12 +543,12 @@ def _runners(root, url):
         else:
             name = names[0].plain()
         result.append({"number": number, "name": name})
-        links = rdj.find(cells[-1], lambda n: n.tag == "a" and n.has_class("cote-link"))
+        links = owned(cells[-1], lambda n: n.tag == "a" and n.has_class("cote-link"))
         if len(links) == 1:
             raw = links[0].plain().replace(",", ".")
             if re.fullmatch(r"\d+(?:\.\d+)?", raw) and float(raw) > 0:
                 result[-1]["odds"] = float(raw)
-        shirts = rdj.find(cells[1], lambda n: n.tag == "img" and "casaque" in rdj.folded(n.attrs.get("alt") or ""))
+        shirts = owned(cells[1], lambda n: n.tag == "img" and "casaque" in rdj.folded(n.attrs.get("alt") or ""))
         if len(shirts) == 1:
             shirt = image_url(shirts[0].attrs.get("data-src") or shirts[0].attrs.get("src"), url)
             if shirt:
