@@ -427,3 +427,16 @@ Les fragments DOM de fixtures portent URL/empreinte dans leur provenance. La
 commande manuelle tests/capture_sources.py --capture fait des GET publics et ne
 fait pas partie de la suite hors réseau. Un ancien dry-run daté est une preuve
 historique, jamais une garantie de disponibilité de source pour l'heure actuelle.
+
+PARTANTS QUINTE ET COLLECTEUR CANONIQUE
+Le nom est lu dans le champ principal du cheval, sans bouton Fiche, statistiques
+de dialogue ni historique imbriqué. Une ligne explicitement marquée Non partant
+est exclue du nombre de partants actifs du SportsEvent. L'absence d'un lien de
+pari ne suffit jamais à exclure un cheval. Les numéros et noms contradictoires
+restent refusés ; une sélection contenant un non-partant n'est pas remplacée.
+Les captures publiques des éditions du 31 octobre au 4 novembre 2026 et leurs
+empreintes sont dans tests/fixtures/turf-nonpartants-20261104/provenance.json.
+collect_turf(edition, fetcher, now=UTC, lead=30, limit=1) conserve le contrat
+status/items/issues. Si fetcher.hub est configuré, rdj_hub.turf partage la
+collecte normalisée et appelle _collect_turf_uncached comme seul adaptateur.
+Sans hub, le même adaptateur s'exécute directement ; aucune copie du parseur.

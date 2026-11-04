@@ -1,0 +1,3 @@
+# Preserve the exact publicly captured response bytes bound by provenance.json.
+*.html -text
+provenance.json text eol=lf

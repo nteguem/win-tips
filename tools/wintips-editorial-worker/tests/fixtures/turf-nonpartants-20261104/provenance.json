@@ -1,0 +1,44 @@
+[
+  {
+    "file": "course-2026-10-31.html",
+    "sourceUrl": "https://www.ruedesjoueurs.com/turf/pronostic-turf/course/31-10-2026/R1/C3/prix-du-pays-de-bray.html",
+    "capturedAtUtc": "2026-10-31T16:30:20.392449+00:00",
+    "sha256": "fb4ef3cd313c607ce354c314197982f6adeac4ebd1f9b9177fdb1602496d91b8",
+    "source": "Public RDJ HTML archived by the existing shared collector; no credentials or subscriber data"
+  },
+  {
+    "file": "course-2026-11-01.html",
+    "sourceUrl": "https://www.ruedesjoueurs.com/turf/pronostic-turf/course/01-11-2026/R1/C4/grand-prix-de-la-ville-de-laval.html",
+    "capturedAtUtc": "2026-11-01T05:30:23.413899+00:00",
+    "sha256": "fad42f54d2a42facd707fe8770c2f9b3ee5a3520f57e1bea457e34dbff4999f0",
+    "source": "Public RDJ HTML archived by the existing shared collector; no credentials or subscriber data"
+  },
+  {
+    "file": "course-2026-11-02.html",
+    "sourceUrl": "https://www.ruedesjoueurs.com/turf/pronostic-turf/course/02-11-2026/R1/C3/prix-de-la-seine-et-marne.html",
+    "capturedAtUtc": "2026-11-02T10:30:25.412090+00:00",
+    "sha256": "2e9be5cf1420f70ac2b1158adfa80a44d8783087fde16805590a316e1ac93170",
+    "source": "Public RDJ HTML archived by the existing shared collector; no credentials or subscriber data"
+  },
+  {
+    "file": "course-2026-11-03.html",
+    "sourceUrl": "https://www.ruedesjoueurs.com/turf/pronostic-turf/course/03-11-2026/R1/C1/prix-de-vienne.html",
+    "capturedAtUtc": "2026-11-03T18:30:14.562265+00:00",
+    "sha256": "b71cf65cce41511ce347e4a47bc44883ba06117398940773399d7947901c1f9c",
+    "source": "Public RDJ HTML archived by the existing shared collector; no credentials or subscriber data"
+  },
+  {
+    "file": "course-2026-11-04-unpublished.html",
+    "sourceUrl": "https://www.ruedesjoueurs.com/turf/pronostic-turf/course/04-11-2026/R1/C2/grand-national-du-trot.html",
+    "capturedAtUtc": "2026-11-04T07:30:30.053483+00:00",
+    "sha256": "8d153f665af6992edf4ad808328d3ced0d72d6cfb929591d9a996d059a8a2aa2",
+    "source": "Public RDJ HTML archived by the existing shared collector; no credentials or subscriber data"
+  },
+  {
+    "file": "course-2026-11-04.html",
+    "sourceUrl": "https://www.ruedesjoueurs.com/turf/pronostic-turf/course/04-11-2026/R1/C2/grand-national-du-trot.html",
+    "capturedAtUtc": "2026-11-04T11:17:50.825202+00:00",
+    "sha256": "32c157db238342514d1e89a86ac128f7678eadf2cd547d3a594dde9eb5816f0d",
+    "source": "Public RDJ response for current-day end-to-end regression; no credentials or subscriber data"
+  }
+]

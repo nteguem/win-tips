@@ -522,26 +522,62 @@ def _runners(root, url):
     table = rdj.one(rdj.find(scope, lambda n: n.tag == "table" and containing_table(n) is None),
                     "race runners table")
 
-    def owned(root, predicate):
-        return rdj.find(root, lambda n: predicate(n) and containing_table(n) is table)
+    def primary(node):
+        if containing_table(node) is not table:
+            return False
+        parent = node.parent
+        while parent is not None and parent is not table:
+            if parent.tag == "dialog" or parent.has_class("fiche"):
+                return False
+            parent = parent.parent
+        return True
 
-    result = []
+    def owned(root, predicate):
+        return rdj.find(root, lambda n: predicate(n) and primary(n))
+
+    def name_text(node):
+        # The principal name may contain equipment icons and a "Fiche"
+        # button. Neither is part of the horse's identity.
+        def text_children(node):
+            for child in node.children:
+                if isinstance(child, str):
+                    yield child
+                elif child.tag not in {"button", "img", "dialog"} and not child.has_class("fiche"):
+                    yield from text_children(child)
+        return rdj.text(" ".join(text_children(node)))
+
+    result, registered_numbers = [], set()
     for row in owned(table, lambda n: n.tag == "tr"):
         cells = [n for n in row.children if isinstance(n, rdj.Node) and n.tag == "td"]
         if not cells:
             continue
         checked(len(cells) >= 3 and re.fullmatch(r"\d+", cells[0].plain()), "runner_number_ambiguous")
         number = int(cells[0].plain())
+        checked(number not in registered_numbers, "runners_missing_or_duplicate")
+        registered_numbers.add(number)
+        # A withdrawn horse remains in the registration table but is absent
+        # from the SportsEvent's active-partant count. Only an explicit status
+        # in this principal cell can exclude it, never a missing betting link.
+        withdrawn = owned(cells[1], lambda n: n.has_class("uk-text-small")
+                          and re.fullmatch(r"non[ -]+partant", rdj.folded(n.plain())) is not None)
+        if withdrawn:
+            continue
+        principal = owned(cells[1], lambda n: n.tag == "div" and n.has_class("uk-text-bold"))
+        primary_names = list(dict.fromkeys(name_text(node) for node in principal))
+        checked(len(primary_names) <= 1 and all(primary_names), "runner_name_ambiguous")
+        odds_links = owned(cells[-1], lambda n: n.tag == "a" and n.has_class("cote-link"))
+        labels = [re.fullmatch(r"Parier sur (.+) chez .+", n.attrs.get("title", "")) for n in odds_links]
+        linked_names = list(dict.fromkeys(match[1] for match in labels if match))
+        checked(len(linked_names) <= 1, "runner_name_conflict")
         names = owned(cells[1], lambda n: n.tag in {"strong", "b"})
-        if len(names) != 1:
-            # The source links expose the exact horse name even if its display markup changes.
-            odds_links = owned(cells[-1], lambda n: n.tag == "a" and n.has_class("cote-link"))
-            labels = [n.attrs.get("title", "") for n in odds_links]
-            labels = [re.fullmatch(r"Parier sur (.+) chez .+", label) for label in labels]
-            checked(len(labels) == 1 and labels[0], "runner_name_missing")
-            name = labels[0].group(1)
-        else:
+        if primary_names:
+            name = primary_names[0]
+        elif len(names) == 1:
             name = names[0].plain()
+        else:
+            checked(len(linked_names) == 1, "runner_name_missing")
+            name = linked_names[0]
+        checked(not linked_names or linked_names == [name], "runner_name_conflict")
         result.append({"number": number, "name": name})
         links = owned(cells[-1], lambda n: n.tag == "a" and n.has_class("cote-link"))
         if len(links) == 1:
@@ -724,6 +760,14 @@ def parse_turf(page, edition, *, analysis_page=None, analysis_bridge=None):
 
 
 def collect_turf(edition, fetcher, *, now, resolver=None, lead=30, limit=1):
+    hub = getattr(fetcher, "hub", None)
+    if hub is not None:
+        from rdj_hub.turf import collect
+        return collect(hub, edition, fetcher, now=now, lead=lead, limit=limit)
+    return _collect_turf_uncached(edition, fetcher, now=now, resolver=resolver, lead=lead, limit=limit)
+
+
+def _collect_turf_uncached(edition, fetcher, *, now, resolver=None, lead=30, limit=1):
     root = page_root(fetcher.html(SOURCES["rdj_turf_quinte"]))
     links = []
     for n in rdj.find(root, lambda n: n.tag == "a" and n.attrs.get("href")):
