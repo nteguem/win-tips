@@ -7,6 +7,9 @@ const catchAsync = require('../../../utils/catchAsync');
 const { AppError } = require('../../../utils/AppError');
 const { formatSuccess } = require('../../../utils/responseFormatter');
 
+// Read-only request-IP fallback when mobile geolocation providers are blocked.
+exports.getAutoConfig = require('../../services/common/requestCountryConfigService').createAutoConfigHandler();
+
 /**
  * @route POST /api/config
  * @desc Obtenir la configuration par IP

@@ -14,6 +14,9 @@ const router = express.Router();
 // Obtenir config par IP (onboarding)
 router.post('/', configController.getConfigByIp);
 
+// Must precede /:countryCode. nginx supplies the validated request IP.
+router.get('/auto', configController.getAutoConfig);
+
 // Liste publique des pays actifs (selecteur de pays mobile).
 // DOIT etre declaree AVANT /:countryCode sinon "countries" est capture
 // comme un code pays.
