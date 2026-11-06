@@ -38,6 +38,9 @@ router.use('/admin/subscriptions', adminSubscriptionRoutes);
 router.use('/admin/users', adminUserRoutes);
 router.use('/admin/health', adminHealthRoutes);
 router.use('/admin/analytics', adminAnalyticsRoutes);
+const adTelemetryRoutes = require('./common/adTelemetryRoutes');
+const adTelemetryAdminAuth = require('../middlewares/admin/adminAuth');
+router.use('/admin/ads/telemetry', adTelemetryAdminAuth.protect, adTelemetryRoutes.createAdminRouter({ fixedAppId: 'wintips' }));
 router.use('/admin/packages', adminPackageRoutes);
 router.use('/admin/categories', adminCategoryRoutes);
 router.use('/admin/tickets', adminTicketRoutes);
@@ -94,6 +97,7 @@ router.use('/notifications', notificationRoutes);
 router.use('/config', configRoutes);
 // Callback SSV AdMob — public (appelé par les serveurs Google).
 router.use('/ads', admobSsvRoutes);
+router.use('/ads/telemetry', adTelemetryRoutes.createPublicRouter({ fixedAppId: 'wintips' }));
 
 // ===== ROUTES DEV (gardées par variable d'env, 404 sinon) =====
 if (process.env.ENABLE_DEV_REWARDS === 'true') {

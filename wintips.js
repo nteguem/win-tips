@@ -20,6 +20,7 @@ const PredictionCronService = require('./src/api/services/common/predictionCorre
 // il renvoie un succes apparent sur une registration « stale », ce qui gonfle
 // artificiellement le taux de livraison.
 const fcmTokenHygieneJob = require('./src/jobs/fcmTokenHygieneJob');
+const admobSsvInbox = require('./src/api/services/common/admobSsvInboxService');
 
 // Instance du cron de correction des pronostics. Chaque cycle corrige les
 // pronostics encore 'pending' puis recalcule en cascade le résultat consolidé
@@ -53,6 +54,7 @@ const startServer = async () => {
     // non confirmés (sinon Google rembourse automatiquement après 3 jours).
     googlePlaySyncJob.start();
     fcmTokenHygieneJob.start();
+    await admobSsvInbox.start();
 
     // Cron de correction des pronostics (et cascade sur les tickets).
     // Tourne une seule fois par jour à 5h UTC.

@@ -65,6 +65,16 @@ function noContent(value) {
   const visit = object => { if (!object || typeof object !== 'object') return; for (const [key, child] of Object.entries(object)) { assert.equal(forbidden.includes(key), false, key); visit(child); } };
   visit(value);
 }
+function noSelectionPreviews(value) {
+  const visit = object => {
+    if (!object || typeof object !== 'object') return;
+    for (const [key, child] of Object.entries(object)) {
+      assert.notEqual(key, 'selectionPreview');
+      visit(child);
+    }
+  };
+  visit(value);
+}
 
 test('one card groups the Petit Journal matches; previews never leak analyses or picks', async () => {
   const { service } = setup([category(), category({ _id: b, editorialSource: 'rdj_turf_quinte' })], [row(1), row(2), row(3, b, 'rdj_turf_quinte')]);
@@ -117,6 +127,148 @@ test('free rewarded gates protect the entire collection and subscribers bypass t
   state.unlocked = false; state.subscription = true;
   assert.equal((await service.library({ user })).categories[0].gate, null);
   assert.equal((await service.content(a, date, { user })).items.length, 2);
+});
+
+test('only an access-checked edition adds localized label previews; public libraries stay unchanged', async () => {
+  const { service } = setup();
+  const libraryBefore = await service.library();
+  noSelectionPreviews(libraryBefore);
+  assert.equal(Object.hasOwn(libraryBefore.categories[0], 'selectionPreviewsAvailable'), false);
+  for (const [lang, label] of [['fr', 'OM ou nul'], ['en', 'OM or draw']]) {
+    const edition = await service.edition(a, date, { lang });
+    assert.equal(edition.locked, false);
+    assert.equal(edition.selectionPreviewsAvailable, true);
+    for (const item of edition.previewItems) {
+      assert.equal(item.locked, true);
+      assert.deepEqual(item.selectionPreview, { label });
+    }
+    noContent(edition);
+  }
+  assert.deepEqual(await service.library(), libraryBefore);
+  const legacy = await service.feed();
+  noSelectionPreviews(legacy);
+});
+
+test('VIP label previews require the exact category grant, including after revocation', async () => {
+  const { service, state } = setup([category({ isVip: true, editorialSource: 'rdj_football_analysis' })],
+    [row(1, a, 'rdj_football_analysis')]);
+  for (const reader of [null, user]) {
+    state.subscription = true; // A different active package is insufficient.
+    const edition = await service.edition(a, date, { user: reader });
+    assert.equal(edition.locked, true);
+    assert.equal(edition.selectionPreviewsAvailable, false);
+    noSelectionPreviews(edition);
+    noContent(edition);
+  }
+  state.access = true;
+  const allowed = await service.edition(a, date, { user, lang: 'en' });
+  assert.equal(allowed.selectionPreviewsAvailable, true);
+  assert.deepEqual(allowed.previewItems[0].selectionPreview, { label: 'OM or draw' });
+  noContent(allowed);
+  const library = await service.library({ isVip: true, user });
+  assert.equal(library.categories[0].locked, false);
+  noSelectionPreviews(library);
+  assert.equal(Object.hasOwn(library.categories[0], 'selectionPreviewsAvailable'), false);
+  state.access = false;
+  const revoked = await service.edition(a, date, { user });
+  assert.equal(revoked.selectionPreviewsAvailable, false);
+  noSelectionPreviews(revoked);
+});
+
+test('free label previews preserve anonymous, rewarded and subscriber gate decisions', async () => {
+  const { service, state } = setup([category({ accessGate: { type: 'ad_reward' } })]);
+  for (const reader of [null, user]) {
+    const denied = await service.edition(a, date, { user: reader });
+    assert.equal(denied.locked, true);
+    assert.equal(denied.selectionPreviewsAvailable, false);
+    assert.equal(denied.gate.type, 'ad_reward');
+    noSelectionPreviews(denied);
+    noContent(denied);
+  }
+  state.unlocked = true;
+  const rewarded = await service.edition(a, date, { user });
+  assert.equal(rewarded.locked, false);
+  assert.equal(rewarded.selectionPreviewsAvailable, true);
+  assert.deepEqual(rewarded.previewItems[0].selectionPreview, { label: 'OM ou nul' });
+  state.unlocked = false;
+  state.subscription = true;
+  const subscribed = await service.edition(a, date, { user });
+  assert.equal(subscribed.locked, false);
+  assert.equal(subscribed.gate, null);
+  assert.equal(subscribed.selectionPreviewsAvailable, true);
+  noContent(subscribed);
+  noSelectionPreviews(await service.library({ user }));
+});
+
+test('selection label previews accept only non-empty strings with FR and EN source fallbacks', async () => {
+  const { service, state } = setup([category()], [row(1)]);
+  for (const [value, lang, expected] of [
+    [{ fr: '  Plus de 1,5 buts  ', en: 'Over 1.5 goals' }, 'fr', 'Plus de 1,5 buts'],
+    [{ fr: 'Plus de 1,5 buts', en: 'Over 1.5 goals' }, 'en', 'Over 1.5 goals'],
+    [{ fr: 'OM ou nul' }, 'en', 'OM ou nul'],
+    [{ en: 'OM or draw' }, 'fr', 'OM or draw'],
+    [{ fr: 'OM ou nul', en: '   ' }, 'en', 'OM ou nul'],
+    [{ fr: 42, en: 'OM or draw' }, 'fr', 'OM or draw'],
+    ['  1X  ', 'fr', '1X'],
+    [null, 'fr', null], [undefined, 'en', null], ['', 'fr', null], ['  ', 'en', null],
+    [42, 'fr', null], [[], 'en', null], [{}, 'fr', null], [{ fr: [], en: {} }, 'en', null],
+  ]) {
+    state.rows[0].payload.selection.label = value;
+    const edition = await service.edition(a, date, { lang });
+    assert.equal(edition.selectionPreviewsAvailable, true);
+    if (expected === null) noSelectionPreviews(edition);
+    else assert.deepEqual(edition.previewItems[0].selectionPreview, { label: expected });
+    noContent(edition);
+  }
+});
+
+test('combined previews bind every leg to its own selection without parent-label or reader-content leakage', async () => {
+  const combined = row(3, a, 'rdj_football_goals');
+  const first = row(1).payload, second = row(2).payload;
+  first.selection.label = { fr: 'Plus de 1,5 buts', en: 'Over 1.5 goals' };
+  second.selection.label = { fr: 'Les deux equipes marquent', en: 'Both teams to score' };
+  Object.assign(combined.payload, { kind: 'combine', legs: [first, second],
+    selection: { label: { fr: 'Combine du jour', en: 'Daily accumulator' }, totalOdds: 3.8 } });
+  const { service, state } = setup([category({ isVip: true, editorialSource: 'rdj_football_goals' })], [combined]);
+  state.access = true;
+  for (const lang of ['fr', 'en']) {
+    const edition = await service.edition(a, date, { user, lang });
+    const preview = edition.previewItems[0];
+    assert.equal(edition.selectionPreviewsAvailable, true);
+    assert.equal(preview.locked, true);
+    assert.deepEqual(preview.selectionPreview, { label: combined.payload.selection.label[lang] });
+    assert.deepEqual(preview.legs.map(leg => leg.selectionPreview), [
+      { label: first.selection.label[lang] }, { label: second.selection.label[lang] },
+    ]);
+    noContent(edition);
+    noSelectionPreviews(await service.library({ isVip: true, user, lang }));
+  }
+  second.selection.label = { fr: ' ', en: '' };
+  const incomplete = (await service.edition(a, date, { user })).previewItems[0];
+  assert.deepEqual(incomplete.legs[0].selectionPreview, { label: first.selection.label.fr });
+  assert.equal(Object.hasOwn(incomplete.legs[1], 'selectionPreview'), false);
+  state.access = false;
+  const locked = await service.edition(a, date, { user });
+  assert.equal(locked.selectionPreviewsAvailable, false);
+  noSelectionPreviews(locked);
+});
+
+test('reading selection labels performs no opening, protected-content call, grant or payload mutation', async () => {
+  const { service, state, repo } = setup();
+  const before = structuredClone(state.rows);
+  let openingWrites = 0, contentCalls = 0;
+  repo.recordOpening = async () => { openingWrites++; throw new Error('Unexpected opening write'); };
+  service.content = async () => { contentCalls++; throw new Error('Unexpected protected-content call'); };
+  for (const lang of ['fr', 'en']) {
+    const edition = await service.edition(a, date, { lang });
+    assert.equal(edition.selectionPreviewsAvailable, true);
+    assert.equal(edition.openingCount, 0);
+  }
+  assert.equal(openingWrites, 0);
+  assert.equal(contentCalls, 0);
+  assert.equal(state.writes, 0);
+  assert.equal(state.openings.size, 0);
+  assert.deepEqual(state.rows, before);
 });
 test('ten latest real dates are sorted and deduplicated; an unavailable today is never silently relabelled', async () => {
   const { service, state } = setup();

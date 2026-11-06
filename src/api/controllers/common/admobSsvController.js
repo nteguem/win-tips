@@ -3,72 +3,34 @@
 // Handler du callback "Server-Side Verification" (SSV) des pubs récompensées
 // AdMob. AdMob appelle cette route en GET après chaque pub validée.
 //
-// Politique de réponse :
-//  - signature invalide / nonce inconnu / récompense déjà comptée → HTTP 200
-//    (rien à faire ; inutile qu'AdMob retente)
-//  - vraie erreur serveur (DB indisponible, etc.) → HTTP 500 (AdMob retentera,
-//    jusqu'à 5 fois à 1 s d'intervalle)
+// Politique de reponse :
+//  - HTTP 200 apres sauvegarde durable du callback (fichier et repertoire fsync).
+//    La validation Google puis le credit sont effectues par le worker autonome.
+//    Une signature invalide, un nonce inconnu ou un doublon ne donne aucun credit.
+//  - HTTP 503 si le stockage durable est indisponible ou sa capacite atteinte.
+//    Les callbacks deja recus survivent aux pannes Mongo/Google et aux redemarrages.
+//    Une panne avant reception durable reste soumise aux retries limites d'AdMob.
 //
 // URL à renseigner dans la console AdMob :
 //   https://api.wintips-expert.com/api/ads/admob/ssv
 
-const admobSsvService = require('../../services/common/admobSsvService');
+const admobSsvInbox = require('../../services/common/admobSsvInboxService');
 const accessGateService = require('../../services/common/accessGateService');
 const logger = require('../../../utils/logger');
-
-function parseCustomData(raw) {
-  if (!raw) return null;
-  try { return JSON.parse(raw); } catch (_) { /* peut être doublement encodé */ }
-  try { return JSON.parse(decodeURIComponent(raw)); } catch (_) { return null; }
-}
 
 exports.handleRewardedSsv = async (req, res) => {
   const log = req.log || logger;
   try {
     const qIdx = req.originalUrl.indexOf('?');
     const rawQuery = qIdx >= 0 ? req.originalUrl.slice(qIdx + 1) : '';
-
-    const result = await admobSsvService.verifyCallback(rawQuery);
-    if (!result.valid) {
-      log.warn('[ADMOB SSV] Callback rejeté', { reason: result.reason });
-      return res.status(200).send('ok');
-    }
-
-    const {
-      customData, userId, transactionId, adUnit, adNetwork, rewardAmount, rewardItem, timestamp
-    } = result.params;
-
-    const custom = parseCustomData(customData);
-    const nonce = custom && custom.nonce ? String(custom.nonce) : null;
-    if (!nonce) {
-      log.warn('[ADMOB SSV] custom_data sans nonce exploitable', { hasCustomData: !!customData });
-      return res.status(200).send('ok');
-    }
-
-    const r = await accessGateService.recordVerifiedReward({
-      nonce,
-      userId: userId || (custom && custom.userId) || null,
-      transactionId,
-      adUnitId: adUnit,
-      adNetwork,
-      rewardAmount,
-      rewardItem,
-      timestampMs: timestamp
-    });
-
-    if (!r.found) {
-      log.warn('[ADMOB SSV] Nonce inconnu', { transactionId });
-    } else if (r.alreadyProcessed) {
-      log.info('[ADMOB SSV] Récompense déjà comptée (retry AdMob)', { transactionId });
-    } else if (r.unlocked) {
-      log.info('[ADMOB SSV] Récompense vérifiée → ressource débloquée', { transactionId });
-    } else {
-      log.info('[ADMOB SSV] Récompense vérifiée → progression incrémentée', { transactionId });
-    }
+    // HTTP 200 means durably received, never client-authorized. Google signature
+    // and business nonce/user matching are checked by the autonomous worker.
+    await admobSsvInbox.receive(rawQuery);
     return res.status(200).send('ok');
   } catch (err) {
-    log.error('[ADMOB SSV] Erreur de traitement', { error: err.message, stack: err.stack });
-    return res.status(500).send('error');
+    // Never acknowledge a callback that could not reach durable storage.
+    log.error('[ADMOB SSV] Durable receipt unavailable', { code: err.code || 'inbox_storage_error' });
+    return res.status(503).send('retry');
   }
 };
 

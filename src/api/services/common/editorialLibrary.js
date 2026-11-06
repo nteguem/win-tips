@@ -45,6 +45,19 @@ function safeSummary(value) {
   return { count: value.count, averageRating: Math.round(value.averageRating * 10) / 10 };
 }
 
+function withSelectionPreview(preview, payload, lang) {
+  const value = payload?.selection?.label;
+  const candidates = typeof value === 'string' ? [value] : [value?.[lang], value?.fr, value?.en];
+  const label = candidates.find(text => typeof text === 'string' && text.trim());
+  const result = { ...preview };
+  if (label !== undefined) result.selectionPreview = { label: label.trim() };
+  if (Array.isArray(preview.legs) && Array.isArray(payload?.legs)) {
+    // Keep every leg bound to its own sourced pick, never the accumulator label.
+    result.legs = preview.legs.map((leg, index) => withSelectionPreview(leg, payload.legs[index], lang));
+  }
+  return result;
+}
+
 function createEditorialLibrary({ repository, clock, sourceMatchesCategory, summary, metadata }) {
   const eligible = category => sourceMatchesCategory(category) && category.catalogueArchived !== true;
   const currentDate = () => editionDateFor(clock());
@@ -127,7 +140,16 @@ function createEditorialLibrary({ repository, clock, sourceMatchesCategory, summ
         repository.reviewSummaries([category._id], editionDate),
         repository.openingCounts ? repository.openingCounts([category._id], editionDate) : [],
       ]);
-      return card(category, items, editionDate, copies, stats, languageOf(lang), user, requestDate, openings);
+      const language = languageOf(lang);
+      const result = await card(category, items, editionDate, copies, stats, language, user, requestDate, openings);
+      result.selectionPreviewsAvailable = result.locked === false && items.length > 0;
+      if (result.selectionPreviewsAvailable) {
+        // This access-checked detail adds labels only. The public library and
+        // locked previews keep their existing allowlist; analysis stays in content.
+        result.previewItems = result.previewItems.map((preview, index) =>
+          withSelectionPreview(preview, items[index].payload, language));
+      }
+      return result;
     },
     async open(categoryId, date, body, { user = null } = {}) {
       const openingId = openingInput(body);

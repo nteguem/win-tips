@@ -90,7 +90,7 @@ exports.startTicketsUnlock = catchAsync(async (req, res, next) => {
  *              ticketsBalance, justCredited }
  */
 exports.getTicketsUnlockState = catchAsync(async (req, res) => {
-  const data = await wheelTicketService.getUnlockState(req.user._id);
+  const data = await wheelTicketService.getUnlockState(req.user._id, req.query?.nonce);
   res.status(200).json({ success: true, data });
 });
 

@@ -53,13 +53,17 @@ async function getPublicKey(keyId) {
   try {
     map = await getKeysMap();
   } catch (_) {
-    return null;
+    const error = new Error('AdMob verifier temporarily unavailable');
+    error.code = 'ADMOB_VERIFIER_UNAVAILABLE';
+    throw error;
   }
   if (map.has(String(keyId))) return map.get(String(keyId));
   try {
     map = await getKeysMap({ force: true });
   } catch (_) {
-    return null;
+    const error = new Error('AdMob verifier temporarily unavailable');
+    error.code = 'ADMOB_VERIFIER_UNAVAILABLE';
+    throw error;
   }
   return map.get(String(keyId)) || null;
 }
@@ -139,11 +143,9 @@ async function verifyCallback(rawQuery) {
     logger.warn('[ADMOB SSV] Signature invalide', {
       keyId,
       signatureBytes: signature.length,
-      signatureRaw,
       queryLooksDecodedByProxy,
       signedContentLength: signedContent.length,
       paramOrder,
-      signedContent
     });
     return { valid: false, reason: 'bad_signature' };
   }

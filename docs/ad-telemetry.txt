@@ -1,0 +1,62 @@
+Ad telemetry v1 - local implementation; not deployed.
+
+Contract: ad-telemetry-contract.json is the executable source of enums and limits.
+POST /api/ads/telemetry/batch accepts {schemaVersion:1, events:[...]}. BigWin
+requires the existing X-App-Id header for an active app; WinTips fixes appId to
+wintips. No login, secret embedded in the app, device token or user identifier.
+This is untrusted diagnostic input, never a reward/credit/accounting endpoint.
+30 batches/IP/minute, max 20 events and 32 KiB JSON. The existing global JSON
+parser may parse a body before the route checks its size; no oversized batch is
+persisted. IP is used only by the in-memory rate limiter, not saved with events.
+
+Event ID and attempt ID are random UUIDv4, independent of user/device/ad unit.
+Keep attemptId stable for the lifecycle of one ad request, eventId stable when
+retrying a batch. Cache reuse keeps the corresponding ad attemptId. Events are
+idempotent by appId+eventId. Omit country/appVersion if unavailable; country is
+client-selected country, not verified IP geography. connectionType can be
+unknown; do not infer a network fault from that value alone.
+
+occurredAt: ISO8601 UTC timestamp with Z, within the last 24h / next 5 min;
+optional fractional seconds have 1..6 digits (including Dart microseconds).
+JavaScript/Mongo retain the same UTC instant to millisecond precision, with
+remaining microseconds truncated, never rounded into a different second.
+placement: stable technical slug, not a page title or coupon/user identifier.
+durationMs: integer 0..300000. appVersion: version/build string <=32 chars.
+SDK failures: errorOrigin=sdk with the actual technical SDK code/domain.
+Local timeout/exception: errorOrigin=local and an allowlisted reason. No raw
+exception message, SDK message, response ID, URL or stack trace is accepted.
+Optional adapterClassName is the SDK Java/class-style name, not responseInfo.
+paid: revenueMicros is the value from the SDK onPaid callback, currencyCode is
+ISO-style uppercase 3-letter currency, precisionType matches the contract.
+Never fabricate paid values from advertised eCPM or user actions.
+Other event types do not store paid fields. reward is an observation only.
+
+Unknown fields are dropped. Invalid event entries are counted as rejected.
+Bad envelopes return 400, oversized bodies 413, rate limits 429, unavailable
+storage 503 with Retry-After. A successful response is 202:
+{success:true,data:{accepted:2,duplicates:0,rejected:0}}.
+No payload, identifiers or exception detail is echoed. Do not retry 4xx except
+429. Retry 429/503/transport failures with the same event IDs and bounded
+backoff/TTL. Client flush failures stay local, never recursively enqueue events.
+The mobile queue must never block navigation, ad loading or reward recovery.
+
+Mongo collection adtelemetryevents has a 14-day TTL and unique appId+eventId
+index, plus appId+occurredAt. No user/device or cross-session audience counting.
+GET /api/admin/ads/telemetry/summary requires existing admin authorization;
+BigWin additionally requires super_admin. Optional filters: appId, country,
+format, placement, appVersion; from/to are YYYY-MM-DD inclusive UTC dates.
+The default range is 7 days, maximum 14 days, groups are limited to 200 and
+aggregation to 3 seconds. API storage waits have a 3.5-second deadline and a
+maximum of 8 in-flight operations per router service/process. An ambiguous
+write retains its admission slot until it settles; retries keep event IDs.
+Filters never override a tenant header scope.
+Summary includes lifecycle counts, observed latencies and failure groups.
+Funnel event counts are not distinct devices, retention or real DAU.
+Paid totals remain separated by currency and explicitly client-reported;
+AdMob reporting remains the authoritative revenue/accounting source.
+
+The service waits for its dedicated unique/TTL/query indexes before ingestion;
+index errors return retryable 503 and cannot bypass event deduplication.
+Deployment later: verify indexes, expose routes with the existing HTTPS API, verify 202 without any
+reward mutation, verify auth on summary, then release instrumented mobile apps.
+No production data, notifications, credits or reward ledgers are touched here.

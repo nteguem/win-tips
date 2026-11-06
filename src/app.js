@@ -24,7 +24,8 @@ app.use(cookieParser());
 
 // Middleware de logging des requêtes
 app.use((req, res, next) => {
-  logger.info(`${req.method} ${req.url}`);
+  const logUrl = req.originalUrl.split('?')[0] === '/api/ads/admob/ssv' ? '/api/ads/admob/ssv' : req.url;
+  logger.info(`${req.method} ${logUrl}`);
   next();
 });
 

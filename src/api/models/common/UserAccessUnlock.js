@@ -71,7 +71,8 @@ const UserAccessUnlockSchema = new mongoose.Schema({
 
   selectedOption: {
     durationMinutes: { type: Number, default: null }, // null ⇒ à vie
-    adsRequired: { type: Number, default: null }
+    adsRequired: { type: Number, default: null },
+    ticketsToCredit: { type: Number, default: null }
   },
 
   verifiedCount: { type: Number, default: 0 },

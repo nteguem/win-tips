@@ -148,6 +148,14 @@ async function startOrSwitchUnlock(userId, category, durationMinutes) {
     );
   }
 
+  if (doc?.status === 'in_progress' && doc.nonce &&
+      (doc.selectedOption?.durationMinutes ?? null) === (option.durationMinutes ?? null) &&
+      doc.selectedOption?.adsRequired === option.adsRequired) {
+    return { nonce: doc.nonce, status: doc.status, verifiedCount: doc.verifiedCount || 0,
+      adsWatched: doc.verifiedCount || 0, adsRequired: doc.selectedOption.adsRequired,
+      durationMinutes: doc.selectedOption.durationMinutes, unlockedAt: null, expiresAt: null,
+      isAccessActive: false, resumed: true };
+  }
   const carriedCount = (doc && doc.status === 'in_progress') ? (doc.verifiedCount || 0) : 0;
 
   if (!doc) {
@@ -156,13 +164,14 @@ async function startOrSwitchUnlock(userId, category, durationMinutes) {
     });
   }
 
+  const preservePendingNonce = doc.status === 'in_progress' && !!doc.nonce;
   doc.status = 'in_progress';
   doc.selectedOption = {
     durationMinutes: option.durationMinutes ?? null,
     adsRequired: option.adsRequired
   };
   doc.verifiedCount = carriedCount;
-  doc.nonce = crypto.randomBytes(24).toString('hex');
+  if (!preservePendingNonce) doc.nonce = crypto.randomBytes(24).toString('hex');
   doc.unlockedAt = null;
   doc.expiresAt = null;
   if (carriedCount === 0) doc.rewards = [];

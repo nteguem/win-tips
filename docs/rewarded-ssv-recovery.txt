@@ -1,0 +1,103 @@
+Rewarded SSV recovery - operator notes
+
+Scope
+-----
+Only receipt validation/recovery and exactly-once rewarded wheel credit change.
+Ad frequency, VIP policy, ad identifiers, SDK selection and reporting do not.
+Existing mobile nonce/state contracts remain valid; new fields are additive.
+
+Durable receipt
+---------------
+GET /api/ads/admob/ssv first performs bounded syntactic checks. A plausible
+callback is fsynced to a private local inbox, renamed atomically, and its parent
+directory is fsynced before HTTP 200. Duplicate receipt acknowledgements also
+wait for directory sync. A storage/admission failure returns HTTP 503. Never
+acknowledge an item that was not durably saved. HTTP 200 means received, not
+that a reward has already been granted.
+
+Google ECDSA validation and the existing nonce/user/transaction checks still
+control credit. Invalid signatures are rejected without credit. Verified facts
+are saved before Mongo is touched: a later Mongo outage/restart does not require
+Google to retain an old rotating verifier key. Original provider timestamp and
+the first receipt timestamp are retained. Raw signed callbacks and nonces are
+not put in application HTTP logs or terminal queue receipts.
+
+Private paths and deployment prerequisites
+-----------------------------------------
+BigWin default: /var/lib/bigwin-admob-ssv
+WinTips default: /var/lib/wintips-admob-ssv
+Optional override: ADMOB_SSV_INBOX_DIR, an absolute, isolated per-API directory.
+Provision it outside Git/uploads with mode 0700 and ownership of the API user.
+Files use mode 0600. All parents must resolve without redirecting this path.
+Keep the path on a persistent local filesystem supporting atomic rename/fsync;
+do not use an ephemeral container directory or a shared multi-host filesystem.
+Include pending/ in private backups; do not restore full WheelUserStats over
+live balances or delete pending callbacks as an attempted cleanup.
+
+The worker starts with each API bootstrap, without an SSH session. BigWin's
+existing DISABLE_CRON_JOBS=true also disables this worker: keep that development
+switch off in production. WinTips starts recovery after its database bootstrap.
+No new Mongo collection or migration/index is required. Existing unique stats
+indexes (appId,user for BigWin; user for WinTips) and unlock nonce indexes must
+remain present. New stats markers/fields are added lazily by the atomic update.
+
+Recovery and bounds
+-------------------
+Dispatch every 2 seconds, at most 10 records per pass and two concurrent
+verifications; rescan disk every 30 seconds. Backoff begins at 5 seconds and
+caps at 30 minutes. Pending callbacks have no automatic expiry or attempt cap.
+Claims include Linux boot/process-start identity, a random owner token and a
+bounded lease (30 seconds admission; 5 minutes processing), allowing recovery
+after PM2 restarts, host reboots and PID reuse. Atomic Mongo transaction-id and
+credit-nonce guards provide exactly-once financial effects even if a lease
+expires while an old process is finishing.
+
+Admission bounds are 20,000 records and 256 MiB reserved active space; reserving
+64 KiB per pending record makes the default effective maximum 4,096 pending
+records. This includes later saved verification evidence. On quota exhaustion
+new callbacks receive 503; accepted pending records are retained. Completed,
+ignored and rejected receipts contain only digest/status/reason/timestamps and
+are pruned after 7 days or beyond 50,000 records. Only terminal receipts and
+abandoned temporary files older than a day are removed by cleanup.
+
+Watch application errors with codes SSV_INBOX_CAPACITY, SSV_INBOX_NOT_PRIVATE,
+SSV_INBOX_BUSY and inbox I/O failures. Repeated "Durable reward pending" means
+verification/Mongo still needs recovery. Never manufacture a credit to clear
+the queue. A full server/network/disk failure before durable receipt, or an
+exhausted quota beyond Google's retry window, cannot be recovered from data
+the API never received; this is not a promise of delivery during total outage.
+
+Wheel state contract
+--------------------
+POST tickets/unlock/start resumes the exact in-progress nonce and verified
+progress for the same pack. Changing pack while pending returns 409 instead of
+destroying a pending signed callback. Response includes adsWatched,
+verifiedCount and resumed. A completed but not yet finalized session is
+finalized before a new ad session is proposed.
+
+GET tickets/unlock/state accepts optional ?nonce=<previous session nonce>.
+After credit it returns completed=true, nonce=<credited nonce>, creditedNonce,
+creditedTickets, ticketsBalance, and justCredited (N for the first update, 0
+for an idempotent acknowledgement). A replay still acknowledges the original
+nonce after the unlock was reset or the app restarted. Old clients may omit
+the query. The state also includes last creditedNonce/creditedTickets so that
+new clients can correlate an acknowledgement without treating another session
+as complete. No SDK-earned client counter authorizes a server credit.
+
+The balance increment, total earned increment and private rewardedCredits
+nonce marker are one Mongo document update, guarded against that nonce.
+The following unlock reset is conditional on the same nonce. A crash between
+credit and reset is safe; a subsequent poll only completes the reset. Historical
+credit markers are not TTL-pruned, since delayed/replayed requests must never
+credit the same nonce again. Monitor unusually large stats documents rather
+than deleting those markers.
+
+Verification
+------------
+Run: node --test tests/rewarded-ssv-recovery.node-test.cjs
+Offline tests use real ECDSA signatures and private temporary directories, with
+injected Google/Mongo failures; no live callback or production user is needed.
+They cover key failure, Mongo failure, ambiguous committed write, restart,
+callback replay, invalid signatures, durable duplicate ACK, PID reuse,
+admission bursts, quota and cleanup, autonomous bootstrap, concurrent wheel
+polls, crash after balance credit, and same-session nonce/progress preservation.

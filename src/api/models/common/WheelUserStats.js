@@ -16,13 +16,23 @@ const WheelUserStatsSchema = new mongoose.Schema({
   // Compteur total de tickets gagnés (jamais décrémenté — pour stats)
   totalTicketsEarned: { type: Number, default: 0 },
 
+  rewardedCredits: { type: [{ nonce: String, tickets: Number, creditedAt: Date, _id: false }], default: [], select: false },
+  lastRewardedNonce: { type: String, default: null },
+  lastRewardedTickets: { type: Number, default: 0 },
+
   lastSpinAt: { type: Date, default: null },
   totalSpins: { type: Number, default: 0 }
 }, { timestamps: true });
 
 WheelUserStatsSchema.statics.getOrCreate = async function (userId) {
   let doc = await this.findOne({ user: userId });
-  if (!doc) doc = await this.create({ user: userId });
+  if (!doc) {
+    try { doc = await this.create({ user: userId }); }
+    catch (error) {
+      if (error.code !== 11000) throw error;
+      doc = await this.findOne({ user: userId });
+    }
+  }
   return doc;
 };
 

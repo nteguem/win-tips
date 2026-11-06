@@ -137,6 +137,15 @@ async function start(userId, packageId) {
     resource: pkg._id,
   });
 
+  if (doc?.status === 'in_progress' && doc.nonce) return { ...buildView(doc, pkg), verifiedCount: doc.verifiedCount || 0, resumed: true };
+  if (doc?.status === 'unlocked') {
+    const previous = await Subscription.findOne({ paymentReference: `ads:${doc._id.toString()}` });
+    if (!previous) {
+      const subscription = await ensureSubscription(doc, pkg, userId);
+      return { ...buildView(doc, pkg, true), subscription, resumed: true };
+    }
+  }
+
   // Cas 1 : déjà unlocked (cycle précédent) ET pas de sub active
   //   → on respecte la sémantique d'expiration : on RESET pour qu'il puisse
   //     refaire un cycle. Ses anciennes pubs ne comptent pas (cycle nouveau).
