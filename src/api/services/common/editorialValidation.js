@@ -175,7 +175,7 @@ function verifyIdentity(item, leg) {
   }
 }
 function normalizeItem(input, source, editionDate, leg = false) {
-  keys(input, ['source', 'sourceId', 'sourceUrl', 'editionDate', 'kind', 'title', 'summary', 'startsAtUtc', 'sport', 'competition', 'teams', 'race', 'analysis', 'selection', 'legs', 'status', 'curation', 'editionConvention', 'scheduleProof'], 'item');
+  keys(input, ['source', 'sourceId', 'sourceUrl', 'editionDate', 'kind', 'title', 'summary', 'startsAtUtc', 'sport', 'competition', 'teams', 'race', 'analysis', 'selection', 'legs', 'status', 'curation', 'editionConvention', 'scheduleProof', 'clockReconciliation'], 'item');
   if (input.source !== undefined && input.source !== source) throw failure('Source incoherente dans item');
   if (input.editionDate !== undefined && input.editionDate !== editionDate) throw failure('Date incoherente dans item');
   const info = sourceByKey(source);
@@ -249,6 +249,11 @@ function normalizeItem(input, source, editionDate, leg = false) {
       if (source === 'rdj_football_goals' && (normalized.legs.length > 3 || normalized.legs.some(item => !['btts', 'over_under_goals', 'team_goals'].includes(item.selection.betType)))) throw failure('Combine Buts requiert deux ou trois rencontres sur des marches de buts explicites');
     }
     // A combined price is supplied by the publisher, never calculated here.
+  }
+  if (input.clockReconciliation !== undefined) {
+    if (leg || editionDateFor(normalized.startsAtUtc) !== normalized.editionDate)
+      throw failure('La preuve horaire du lendemain doit rester dans scheduleProof');
+    normalized.clockReconciliation = require('./petitJournalClockProof').normalizePetitJournalClockReconciliation(input.clockReconciliation, normalized);
   }
   overnightProof(input, normalized);
   verifyIdentity(normalized, leg);

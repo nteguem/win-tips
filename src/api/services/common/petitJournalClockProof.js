@@ -85,11 +85,60 @@ function cardClockFallback(value, proof, item, instant) {
   }
   return { ...value, sourceUrl: url };
 }
+function normalizePetitJournalClockReconciliation(value, item) {
+  // Only the authenticated Petit Journal importer may carry this exceptional
+  // card/detail proof. General event-clock equality remains exact.
+  checked(item.source === 'rdj_petit_journal' && item.kind === 'match');
+  exactKeys(value, ['method', 'sourceUrl', 'detailSourceUrl', 'sourceId', 'matchedParticipants',
+    'participantLogoIds', 'sport', 'competition', 'startsAtUtc', 'journalClock', 'detailClock',
+    'assumedTimezone', 'timezoneAssumed', 'deltaSeconds', 'limitSeconds',
+    'journalRoundingMinutes', 'preferredClock', 'identityChecks']);
+  checked(value.method === 'rdj_detail_clock_rounding_v1' && value.sourceId === item.sourceId
+    && typeof value.sourceId === 'string' && /^\d{1,20}$/.test(value.sourceId));
+  const url = validatePublisherUrl(value.sourceUrl, 'rdj_petit_journal');
+  const detailUrl = validatePublisherUrl(value.detailSourceUrl, 'rdj_football_analysis');
+  checked(url === item.sourceUrl && journalDate(url) === item.editionDate
+    && new RegExp(`-${item.sourceId}\\.html$`).test(new URL(detailUrl).pathname));
+  checked(Array.isArray(value.matchedParticipants) && value.matchedParticipants.length === 2
+    && value.matchedParticipants.every((name, index) => name === item.teams[index ? 'away' : 'home'].name)
+    && value.sport === item.sport.key && value.competition === item.competition.name);
+  const logos = ['home', 'away'].map(side => {
+    let logo;
+    try { logo = new URL(item.teams[side].logo); } catch (_) { checked(false); }
+    const match = logo.pathname.match(/^\/img\/(\d+)-[^/]+\.(?:png|jpe?g|webp)$/i);
+    checked(logo.protocol === 'https:' && ['img.ruedesjoueurs.com', 'www.ruedesjoueurs.com'].includes(logo.hostname)
+      && !logo.port && !logo.username && !logo.password && !logo.search && !logo.hash && match);
+    return match[1];
+  });
+  checked(Array.isArray(value.participantLogoIds) && value.participantLogoIds.length === 2
+    && new Set(logos).size === 2 && value.participantLogoIds.every((logo, index) => logo === logos[index]));
+  exactKeys(value.identityChecks, ['orderedParticipants', 'competition', 'calendarDate']);
+  checked(value.identityChecks.orderedParticipants === true && value.identityChecks.competition === true
+    && value.identityChecks.calendarDate === true && value.assumedTimezone === 'UTC'
+    && value.timezoneAssumed === true && value.limitSeconds === 300
+    && value.journalRoundingMinutes === 15 && value.preferredClock === 'detail');
+  const journal = wallTime(value.journalClock), detail = wallTime(value.detailClock);
+  const instant = Date.parse(item.startsAtUtc), delta = (detail.ms - journal.ms) / 1000;
+  // Date.parse truncates sub-millisecond digits. They must not disguise a
+  // nonzero fraction as a whole-minute source clock or matching UTC proof.
+  checked(![value.journalClock, value.detailClock, value.startsAtUtc]
+    .some(clock => typeof clock === 'string' && /\.\d*[1-9]/.test(clock)));
+  checked(!journal.zone && !detail.zone && value.journalClock.slice(0, 10) === value.detailClock.slice(0, 10)
+    && journal.ms % 60000 === 0 && detail.ms % 60000 === 0 && new Date(journal.ms).getUTCMinutes() % 15 === 0
+    && Number.isInteger(value.deltaSeconds) && value.deltaSeconds === delta && Math.abs(delta) > 0 && Math.abs(delta) <= 300);
+  const days = (Date.parse(value.journalClock.slice(0, 10) + 'T00:00:00Z')
+    - Date.parse(item.editionDate + 'T00:00:00Z')) / 86400000;
+  checked((days === 0 || days === 1) && detail.ms === instant
+    && typeof value.startsAtUtc === 'string' && CLOCK.test(value.startsAtUtc)
+    && /(?:Z|[+-]\d{2}:\d{2})$/.test(value.startsAtUtc) && Date.parse(value.startsAtUtc) === instant);
+  return { ...value, sourceUrl: url, detailSourceUrl: detailUrl, startsAtUtc: item.startsAtUtc,
+    matchedParticipants: [...value.matchedParticipants], participantLogoIds: [...logos], identityChecks: { ...value.identityChecks } };
+}
 function normalizePetitJournalClockProof(input, item) {
   checked(item.source === 'rdj_petit_journal' && item.kind === 'match' && input.editionConvention === 'journal_following_day');
   const proof = input.scheduleProof;
   exactKeys(proof, ['sourceUrl', 'sourceId', 'method', 'provider', 'editionDate', 'matchedParticipants',
-    'startsAtUtc', 'status', 'journalClock', 'detailClock', 'normalization', 'cardClockFallback']);
+    'startsAtUtc', 'status', 'journalClock', 'detailClock', 'normalization', 'cardClockFallback', 'clockReconciliation']);
   checked(proof.method === 'rdj_journal_clock' && proof.provider === 'rdj' && proof.editionDate === item.editionDate
     && proof.status === 'upcoming' && proof.sourceId === item.sourceId && /^\d{1,20}$/.test(proof.sourceId));
   const url = validatePublisherUrl(proof.sourceUrl, 'rdj_petit_journal');
@@ -103,7 +152,14 @@ function normalizePetitJournalClockProof(input, item) {
     && proof.matchedParticipants.every((name, index) => name === item.teams[index ? 'away' : 'home'].name));
   const out = { ...proof, sourceUrl: url, startsAtUtc: item.startsAtUtc, matchedParticipants: [...proof.matchedParticipants] };
   if (proof.journalClock === null) {
+    checked(proof.clockReconciliation === undefined);
     out.cardClockFallback = cardClockFallback(proof.cardClockFallback, proof, item, instant);
+  } else if (proof.clockReconciliation !== undefined) {
+    checked(proof.clockReconciliation && typeof proof.clockReconciliation === 'object'
+      && proof.cardClockFallback === undefined && proof.normalization === undefined
+      && proof.clockReconciliation.journalClock === proof.journalClock
+      && proof.clockReconciliation.detailClock === proof.detailClock);
+    out.clockReconciliation = normalizePetitJournalClockReconciliation(proof.clockReconciliation, item);
   } else {
     checked(proof.cardClockFallback === undefined && clockMatches(proof.journalClock, instant)
       && clockMatches(proof.detailClock, instant));
@@ -112,4 +168,4 @@ function normalizePetitJournalClockProof(input, item) {
   return out;
 }
 
-module.exports = { normalizePetitJournalClockProof };
+module.exports = { normalizePetitJournalClockProof, normalizePetitJournalClockReconciliation };

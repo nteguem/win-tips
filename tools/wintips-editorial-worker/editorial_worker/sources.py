@@ -147,6 +147,105 @@ def _authored_double_chance(detail, root):
     }.get(frozenset(active))
 
 
+def _petit_clock_reconciliation_valid(proof, item, edition):
+    """A bounded journal-card rounding proof, never a general clock tolerance."""
+    if not isinstance(proof, dict) or item.get('source') != 'rdj_petit_journal' or item.get('kind') != 'match':
+        return False
+    try:
+        if set(proof) != {'method', 'sourceUrl', 'detailSourceUrl', 'sourceId', 'matchedParticipants',
+                'participantLogoIds', 'sport', 'competition', 'startsAtUtc', 'journalClock', 'detailClock',
+                'assumedTimezone', 'timezoneAssumed', 'deltaSeconds', 'limitSeconds',
+                'journalRoundingMinutes', 'preferredClock', 'identityChecks'}:
+            return False
+        parts = urlsplit(proof['sourceUrl'])
+        dated = re.fullmatch(r'/paris-sportifs/le-petit-journal/\d+-[\w-]+-(\d{1,2})(?:er)?-'
+            r'(janvier|fevrier|mars|avril|mai|juin|juillet|aout|septembre|octobre|novembre|decembre)-(\d{4})\.html', parts.path)
+        months = {'janvier': 1, 'fevrier': 2, 'mars': 3, 'avril': 4, 'mai': 5, 'juin': 6,
+            'juillet': 7, 'aout': 8, 'septembre': 9, 'octobre': 10, 'novembre': 11, 'decembre': 12}
+        detail_url = urlsplit(proof['detailSourceUrl'])
+        if (parts.scheme != 'https' or parts.hostname != 'www.ruedesjoueurs.com' or parts.port
+                or parts.username or parts.password or parts.query or parts.fragment or not dated
+                or date(int(dated[3]), months[dated[2]], int(dated[1])).isoformat() != edition
+                or proof['sourceUrl'] != item['sourceUrl'] or proof['sourceId'] != item['sourceId']
+                or not isinstance(proof['sourceId'], str) or not re.fullmatch(r'\d{1,20}', proof['sourceId'])
+                or detail_url.scheme != 'https' or detail_url.hostname != 'www.ruedesjoueurs.com'
+                or detail_url.port or detail_url.username or detail_url.password or detail_url.query or detail_url.fragment
+                or not re.fullmatch(r'/pronostic/[\w-]+-' + re.escape(proof['sourceId']) + r'\.html', detail_url.path)
+                or proof['method'] != 'rdj_detail_clock_rounding_v1'
+                or proof['matchedParticipants'] != [item['teams'][side]['name'] for side in ('home', 'away')]
+                or proof['sport'] != item['sport']['key'] or proof['competition'] != item['competition']['name']
+                or iso(proof['startsAtUtc']) != iso(item['startsAtUtc'])
+                or proof['assumedTimezone'] != 'UTC' or proof['timezoneAssumed'] is not True
+                or type(proof['limitSeconds']) is not int or proof['limitSeconds'] != 300
+                or type(proof['journalRoundingMinutes']) is not int or proof['journalRoundingMinutes'] != 15
+                or proof['preferredClock'] != 'detail'
+                or not isinstance(proof['identityChecks'], dict)
+                or set(proof['identityChecks']) != {'orderedParticipants', 'competition', 'calendarDate'}
+                or any(flag is not True for flag in proof['identityChecks'].values())):
+            return False
+        logos = []
+        for side in ('home', 'away'):
+            logo = urlsplit(item['teams'][side]['logo'])
+            matched = re.fullmatch(r'/img/(\d+)-[^/]+\.(?:png|jpe?g|webp)', logo.path, re.I)
+            if (logo.scheme != 'https' or logo.hostname not in {'img.ruedesjoueurs.com', 'www.ruedesjoueurs.com'}
+                    or logo.port or logo.username or logo.password or logo.query or logo.fragment or not matched):
+                return False
+            logos.append(matched[1])
+        if proof['participantLogoIds'] != logos or len(set(logos)) != 2:
+            return False
+        if any(not isinstance(proof[field], str) or not re.fullmatch(
+                r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?', proof[field])
+                for field in ('journalClock', 'detailClock')):
+            return False
+        journal, detail = [datetime.fromisoformat(proof[field]) for field in ('journalClock', 'detailClock')]
+        delta = (detail - journal).total_seconds()
+        if (journal.utcoffset() is not None or detail.utcoffset() is not None or journal.date() != detail.date()
+                or not 0 <= (journal.date() - date.fromisoformat(edition)).days <= 1
+                or journal.minute % 15 or journal.second or journal.microsecond or detail.second or detail.microsecond
+                or type(proof['deltaSeconds']) is not int or proof['deltaSeconds'] != delta or not 0 < abs(delta) <= 300
+                or detail.replace(tzinfo=timezone.utc) != iso(item['startsAtUtc'])):
+            return False
+        return True
+    except (ValueError, TypeError, KeyError, AttributeError, OverflowError):
+        return False
+
+
+def _petit_clock_reconciliation(fixture, detail, item, detail_url):
+    """Retain the canonical hub's original clocks and identity-bound evidence."""
+    resolution = fixture.get('provenance', {}).get('kickoff_resolution', {})
+    checked(isinstance(resolution, dict), 'petit_clock_reconciliation_invalid')
+    if resolution.get('method') != 'rdj_detail_clock_rounding_v1':
+        return None
+    checked(set(resolution) == {'method', 'source_url', 'assumed_timezone', 'timezone_assumed', 'source_clocks',
+        'delta_seconds', 'limit_seconds', 'journal_rounding_minutes', 'preferred_clock', 'identity_checks'},
+        'petit_clock_reconciliation_invalid')
+    checked(resolution['source_url'] == detail_url == fixture['source_url']
+        and fixture['id'] == item['sourceId'] and fixture['home'] == detail['home'] == item['teams']['home']['name']
+        and fixture['away'] == detail['away'] == item['teams']['away']['name']
+        and fixture['sport'] == detail['sport'] == item['sport']['key']
+        and fixture['competition'] == detail['competition'] == item['competition']['name']
+        and fixture['provenance'].get('participant_logo_ids') == detail['participant_logos']
+        and isinstance(resolution['identity_checks'], dict)
+        and set(resolution['identity_checks']) == {'ordered_participants', 'competition', 'calendar_date'}
+        and all(flag is True for flag in resolution['identity_checks'].values())
+        and resolution['source_clocks'] == {key: fixture['kickoff_local'][key] for key in ('journal', 'detail')}
+        and datetime.fromisoformat(resolution['source_clocks']['detail']) == detail['kickoff']
+        and iso(fixture['kickoff_utc']) == iso(item['startsAtUtc']), 'petit_clock_reconciliation_invalid')
+    proof = {'method': resolution['method'], 'sourceUrl': fixture['journal_source_url'],
+        'detailSourceUrl': detail_url, 'sourceId': fixture['id'],
+        'matchedParticipants': [detail['home'], detail['away']],
+        'participantLogoIds': list(detail['participant_logos']), 'sport': detail['sport'],
+        'competition': detail['competition'], 'startsAtUtc': item['startsAtUtc'],
+        'journalClock': resolution['source_clocks']['journal'], 'detailClock': resolution['source_clocks']['detail'],
+        'assumedTimezone': resolution['assumed_timezone'], 'timezoneAssumed': resolution['timezone_assumed'],
+        'deltaSeconds': resolution['delta_seconds'], 'limitSeconds': resolution['limit_seconds'],
+        'journalRoundingMinutes': resolution['journal_rounding_minutes'], 'preferredClock': resolution['preferred_clock'],
+        'identityChecks': {'orderedParticipants': True, 'competition': True, 'calendarDate': True}}
+    journal_item = {**item, 'sourceUrl': fixture['journal_source_url']}
+    checked(_petit_clock_reconciliation_valid(proof, journal_item, item['editionDate']), 'petit_clock_reconciliation_invalid')
+    return proof
+
+
 def match_item(detail, page, source, edition, *, resolver, pick=None, odds=None, kickoff=None, journal_fixture=None):
     root = page_root(page)
     if kickoff is None:
@@ -188,6 +287,10 @@ def match_item(detail, page, source, edition, *, resolver, pick=None, odds=None,
             "selection": {"label": {"fr": pick}, "odds": odds}, "status": "upcoming"}
     local = kickoff.astimezone(paris_timezone())
     day = date.fromisoformat(edition)
+    reconciliation = (_petit_clock_reconciliation(journal_fixture, detail, result, page.url)
+        if source == 'rdj_petit_journal' and journal_fixture is not None else None)
+    if reconciliation is not None and local.date() == day:
+        result['clockReconciliation'] = reconciliation
     if source == 'rdj_petit_journal' and local.date() == day + timedelta(days=1) and journal_fixture is not None:
         fixture = journal_fixture
         checked(fixture.get('id') == result['sourceId'] and fixture.get('home') == detail['home']
@@ -201,6 +304,8 @@ def match_item(detail, page, source, edition, *, resolver, pick=None, odds=None,
             'startsAtUtc': result['startsAtUtc'], 'status': 'upcoming',
             'journalClock': clocks.get('journal'), 'detailClock': clocks.get('detail')}
         normalization = fixture.get('provenance', {}).get('kickoff_normalization')
+        if reconciliation is not None:
+            proof['clockReconciliation'] = reconciliation
         if normalization is not None:
             proof['normalization'] = normalization
         if clocks.get('journal') is None:
@@ -242,6 +347,9 @@ def eligible(item, edition, now, lead=30):
     local = instant.astimezone(paris_timezone())
     day = date.fromisoformat(edition)
     membership = local.date() == day
+    if 'clockReconciliation' in item:
+        if not membership or not _petit_clock_reconciliation_valid(item['clockReconciliation'], item, edition):
+            return False
     if (local.date() == day + timedelta(days=1) and item.get('source') == 'rdj_petit_journal'
             and item.get('editionConvention') == 'journal_following_day'):
         membership = _petit_following_day_proof(item.get('scheduleProof'), item, edition)
@@ -287,6 +395,8 @@ def _petit_following_day_proof(proof, item, edition):
             return False
         detail = datetime.fromisoformat(proof['detailClock'])
         if proof.get('journalClock') is None:
+            if 'clockReconciliation' in proof:
+                return False
             fallback = proof.get('cardClockFallback')
             if (not isinstance(fallback, dict) or set(fallback) != {'reason', 'sourceUrl', 'sourceDate', 'clockPolicy'}
                     or fallback.get('reason') != 'kickoff_missing' or proof.get('normalization') is not None):
@@ -310,7 +420,15 @@ def _petit_following_day_proof(proof, item, edition):
             if 'cardClockFallback' in proof:
                 return False
             journal = datetime.fromisoformat(proof['journalClock'])
-            rdj._reconcile_clocks(journal, detail, instant, {})
+            reconciliation = proof.get('clockReconciliation')
+            if 'clockReconciliation' in proof:
+                if (not isinstance(reconciliation, dict) or 'normalization' in proof
+                        or reconciliation.get('journalClock') != proof['journalClock']
+                        or reconciliation.get('detailClock') != proof['detailClock']
+                        or not _petit_clock_reconciliation_valid(reconciliation, item, edition)):
+                    return False
+            else:
+                rdj._reconcile_clocks(journal, detail, instant, {})
         normalization = proof.get('normalization')
         if normalization is not None:
             raw_minutes = [int(hour_minute or colon_minute or '0') for hour_minute, colon_minute in re.findall(
