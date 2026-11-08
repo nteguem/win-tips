@@ -58,6 +58,58 @@ function withSelectionPreview(preview, payload, lang) {
   return result;
 }
 
+// Storefront facts only: a published price can promote VIP without exposing
+// its pick or granting access. Never reconstruct accumulator odds from legs.
+function vipHeadline(category, items, date, requestDate, instant) {
+  const empty = { headlineOdds: null, headlineOddsExpiresAtUtc: null };
+  if (category.isVip !== true || date !== requestDate) return empty;
+  const now = instant.getTime();
+  const futureStart = item => {
+    const value = item?.startsAtUtc;
+    if (item?.status !== 'upcoming' || item.editionDate !== date || typeof value !== 'string' ||
+        !/^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,3})?Z$/.test(value)) return null;
+    try { dateOnly(value.slice(0, 10)); } catch (_) { return null; }
+    const start = Date.parse(value);
+    return Number.isFinite(start) && start > now ? start : null;
+  };
+  let best = null;
+  for (const row of items) {
+    if (row.isPublished !== true) continue;
+    const payload = row.payload;
+    if (!payload || payload.status !== 'upcoming') continue;
+    let deadline;
+    if (payload.kind === 'combine') {
+      if (!Array.isArray(payload.legs) || payload.legs.length < 2 || payload.legs.length > 12) continue;
+      const starts = Array.from(payload.legs, leg => leg?.kind === 'match' ? futureStart(leg) : null);
+      if (starts.some(value => value === null)) continue;
+      deadline = Math.min(...starts);
+      if (payload.startsAtUtc !== null && payload.startsAtUtc !== undefined && futureStart(payload) !== deadline) continue;
+    } else {
+      if (!['match', 'horse_racing'].includes(payload.kind)) continue;
+      deadline = futureStart(payload);
+      if (deadline === null) continue;
+    }
+    const odds = payload.kind === 'combine' ? payload.selection?.totalOdds :
+      payload.selection?.totalOdds ?? payload.selection?.odds;
+    if (typeof odds !== 'number' || !Number.isFinite(odds) || odds <= 1 || odds > 100000) continue;
+    if (!best || odds > best.odds || odds === best.odds && deadline < best.deadline) best = { odds, deadline };
+  }
+  // This is the promotion's validity deadline, not necessarily the event's
+  // kickoff. Overnight fixtures must stop advertising yesterday's edition at
+  // the next publisher midnight; use its timezone database across DST changes.
+  if (!best) return empty;
+  // Locate the exact calendar boundary with the shared Intl publisher calendar
+  // rather than assuming a fixed UTC offset or a twenty-four-hour Paris day.
+  let beforeMidnight = now, publisherMidnight = now + 48 * 60 * 60 * 1000;
+  while (publisherMidnight - beforeMidnight > 1) {
+    const probe = Math.floor((beforeMidnight + publisherMidnight) / 2);
+    if (editionDateFor(probe) === requestDate) beforeMidnight = probe;
+    else publisherMidnight = probe;
+  }
+  return { headlineOdds: best.odds,
+    headlineOddsExpiresAtUtc: new Date(Math.min(best.deadline, publisherMidnight)).toISOString() };
+}
+
 function createEditorialLibrary({ repository, clock, sourceMatchesCategory, summary, metadata }) {
   const eligible = category => sourceMatchesCategory(category) && category.catalogueArchived !== true;
   const currentDate = () => editionDateFor(clock());
@@ -86,7 +138,7 @@ function createEditorialLibrary({ repository, clock, sourceMatchesCategory, summ
     const teaser = require('./couponTeaser').boundTeaser(record, items);
     return editorialDescriptionFields(items, lang, copy, teaser);
   }
-  async function card(category, items, date, copies, stats, lang, user, requestDate, openings) {
+  async function card(category, items, date, copies, stats, lang, user, requestDate, openings, instant) {
     const state = await editorialAccess(repository, category, user);
     const source = sourceByKey(category.editorialSource);
     return { id: id(category), categoryId: id(category), name: pick(category.name, lang),
@@ -95,6 +147,7 @@ function createEditorialLibrary({ repository, clock, sourceMatchesCategory, summ
       source: { key: source.key, label: source.label, kinds: [...source.kinds] },
       locked: state.locked, requiresAuth: state.requiresAuth, gate: state.gate,
       itemCount: items.length, available: items.length > 0, editionDate: date, currentDate: requestDate,
+      ...vipHeadline(category, items, date, requestDate, instant),
       openingCount: openings.find(row => id(row.categoryId) === id(category))?.openingCount || 0,
       coverKey: category.editorialSource, reviewSummary: safeSummary(stats.find(row => id(row.categoryId) === id(category))),
       // Force the allowlisted preview even for subscribers. Raw summaries can
@@ -117,7 +170,7 @@ function createEditorialLibrary({ repository, clock, sourceMatchesCategory, summ
       const language = languageOf(lang);
       // Freeze the publisher day before the first asynchronous read. A request
       // crossing Paris midnight must have one date in guards, dates and cards.
-      const requestDate = currentDate();
+      const instant = new Date(clock()), requestDate = editionDateFor(instant);
       const editionDate = checkedDate(date === undefined ? requestDate : date, requestDate);
       const categories = (await repository.categories()).filter(category => eligible(category) && category.isVip === isVip)
         .sort((a, b) => SOURCES.findIndex(source => source.key === a.editorialSource) - SOURCES.findIndex(source => source.key === b.editorialSource) || id(a).localeCompare(id(b)));
@@ -130,10 +183,10 @@ function createEditorialLibrary({ repository, clock, sourceMatchesCategory, summ
         repository.openingCounts ? repository.openingCounts(categories.map(category => category._id), editionDate) : [],
       ]);
       return { date: editionDate, currentDate: requestDate, availableDates, categories: await Promise.all(categories.map(category =>
-        card(category, rowsFor(category, rows, editionDate), editionDate, copies, stats, language, user, requestDate, openings))) };
+        card(category, rowsFor(category, rows, editionDate), editionDate, copies, stats, language, user, requestDate, openings, instant))) };
     },
     async edition(categoryId, date, { lang = 'fr', user = null } = {}) {
-      const requestDate = currentDate();
+      const instant = new Date(clock()), requestDate = editionDateFor(instant);
       const { category, editionDate, items } = await loadEdition(categoryId, date, requestDate);
       const [copies, stats, openings] = await Promise.all([
         repository.copies ? repository.copies([category.editorialSource], editionDate) : [],
@@ -141,7 +194,7 @@ function createEditorialLibrary({ repository, clock, sourceMatchesCategory, summ
         repository.openingCounts ? repository.openingCounts([category._id], editionDate) : [],
       ]);
       const language = languageOf(lang);
-      const result = await card(category, items, editionDate, copies, stats, language, user, requestDate, openings);
+      const result = await card(category, items, editionDate, copies, stats, language, user, requestDate, openings, instant);
       result.selectionPreviewsAvailable = result.locked === false && items.length > 0;
       if (result.selectionPreviewsAvailable) {
         // This access-checked detail adds labels only. The public library and
