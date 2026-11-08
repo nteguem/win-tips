@@ -13,6 +13,9 @@ WINTIPS_EDITORIAL_GEMINI_QUOTA_DIR=/var/lib/rdj-gemini-quota
 # Install the reviewed Gemini service drop-in granting this shared path.
 # Cloud mode ignores local-model settings and never falls back to them.
 WINTIPS_EDITORIAL_MANAGE_MODEL=false
+# Canonical Basket USA parser owned by the BigWin checkout; no copied collector.
+# Optional when RDJ_HUB_CODE_ROOT already points to its sibling rdj-source-hub.
+NBA_JOURNAL_CODE_ROOT=/var/www/proxidream/api-bigwin/tools/journal-parieur-worker
 # The following flags belong to the API environment, NOT this worker file:
 # WINTIPS_EDITORIAL_IMPORT_ENABLED=false until the publication GO
 # WINTIPS_EDITORIAL_NOTIFICATIONS_ENABLED=false until the notification GO

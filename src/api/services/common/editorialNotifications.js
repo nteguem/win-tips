@@ -26,6 +26,7 @@ function message(appId, group, language) {
   const date = new Intl.DateTimeFormat(language === 'en' ? 'en-GB' : 'fr-FR', { day: 'numeric', month: 'long', timeZone: 'Europe/Paris' }).format(new Date(group.editionDate + 'T12:00:00Z'));
   const labels = {
     rdj_petit_journal: { fr: `Le Petit Journal du ${date} est disponible`, en: `The ${date} Daily Journal is available` },
+    basketusa_nba: { fr: `La NBA du ${date} est disponible`, en: `NBA Today: ${date} analysis is available` },
     rdj_turf_quinte: { fr: `Le Quinté du ${date} est disponible`, en: `The ${date} horse racing analysis is available` },
     rdj_football_analysis: { fr: `Les analyses foot du ${date} sont disponibles`, en: `The ${date} football analysis is available` },
     rdj_football_duo: { fr: `Le Duo du ${date} est disponible`, en: `The ${date} Daily Duo is available` },

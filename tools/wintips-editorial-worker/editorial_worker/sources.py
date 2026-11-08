@@ -18,6 +18,7 @@ HOST = "https://www.ruedesjoueurs.com"
 SOURCES = {
     "rdj_petit_journal": HOST + "/paris-sportifs/le-petit-journal.html",
     "rdj_turf_quinte": HOST + "/turf/pronostic-turf.html",
+    "basketusa_nba": "https://www.basketusa.com/paris-sportifs/pronostics-nba/",
     "rdj_football_analysis": HOST + "/pronostics/foot.html",
     "rdj_football_combine": HOST + "/actualites/paris-sportifs.html",
     "rdj_football_duo": HOST + "/paris-sportifs/sport-news/news-pmu-sport.html",
@@ -52,6 +53,9 @@ def utc_text(moment):
 
 
 def source_url(value, base=HOST):
+    if isinstance(value, str) and urlsplit(value).hostname == 'www.basketusa.com':
+        from .nba import publisher_url
+        return publisher_url(value)
     return rdj.rdj_url(value, base)
 
 
@@ -353,6 +357,10 @@ def eligible(item, edition, now, lead=30):
     if (local.date() == day + timedelta(days=1) and item.get('source') == 'rdj_petit_journal'
             and item.get('editionConvention') == 'journal_following_day'):
         membership = _petit_following_day_proof(item.get('scheduleProof'), item, edition)
+    if (local.date() == day + timedelta(days=1) and local.hour < 12
+            and item.get('source') == 'basketusa_nba' and item.get('editionConvention') == 'basketusa_following_night'):
+        from .nba import valid_proof
+        membership = valid_proof(item.get('scheduleProof'), item, edition)
     if (local.date() == day + timedelta(days=1) and local.hour < 12 and item.get("sport", {}).get("key") == "basketball"
             and item.get("competition", {}).get("name") == "NBA" and item.get("editionConvention") == "nba_following_night"):
         proof = item.get("scheduleProof", {})
@@ -1207,6 +1215,9 @@ def collect(source, edition, fetcher, *, now, lead=30, exclude_ids=None, exclude
                 "rdj_football_analysis": collect_football, "rdj_football_combine": collect_combine,
                 "rdj_football_duo": collect_combine, "rdj_football_goals": collect_combine,
                 "rdj_multisport_analysis": collect_multisport}
+    if source == 'basketusa_nba':
+        from .nba import collect as collect_nba
+        adapters[source] = collect_nba
     if source in {"rdj_football_duo", "rdj_football_goals"}:
         kwargs["source"] = source
     if source in {"rdj_football_duo", "rdj_football_goals"}:

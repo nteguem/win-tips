@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 from urllib.request import Request, HTTPRedirectHandler, build_opener
 
 PUBLIC_HOSTS = {"www.ruedesjoueurs.com", "ruedesjoueurs.com", "match.uefa.com",
+                "www.basketusa.com",
                 "site.api.espn.com", "cdn.nba.com", "en.volleyballworld.com"}
 
 

@@ -421,7 +421,8 @@ class TicketFilteringTests(unittest.TestCase):
             s.parse_combine(bad,'2026-10-21',fetch,fixture_clock,source='rdj_football_duo')
 
     def test_multisport_and_source_catalogue_keys_are_distinct(self):
-        self.assertEqual(len(s.SOURCES),7)
+        self.assertEqual(len(s.SOURCES),8)
+        self.assertIn('basketusa_nba', s.SOURCES)
         self.assertIn('rdj_multisport_analysis',s.SOURCES)
         root = rdj.Document('<a href="https://outside.invalid/combine-23-10-2026.html">COMBI</a><a href="'+s.HOST+'/paris-sportifs/sport-news/news-pmu-sport/74768-combine-23-10-2026.html">COMBI</a>').root
         self.assertEqual(s._dated_combine_links(root,'2026-10-23'),[s.HOST+'/paris-sportifs/sport-news/news-pmu-sport/74768-combine-23-10-2026.html'])

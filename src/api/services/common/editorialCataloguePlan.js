@@ -4,6 +4,7 @@ const { validateExplicitPricing } = require('./packagePricing');
 
 const VERSION = 'wintips-rdj-catalogue-v1';
 const TARGETS = SOURCES.filter(source => source.selectable !== false).map(source => source.key);
+const BASE_TARGETS = TARGETS.filter(key => key !== 'basketusa_nba');
 const VIP = TARGETS.filter(key => SOURCES.find(source => source.key === key).access === 'vip');
 const plain = value => JSON.parse(JSON.stringify(value));
 const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object'
@@ -16,7 +17,10 @@ function fail(code, message) { throw Object.assign(new Error(message), { code })
 function id(value) { if (typeof value !== 'string' || !/^[a-f\d]{24}$/i.test(value)) fail('INVALID_MAPPING', 'Category/package ObjectId expected'); return value.toLowerCase(); }
 function validateConfig(config) {
   if (!config || config.version !== VERSION || config.appId !== 'wintips') fail('CONFIG', 'WinTips catalogue version required');
-  if (!Array.isArray(config.categories) || config.categories.length !== 6 || new Set(config.categories.map(row => row.source)).size !== 6 || config.categories.some(row => !TARGETS.includes(row.source))) fail('CONFIG', 'Exactly six target categories required');
+  if (!Array.isArray(config.categories) || ![BASE_TARGETS.length, TARGETS.length].includes(config.categories.length) ||
+      new Set(config.categories.map(row => row.source)).size !== config.categories.length ||
+      config.categories.some(row => !TARGETS.includes(row.source)) || BASE_TARGETS.some(source => !config.categories.some(row => row.source === source)))
+    fail('CONFIG', 'The six established categories and optional NBA category are required');
   for (const row of config.categories) {
     if (!row.name?.fr || !row.name?.en || !row.description?.fr || !row.description?.en) fail('CONFIG', 'Bilingual category name and description required');
   }
@@ -106,7 +110,7 @@ function createPlan(state, config, now = new Date().toISOString()) {
   if (legacyPackages.length) warnings.push({ code: 'LEGACY_OFFERS_REMAIN', packageIds: legacyPackages.map(row => idOf(row._id)), reason: 'No legacy offer is retired without explicit IDs; existing rights are never reassigned' });
   if (legacyCategories.length) warnings.push({ code: 'LEGACY_CATEGORIES_PRESERVED', categoryIds: legacyCategories.map(row => idOf(row._id)), reason: 'Old categories/tickets/mappings remain intact; review explicit adoption before activation' });
   const plan = { version: VERSION, appId: 'wintips', databaseName: state.databaseName || 'wintips', readOnly: true, targetCategoryIds: categories,
-    targetCounts: { categories: 6, packages: 2 }, configHash: hash(config), operations, warnings,
+    targetCounts: { categories: config.categories.length, packages: 2 }, configHash: hash(config), operations, warnings,
     entitledUsersModified: false, notificationsSent: false, legacyRightsPreserved: true };
   return { ...plan, planHash: hash(plan) };
 }

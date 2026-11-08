@@ -79,6 +79,20 @@ function overnightProof(input, item) {
     item.editionConvention = 'journal_following_day';
     return;
   }
+  if (item.source === 'basketusa_nba' && input.editionConvention === 'basketusa_following_night') {
+    const proof = input.scheduleProof;
+    keys(proof, ['sourceUrl', 'sourceId', 'method', 'provider', 'editionDate', 'articlePublishedAt', 'matchedParticipants', 'startsAtUtc', 'status'], 'scheduleProof');
+    if (!nbaFollowingNight(item.startsAtUtc, item.editionDate, item) || proof.method !== 'basketusa_article_clock' ||
+        proof.provider !== 'basketusa' || proof.sourceUrl !== item.sourceUrl || proof.sourceId !== item.sourceId ||
+        proof.editionDate !== item.editionDate || proof.articlePublishedAt !== item.sourcePublication?.publishedAt ||
+        proof.startsAtUtc !== input.startsAtUtc || proof.status !== 'upcoming' || !Array.isArray(proof.matchedParticipants) ||
+        proof.matchedParticipants.length !== 2 || proof.matchedParticipants.some((name, index) => name !== item.teams[index === 0 ? 'home' : 'away'].name)) {
+      throw failure('Preuve horaire Basket USA incoherente');
+    }
+    item.editionConvention = 'basketusa_following_night';
+    item.scheduleProof = { ...proof, startsAtUtc: item.startsAtUtc, matchedParticipants: [...proof.matchedParticipants] };
+    return;
+  }
   if (!nbaFollowingNight(item.startsAtUtc, item.editionDate, item) || input.editionConvention !== 'nba_following_night') throw failure('Convention NBA de nuit explicite requise');
   const proof = input.scheduleProof;
   keys(proof, ['sourceUrl', 'sourceId', 'method', 'provider', 'matchedParticipants', 'startsAtUtc', 'status'], 'scheduleProof');
@@ -149,7 +163,9 @@ function team(value, name) {
 }
 function verifyIdentity(item, leg) {
   const url = new URL(item.sourceUrl);
-  if (item.kind === 'horse_racing') {
+  if (item.source === 'basketusa_nba') {
+    if (leg || item.kind !== 'match' || !/^basketusa_[a-f0-9]{32}$/.test(item.sourceId)) throw failure('Identite NBA Basket USA invalide');
+  } else if (item.kind === 'horse_racing') {
     const route = url.pathname.match(/\/course\/(\d{2})-(\d{2})-(\d{4})\/R(\d+)\/C(\d+)\//);
     if (!route || `${route[3]}-${route[2]}-${route[1]}` !== item.editionDate || Number(route[4]) !== item.race.meetingNumber || Number(route[5]) !== item.race.raceNumber || item.sourceId !== `${item.editionDate}-R${Number(route[4])}C${Number(route[5])}`) throw failure('Identite ou date de course incoherente avec la fiche RDJ');
   } else if (leg || item.source === 'rdj_football_analysis' || item.source === 'rdj_multisport_analysis') {
@@ -175,10 +191,11 @@ function verifyIdentity(item, leg) {
   }
 }
 function normalizeItem(input, source, editionDate, leg = false) {
-  keys(input, ['source', 'sourceId', 'sourceUrl', 'editionDate', 'kind', 'title', 'summary', 'startsAtUtc', 'sport', 'competition', 'teams', 'race', 'analysis', 'selection', 'legs', 'status', 'curation', 'editionConvention', 'scheduleProof', 'clockReconciliation'], 'item');
+  keys(input, ['source', 'sourceId', 'sourceUrl', 'sourcePublication', 'editionDate', 'kind', 'title', 'summary', 'startsAtUtc', 'sport', 'competition', 'teams', 'race', 'analysis', 'selection', 'legs', 'status', 'curation', 'editionConvention', 'scheduleProof', 'clockReconciliation'], 'item');
   if (input.source !== undefined && input.source !== source) throw failure('Source incoherente dans item');
   if (input.editionDate !== undefined && input.editionDate !== editionDate) throw failure('Date incoherente dans item');
   const info = sourceByKey(source);
+  if (source !== 'basketusa_nba' && input.sourcePublication !== undefined) throw failure('Metadonnees Basket USA reservees a la source NBA');
   if (!info || !KINDS.includes(input.kind) || (leg ? input.kind !== 'match' : !info.kinds.includes(input.kind))) throw failure('Type de contenu incompatible avec la source');
   const normalized = {
     source, editionDate,
@@ -217,6 +234,23 @@ function normalizeItem(input, source, editionDate, leg = false) {
     if (!normalized.competition) throw failure('Competition requise');
     if (source.startsWith('rdj_football') && normalized.sport.key !== 'football') throw failure('Sport incompatible avec cette source football');
     if (source === 'rdj_multisport_analysis' && !['basketball', 'volleyball'].includes(normalized.sport.key)) throw failure('Expert Multisports accepte uniquement le basket et le volley');
+    if (source === 'basketusa_nba') {
+      if (normalized.sport.key !== 'basketball' || normalized.competition.name !== 'NBA' || normalized.teams.home.name === normalized.teams.away.name)
+        throw failure('Deux equipes NBA distinctes sont requises');
+      keys(input.sourcePublication, ['publishedAt', 'protectedNames'], 'sourcePublication');
+      const published = input.sourcePublication.publishedAt;
+      if (typeof published !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(published) ||
+          !Number.isFinite(Date.parse(published)) || editionDateFor(published) !== editionDate || Date.parse(published) >= Date.parse(normalized.startsAtUtc))
+        throw failure('La publication Basket USA doit correspondre au jour de cette edition');
+      normalized.sourcePublication = { publishedAt: published };
+      if (input.sourcePublication.protectedNames !== undefined) {
+        const names = input.sourcePublication.protectedNames;
+        if (!Array.isArray(names) || names.length < 2 || names.length > 32) throw failure('Noms Basket USA invalides');
+        normalized.sourcePublication.protectedNames = [...new Set(names.map(name => text(name, 'protectedName', 180)))];
+        if ([normalized.teams.home.name, normalized.teams.away.name].some(name => !normalized.sourcePublication.protectedNames.includes(name)))
+          throw failure('Equipes Basket USA absentes des noms proteges');
+      }
+    }
   } else if (input.kind === 'horse_racing') {
     if (normalized.sport.key !== 'horse_racing') throw failure('Sport hippique requis');
     const race = input.race;
@@ -269,6 +303,8 @@ function validateBatch(body, now = new Date()) {
   if (source.key === 'rdj_football_duo' && body.items.length !== 1) throw failure('Un seul Duo du Jour est autorise par edition');
   if (Buffer.byteLength(JSON.stringify(body), 'utf8') > 2 * 1024 * 1024) throw failure('Lot editorial trop volumineux');
   const items = body.items.map(item => normalizeItem(item, source.key, editionDate));
+  if (source.key === 'basketusa_nba' && (items.length > 16 || items.some(item => Date.parse(item.sourcePublication.publishedAt) > now.getTime() + 300000)))
+    throw failure('Lot NBA futur ou trop volumineux');
   const earliest = now.getTime() + 30 * 60 * 1000;
   for (const item of items) {
     const events = item.kind === 'combine' ? item.legs : [item];

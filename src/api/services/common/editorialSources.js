@@ -1,6 +1,7 @@
 // Fixed publisher catalogue; category selection stays under back-office control.
 const SOURCES = Object.freeze([
   { key: 'rdj_petit_journal', label: 'Le Petit Journal', description: 'Les matchs et analyses du jour', access: 'free', selectable: true, url: 'https://www.ruedesjoueurs.com/paris-sportifs/le-petit-journal.html', kinds: ['match'] },
+  { key: 'basketusa_nba', label: 'NBA du jour', description: 'Les rencontres NBA et leurs analyses', access: 'free', selectable: true, url: 'https://www.basketusa.com/paris-sportifs/pronostics-nba/', kinds: ['match'], constraints: { sports: ['basketball'], competition: 'NBA' } },
   { key: 'rdj_turf_quinte', label: 'Le Quinté du Jour', description: 'Les courses, analyses et sélections du Quinté+', access: 'free', selectable: true, url: 'https://www.ruedesjoueurs.com/turf/pronostic-turf.html', kinds: ['horse_racing'] },
   { key: 'rdj_football_analysis', label: 'Sélection Expert', description: 'Des paris simples et leur analyse football', access: 'vip', selectable: true, url: 'https://www.ruedesjoueurs.com/pronostics/foot.html', kinds: ['match'] },
   { key: 'rdj_football_duo', label: 'Le Duo du Jour', description: 'Deux rencontres, une cote totale de 2 à 4', access: 'vip', selectable: true, url: 'https://www.ruedesjoueurs.com/actualites/paris-sportifs.html', kinds: ['combine'], constraints: { minEvents: 2, maxEvents: 2, minTotalOdds: 2, maxTotalOdds: 4 } },
@@ -50,6 +51,13 @@ function containsEditorialField(value) {
 function validatePublisherUrl(value, source) {
   let url;
   try { url = new URL(value); } catch (_) { throw failure('URL RDJ invalide'); }
+  if (source === 'basketusa_nba') {
+    if (url.protocol !== 'https:' || url.hostname !== 'www.basketusa.com' || url.port || url.username || url.password ||
+        url.search || url.pathname !== '/paris-sportifs/pronostics-nba/' || !/^#pari-[a-z0-9-]{1,150}$/.test(url.hash)) {
+      throw failure('Une analyse NBA canonique Basket USA est requise');
+    }
+    return url.href;
+  }
   if (url.protocol !== 'https:' || url.hostname !== 'www.ruedesjoueurs.com' || url.port || url.username || url.password || url.search || url.hash) {
     throw failure('Une URL canonique HTTPS RueDesJoueurs est requise');
   }

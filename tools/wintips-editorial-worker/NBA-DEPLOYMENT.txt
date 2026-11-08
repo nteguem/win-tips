@@ -1,0 +1,45 @@
+NBA du jour / Basket USA — WinTips
+
+This module uses the one canonical journal_worker.nba_source collector in the
+BigWin checkout. Basket USA commercial reuse has been confirmed by the operator.
+No extra model or collector copy is installed. The existing ten-minute worker
+timer checks this optional source independently of football and horse racing.
+
+Activation (operator, after review and Git deployment of BOTH API commits):
+1. Ensure NBA_JOURNAL_CODE_ROOT is an absolute canonical path to the BigWin
+   tools/journal-parieur-worker directory, OR retain the existing
+   RDJ_HUB_CODE_ROOT pointing to its sibling tools/rdj-source-hub. The loader
+   verifies the imported module's origin. Never copy a Python source to the VPS.
+2. With the existing private WINTIPS_CATALOGUE_MONGO_URI environment supplied,
+   create a READ-ONLY targeted plan:
+     node tools/editorial-nba-category.cjs --plan --out /private/nba-plan.json
+   Review: zero or one INSERT into categories, source basketusa_nba, isVip=false,
+   accessGate=null, name FR NBA du jour / EN NBA Today. No existing category,
+   package, price, subscription, opening, user or notification is modified.
+3. Apply only the exact reviewed plan, retaining its receipt:
+     node tools/editorial-nba-category.cjs --apply --plan-file /private/nba-plan.json --confirm-sha256 REVIEWED_PLAN_HASH --confirm-catalogue-mutation --out /private/nba-receipt.json
+   Application requires an existing MongoDB replica set or mongos transaction;
+   there is no nontransactional fallback. Stop and review if that is unavailable.
+   The full editorial-catalogue.nba.example.json is documentation for a NEW
+   catalogue, not a production migration; do not rewrite historical prices.
+4. Reload the API only as required for the versioned source catalogue change.
+   The worker already selects all mapped SOURCES by default; no extra CLI source
+   list or periodic task is needed. Retain import/notification flags and tokens.
+5. Run a dry check first, without imports or notifications:
+     python -B -m editorial_worker --source basketusa_nba --dry-run --output /var/lib/wintips-editorial-worker
+   A source article from 6 November must NOT create an 8 November edition.
+   source_absent means waiting for the publisher's current detailed picks.
+   A new article requires source publication day Europe/Paris, exact card teams,
+   authored pick and odds, explicit timezone and a minimum thirty-minute lead.
+   The following night is permitted only before noon and with a bound proof.
+
+Existing WinTips free/VIP access, rewarded gates, counts and reviews retain their
+current rules. The public library lists a distinct NBA category only when real
+current items exist. Older clients tolerate the optional category; updated
+clients use the native NBA cover, actual fixtures, night UTC dates and the
+bundled nba_arena.webp photograph. No weekly BigWin quota is added to WinTips.
+
+Local checks (no API/database/push):
+  node --test tests/editorial-nba.node-test.cjs tests/editorial-catalogue.node-test.cjs
+  PYTHONPATH=tools/wintips-editorial-worker python -m unittest discover -s tools/wintips-editorial-worker/tests -p test_nba_source.py
+  flutter test test/editorial_nba_cover_test.dart test/editorial_coupon_cover_test.dart test/editorial_library_model_test.dart test/editorial_coupon_detail_test.dart

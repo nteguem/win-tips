@@ -58,6 +58,9 @@ FIXED = {
 
 def _names(item):
     names = []
+    if item.get('source') == 'basketusa_nba':
+        names.extend(name for name in item.get('sourcePublication', {}).get('protectedNames', [])
+            if isinstance(name, str) and name.strip() and len(name) <= 180)
     for side in ("home", "away"):
         name = item.get("teams", {}).get(side, {}).get("name")
         if name:
