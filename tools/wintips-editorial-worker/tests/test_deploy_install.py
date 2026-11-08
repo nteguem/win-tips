@@ -133,6 +133,8 @@ class InstallerTests(unittest.TestCase):
         self.assertIn('--dry-run --translate', service)
         self.assertIn('StateDirectoryMode=0700', service)
         self.assertIn('Persistent=false', timer)
+        self.assertIn('OnCalendar=*-*-* *:02/10:00 UTC', timer)
+        self.assertIn('RandomizedDelaySec=30', timer)
         self.assertNotIn('unit-test-marker', json.dumps([first, second]))
         self.assert_unarmed()
 

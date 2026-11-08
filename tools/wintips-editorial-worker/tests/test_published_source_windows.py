@@ -223,7 +223,10 @@ class PublishedSourceWindowTests(unittest.TestCase):
             digest = hashlib.sha256(saved.read_bytes()).hexdigest()
             with patch.object(runner, 'collect', return_value={'status': 'source_absent', 'items': [], 'issues': []}) as collect:
                 report = runner.run(args, fetcher=fetcher, now=NOW, api_client=Api(), clock=lambda: NOW)
-            self.assertNotIn('blocked', report)
+            self.assertFalse(report['blocked'])
+            self.assertEqual(report['status'], 'complete')
+            self.assertEqual(report['publishedSources'], [PETIT, TURF])
+            self.assertEqual(report['failedSources'], [])
             self.assertFalse(report['published'])
             self.assertEqual([r['status'] for r in report['sources'][:2]], ['outside_publication_window'] * 2)
             self.assertEqual(collect.call_count, 1)

@@ -1,5 +1,25 @@
 WINTIPS — WORKER ÉDITORIAL RDJ
 
+REPRISE ET STATUT GLOBAL — 8 NOVEMBRE 2026
+Le timer vérifie les sources toutes les dix minutes, à 02, 12, 22, 32, 42 et
+52 UTC, cinq minutes après chaque passage BigWin à 07, 17, 27, 37, 47 et 57.
+Les services sont oneshot et le verrou existant interdit deux tours WinTips
+simultanés. Un passage encore actif n'est pas lancé en double par le timer.
+La collecte partagée conserve son cache borné ; les imports restent des upserts
+par catégorie/source/date/identité, et les notifications gardent leur registre
+durable. Rapprocher les passages ne doit donc ni créer une autre édition ni
+renvoyer une notification déjà acceptée. Les contrôles de date et de départ
+restent inchangés ; une source encore absente n'est jamais inventée.
+
+Le résumé stdout et last-run.json exposent status=complete, partial ou blocked,
+publishedSources et failedSources. Le booléen historique published signifie
+toujours « au moins un import accepté pendant ce tour » : un Quinté importé
+ne prouve pas que le Petit Journal a réussi. Une erreur de source, de livraison
+ou de cleanup garde blocked=true et un code de sortie 2. Une absence normale
+de l'éditeur reste une vérification terminée, sans prétendre avoir publié.
+Une édition déjà publiée et vérifiée après sa fenêtre reste dans
+publishedSources, sans nouvel import ni renvoi de notification.
+
 POLITIQUE DE PUBLICATION — 26 OCTOBRE 2026
 La traduction ne bloque plus une source valide. La publication et la preview
 --translate utilisent translate_batch(..., best_effort=True). Gemini traduit
@@ -366,22 +386,28 @@ du timer restent des étapes séparées après GO ; --check ne crée aucun fichi
 Les exemples systemd sont à revoir avant installation : dossier réel API, jeton,
 modèles et dépendances existants, droits et restrictions. Le service exemple fait
 --dry-run --translate. Le passage explicite à --publish et l'activation du timer
-horaire ne sont faits qu'après GO. La tâche est du VPS, indépendante des apps et
+périodique ne sont faits qu'après GO. La tâche est du VPS, indépendante des apps et
 du navigateur. Elle ne laisse pas un modèle chargé entre ses tours.
 
-Le timer est à *:30 UTC, sans rattrapage Persistent. En mode LOCAL runtime géré
+Le timer est à *:02/10 UTC ; l'exemple non armé n'effectue aucun rattrapage
+Persistent. Le drop-in Gemini de production conserve Persistent=true : un
+rattrapage relit seulement l'édition courante, jamais celle de la veille.
+La production Gemini utilise un fournisseur cloud indépendant. En mode LOCAL géré
 (WINTIPS_EDITORIAL_MANAGE_MODEL=true), après la collecte HTTP légère et avant
 toute traduction/import/reprise de notification, un garde UTC exige que le budget
 de traduction complet plus 300 secondes pour démarrage/cleanup tiennent avant le
-prochain BigWin *:07 UTC. Les 60 secondes suivant *:07 sont aussi réservées pour
-son délai aléatoire de démarrage. Le garde est revérifié avant les deux verrous
+prochain BigWin *:07/10 UTC. Les 60 secondes suivant chaque passage sont réservées
+pour son délai aléatoire de démarrage. Le garde est revérifié avant les deux verrous
 partagés puis immédiatement après leur acquisition. Il ne dort jamais en gardant
 un verrou : fenêtre insuffisante = rapport deferred_shared_window, aucun modèle,
 import ou push, puis nouvelle tentative au prochain tour. Le runtime ne s'arrête
 que s'il a été démarré par ce tour et n'est pas utilisé par BigWin. Un échec de
-cleanup interdit aussi toute livraison. Les horaires BigWin et ses unités restent
-inchangés ; si son calendrier opérateur change, revoir ce contrat UTC avant
-d'activer WinTips. Aucune promesse de latence d'une édition froide n'en découle.
+cleanup interdit aussi toute livraison. Le garde suit les six passages BigWin
+par heure, y compris celui de 23:57 avant le passage à 00:07. Le budget local
+historique de 1200 secondes ne tient plus entre ces passages et reste différé
+avant toute prise de verrou ou démarrage de modèle. Gemini et Azure ignorent
+ce garde local. Un futur changement du calendrier exige de revoir ce contrat
+UTC ; aucune promesse de latence d'une édition froide n'en découle.
 
 Conserver les catégories legacy jusqu'à disponibilité du nouveau mobile. Avant de
 basculer une ancienne catégorie RDJ, le pont WINTIPS_EDITORIAL_LEGACY_BRIDGE=true

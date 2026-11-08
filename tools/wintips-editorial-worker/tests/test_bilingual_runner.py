@@ -91,6 +91,9 @@ class BilingualRunnerTests(unittest.TestCase):
             self.assertEqual(api.calls[2][1], {'dryRun': False})
             self.assertEqual(report['notificationsAccepted'], 1)
             self.assertTrue(report['notificationsSent'])
+            self.assertEqual(report['status'], 'complete')
+            self.assertEqual(report['publishedSources'], ['rdj_turf_quinte'])
+            self.assertEqual(report['failedSources'], [])
 
     def test_translation_failure_publishes_original_source_fallback(self):
         class Broken(TestTranslator):
@@ -112,6 +115,8 @@ class BilingualRunnerTests(unittest.TestCase):
             report = self.run_case(directory, api, TestTranslator(), publish=True)
             self.assertEqual(api.calls[-1], ('/api/internal/editorial/notifications/drain', {'dryRun': False}))
             self.assertFalse(report['published'])
+            self.assertEqual(report['status'], 'complete')
+            self.assertEqual(report['publishedSources'], [])
 
     def test_model_factory_not_called_when_source_absent(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(runner, 'make_translator', side_effect=AssertionError('No model for absent source')):
@@ -125,6 +130,8 @@ class BilingualRunnerTests(unittest.TestCase):
                     now=self.clock(), clock=self.clock, api_client=api, translator=TestTranslator())
             self.assertTrue(result['blocked'])
             self.assertFalse(result['published'])
+            self.assertEqual(result['status'], 'blocked')
+            self.assertEqual(result['failedSources'], ['rdj_turf_quinte'])
             self.assertEqual(api.calls[-1][0], '/api/internal/editorial/notifications/drain')
 
     def test_one_broken_source_does_not_prevent_the_next_import_or_notification_retry(self):
@@ -150,6 +157,15 @@ class BilingualRunnerTests(unittest.TestCase):
                 self.assertEqual(result['sources'][0]['status'], 'source_blocked')
                 self.assertTrue(result['sources'][1]['imported'])
                 self.assertEqual(api.calls[-1][0], '/api/internal/editorial/notifications/drain')
+                # This was the misleading production case: another imported
+                # source sets the legacy flag, but the whole run is partial.
+                self.assertTrue(result['published'])
+                self.assertEqual(result['status'], 'partial')
+                self.assertEqual(result['publishedSources'], ['rdj_turf_quinte'])
+                self.assertEqual(result['failedSources'], ['rdj_petit_journal'])
+                saved = json.loads((Path(directory) / 'last-run.json').read_text('utf-8'))
+                self.assertEqual(saved['status'], 'partial')
+                self.assertEqual(saved['failedSources'], ['rdj_petit_journal'])
 
     def test_model_resources_are_released_before_import_or_provider_wait(self):
         events = []
@@ -176,7 +192,7 @@ def fake_locks(paths):
 
 
 class RuntimeLeaseTests(unittest.TestCase):
-    clock = staticmethod(lambda: datetime(2026, 10, 23, 8, 30, tzinfo=timezone.utc))
+    clock = staticmethod(lambda: datetime(2026, 10, 23, 8, 8, tzinfo=timezone.utc))
     def control(self, initial=False, shared=False):
         self.actions = []
         def run(action, unit):
@@ -189,19 +205,19 @@ class RuntimeLeaseTests(unittest.TestCase):
     def test_owned_runtime_stops_on_failure_and_releases_ram(self):
         control = self.control()
         with self.assertRaisesRegex(ValueError, 'fixture'):
-            with model_runtime.managed_model(control=control, healthy=lambda: True, acquire=fake_locks, clock=self.clock):
+            with model_runtime.managed_model(control=control, healthy=lambda: True, acquire=fake_locks, clock=self.clock, translation_seconds=30):
                 raise ValueError('fixture')
         self.assertIn(('start', model_runtime.MODEL), self.actions)
         self.assertIn(('stop', model_runtime.MODEL), self.actions)
 
     def test_existing_runtime_is_never_stopped(self):
-        with model_runtime.managed_model(control=self.control(initial=True), healthy=lambda: True, acquire=fake_locks, clock=self.clock):
+        with model_runtime.managed_model(control=self.control(initial=True), healthy=lambda: True, acquire=fake_locks, clock=self.clock, translation_seconds=30):
             pass
         self.assertNotIn(('stop', model_runtime.MODEL), self.actions)
 
     def test_active_shared_journal_blocks_model_start(self):
         with self.assertRaises(model_runtime.RuntimeUnavailable):
-            with model_runtime.managed_model(control=self.control(shared=True), healthy=lambda: True, acquire=fake_locks, clock=self.clock):
+            with model_runtime.managed_model(control=self.control(shared=True), healthy=lambda: True, acquire=fake_locks, clock=self.clock, translation_seconds=30):
                 self.fail('A shared journal is already running')
         self.assertNotIn(('start', model_runtime.MODEL), self.actions)
 

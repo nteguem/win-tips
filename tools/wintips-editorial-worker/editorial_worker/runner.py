@@ -27,6 +27,34 @@ def write_json(path, value):
     temporary.replace(path)
 
 
+def run_summary(report):
+    """Describe the whole run without redefining the legacy any-import flag.
+
+    An imported race must not make a failed Petit Journal look complete. A
+    verified closed inventory also counts as published without importing again.
+    Ordinary publisher absence is a completed check, not a fabricated failure.
+    """
+    published, failed = [], []
+    failed_states = {'source_incomplete', 'source_blocked', 'translation_blocked',
+                     'import_blocked', 'deferred_shared_window'}
+    for row in report.get('sources', []):
+        source = row.get('source')
+        if not isinstance(source, str):
+            continue
+        already_published = row.get('publishedSourceWindow', {}).get('inventoryMatched') is True
+        if row.get('imported') is True or already_published:
+            if source not in published:
+                published.append(source)
+        if (row.get('status') in failed_states or
+                (report.get('mode') == 'publish' and row.get('status') == 'ready'
+                 and row.get('itemCount', 0) > 0 and row.get('imported') is not True)):
+            if source not in failed:
+                failed.append(source)
+    blocked = bool(report.get('blocked') or failed)
+    return {'status': 'partial' if blocked and published else 'blocked' if blocked else 'complete',
+            'blocked': blocked, 'publishedSources': published, 'failedSources': failed}
+
+
 def build_editorial_copy(payload, translator):
     """Optional contextual description/notification; preserve all source fields."""
     try:
@@ -697,6 +725,7 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
         report["publicRequests"] = getattr(fetched, "requests", None)
         report["sourceEvidence"] = getattr(fetched, "records", [])
         report["completedAtUtc"] = datetime.now(timezone.utc).isoformat()
+        report.update(run_summary(report))
         write_json(output / "last-run.json", report)
     return report
 
@@ -721,7 +750,8 @@ def main(argv=None):
         parser.error("Request/time/cache budgets out of bounds")
     try:
         report = run(args)
-        print(json.dumps({k: report[k] for k in ("editionDate", "mode", "published", "notificationsSent", "publicRequests")}, ensure_ascii=True))
+        print(json.dumps({k: report[k] for k in ("editionDate", "mode", "status", "blocked", "published",
+            "publishedSources", "failedSources", "notificationsSent", "publicRequests")}, ensure_ascii=True))
         for row in report["sources"]:
             print(json.dumps({k: row[k] for k in ("source", "status", "itemCount", "imported")}, ensure_ascii=True))
         if report.get('deferred'):

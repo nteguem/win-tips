@@ -21,11 +21,12 @@ class AdmissionTests(unittest.TestCase):
     def test_start_middle_end_and_midnight_rollover(self):
         for instant, expected, next_at in [
             (utc(8, 0), False, utc(8, 7)),
-            (utc(8, 8), True, utc(9, 7)),
-            (utc(8, 30), True, utc(9, 7)),
-            (utc(8, 50), False, utc(9, 7)),
-            (utc(23, 55), False, utc(0, 7, day=24)),
-            (utc(23, 30), True, utc(0, 7, day=24)),
+            (utc(8, 8), False, utc(8, 17)),
+            (utc(8, 30), False, utc(8, 37)),
+            (utc(8, 50), False, utc(8, 57)),
+            (utc(23, 55), False, utc(23, 57)),
+            (utc(23, 58), False, utc(0, 7, day=24)),
+            (utc(23, 30), False, utc(23, 37)),
         ]:
             with self.subTest(instant=instant):
                 window = model_runtime.admission_window(instant)
@@ -34,20 +35,30 @@ class AdmissionTests(unittest.TestCase):
                 self.assertEqual(window['requiredSeconds'], 1500)
 
     def test_deadline_boundary_and_timer_jitter(self):
-        self.assertTrue(model_runtime.admission_window(utc(8, 42))['admitted'])
-        self.assertFalse(model_runtime.admission_window(utc(8, 42, second=1))['admitted'])
-        for second in (0, 1, 15, 59):
-            with self.subTest(second=second):
-                window = model_runtime.admission_window(utc(8, 7, second=second))
-                self.assertFalse(window['admitted'])
-                self.assertEqual(window['retryNotBeforeUtc'], utc(8, 8).isoformat())
-        self.assertTrue(model_runtime.admission_window(utc(8, 8))['admitted'])
+        self.assertTrue(model_runtime.admission_window(utc(8, 11, second=30), 30)['admitted'])
+        self.assertFalse(model_runtime.admission_window(utc(8, 11, second=31), 30)['admitted'])
+        for minute in (7, 17, 27, 37, 47, 57):
+            for second in (0, 1, 15, 59):
+                with self.subTest(minute=minute, second=second):
+                    window = model_runtime.admission_window(utc(8, minute, second=second), 30)
+                    self.assertFalse(window['admitted'])
+                    self.assertEqual(window['retryNotBeforeUtc'], utc(8, minute + 1).isoformat())
+        self.assertTrue(model_runtime.admission_window(utc(8, 8), 30)['admitted'])
+
+    def test_normal_local_translation_budget_never_fits_between_ten_minute_jobs(self):
+        for minute in range(60):
+            for budget in (1200, 1800):
+                with self.subTest(minute=minute, budget=budget):
+                    window = model_runtime.admission_window(utc(8, minute), budget)
+                    self.assertFalse(window['admitted'])
 
     def test_budget_is_respected_not_a_fixed_minute_allowlist(self):
         self.assertTrue(model_runtime.admission_window(utc(8, 0), 30)['admitted'])
         self.assertFalse(model_runtime.admission_window(utc(8, 0), 1200)['admitted'])
-        self.assertTrue(model_runtime.admission_window(utc(8, 30), 1800)['admitted'])
+        self.assertFalse(model_runtime.admission_window(utc(8, 30), 1800)['admitted'])
         self.assertFalse(model_runtime.admission_window(utc(8, 33), 1800)['admitted'])
+        self.assertTrue(model_runtime.admission_window(utc(8, 8), 240)['admitted'])
+        self.assertFalse(model_runtime.admission_window(utc(8, 8, second=1), 240)['admitted'])
 
     def test_dst_local_repeated_hour_does_not_move_utc_timer(self):
         for hour in (0, 1, 8, 23):
@@ -74,7 +85,7 @@ class AdmissionTests(unittest.TestCase):
 
     def test_boundary_rechecked_after_lock_acquisition_and_locks_released(self):
         events = []
-        clocks = iter([utc(8, 30), utc(8, 55)])
+        clocks = iter([utc(8, 8), utc(8, 15)])
         @contextmanager
         def locks(paths):
             events.append('entered')
@@ -85,7 +96,7 @@ class AdmissionTests(unittest.TestCase):
         def forbidden(*args):
             raise AssertionError('No service call after the deadline moves')
         with self.assertRaises(model_runtime.RuntimeDeferred):
-            with model_runtime.managed_model(clock=lambda: next(clocks), acquire=locks, control=forbidden):
+            with model_runtime.managed_model(clock=lambda: next(clocks), acquire=locks, control=forbidden, translation_seconds=30):
                 self.fail('No model lease allowed')
         self.assertEqual(events, ['entered', 'released'])
 
@@ -122,8 +133,8 @@ class RunnerAdmissionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {'WINTIPS_EDITORIAL_MANAGE_MODEL': 'true'}), \
                 patch.object(runner, 'collect', return_value={'status': 'ready', 'items': [payload_item()], 'issues': []}):
             api = Api()
-            report = runner.run(arguments(directory, publish=True), fetcher=object(), now=utc(8, 30),
-                                clock=lambda: utc(8, 30), api_client=api, translator=TestTranslator(), api_validator=api_validation_fixture)
+            report = runner.run(arguments(directory, publish=True, translation_max_seconds=30), fetcher=object(), now=utc(8, 8),
+                                clock=lambda: utc(8, 8), api_client=api, translator=TestTranslator(), api_validator=api_validation_fixture)
             self.assertTrue(report['published'])
             self.assertEqual([r for r, _ in api.calls], ['/api/internal/editorial/config', '/api/internal/editorial/import', '/api/internal/editorial/notifications/drain'])
 
@@ -145,13 +156,13 @@ class RunnerAdmissionTests(unittest.TestCase):
         def translate(payload, translator, **options):
             calls.append(payload['source'])
             if len(calls) == 2:
-                model_runtime.require_admission(utc(8, 55))
+                model_runtime.require_admission(utc(8, 15), 30)
             return original(payload, translator, **options)
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {'WINTIPS_EDITORIAL_MANAGE_MODEL': 'true'}), \
                 patch.object(runner, 'collect', side_effect=collect), patch.object(translation, 'translate_batch', side_effect=translate):
             api = Two()
-            report = runner.run(arguments(directory, publish=True, source=['rdj_petit_journal', 'rdj_turf_quinte']),
-                fetcher=object(), now=utc(8, 30), clock=lambda: utc(8, 30), api_client=api, translator=TestTranslator())
+            report = runner.run(arguments(directory, publish=True, translation_max_seconds=30, source=['rdj_petit_journal', 'rdj_turf_quinte']),
+                fetcher=object(), now=utc(8, 8), clock=lambda: utc(8, 8), api_client=api, translator=TestTranslator())
             self.assertEqual(len(calls), 2)
             self.assertEqual([r for r, _ in api.calls], ['/api/internal/editorial/config'])
             self.assertIn('deferred', report)

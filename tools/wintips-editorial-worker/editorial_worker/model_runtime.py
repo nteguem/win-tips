@@ -19,6 +19,7 @@ SHARED_JOB = 'journal-parieur-worker.service'
 LOCKS = ('/var/lib/journal-parieur-worker/daily-run/worker.lock',
          '/var/lib/journal-parieur-worker/worker.lock')
 SHARED_TIMER_MINUTE = 7
+SHARED_TIMER_INTERVAL_MINUTES = 10
 # Covers the existing timer's 15s jitter and a pending service activation.
 SHARED_TIMER_START_GUARD_SECONDS = 60
 # systemctl calls, health/startup, unloading, finally cleanup and scheduling.
@@ -45,9 +46,13 @@ def admission_window(now, translation_seconds=1200):
         raise RuntimeUnavailable('admission_requires_bounded_translation_budget')
     instant = now.astimezone(timezone.utc)
     mark = instant.replace(minute=SHARED_TIMER_MINUTE, second=0, microsecond=0)
-    # A run just after :07 must not race the randomized BigWin start.
+    interval = timedelta(minutes=SHARED_TIMER_INTERVAL_MINUTES)
+    # Include the preceding hour's :57 before :07, and every :17/:27/... run.
+    # A local lease must never assume an hourly window between ten-minute jobs.
+    mark += ((instant - mark) // interval) * interval
+    # A run just after any scheduled mark must not race BigWin's jitter.
     pending_start = mark <= instant < mark + timedelta(seconds=SHARED_TIMER_START_GUARD_SECONDS)
-    next_start = mark if pending_start or instant <= mark else mark + timedelta(hours=1)
+    next_start = mark if pending_start or instant <= mark else mark + interval
     available = max(0, (next_start - instant).total_seconds())
     required = translation_seconds + MODEL_LIFECYCLE_RESERVE_SECONDS
     admitted = not pending_start and available >= required
