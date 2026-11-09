@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -36,7 +37,7 @@ def packet(sport='nba', night=True):
 class RdjSportsTests(unittest.TestCase):
     def adapted(self, value=None, sport='nba', **kwargs):
         fetcher = SimpleNamespace(html=lambda url: None, json=lambda url: self.fail('No schedule HTTP'), budget_refusals=[])
-        with patch.object(adapter, 'owner', return_value=SimpleNamespace(collect=lambda *a, **k: value or packet(sport))):
+        with patch.object(adapter, 'owner', return_value=SimpleNamespace(rdj=SimpleNamespace(), collect=lambda *a, **k: value or packet(sport))):
             return collect('rdj_' + sport, DAY, fetcher, now=NOW, **kwargs)
 
     def test_active_sources_replace_basketusa_and_do_not_copy_the_core_parser(self):
@@ -125,6 +126,51 @@ class RdjSportsTests(unittest.TestCase):
                     self.assertEqual(done.returncode, 0, done.stderr.decode())
                     self.assertTrue(json.loads(done.stdout)['passed'], done.stdout)
             self.assertEqual(len(physical), 6)
+
+    @unittest.skipUnless(os.environ.get('RDJ_TEST_SPORTS_ROOT'), 'Explicit canonical BigWin checkout required')
+    def test_real_public_fetcher_uses_canonical_pages_and_reuses_the_shared_http_hub(self):
+        from hashlib import sha256
+        from editorial_worker.http import PublicFetcher
+        from editorial_worker.vendor import rdj_collector as consumer
+        root = Path(os.environ['RDJ_TEST_SPORTS_ROOT']).resolve()
+        pages = json.loads((root / 'journal_worker/tests/fixtures/rdj-sports-20261109-excerpt.json').read_text('utf-8'))['pages']
+        instant = datetime(2026, 11, 9, 12, tzinfo=timezone.utc)
+        physical = []
+        with TemporaryDirectory() as directory, patch.dict(os.environ, {
+                'RDJ_SPORTS_CODE_ROOT': str(root), 'RDJ_CONTENT_HUB_DIR': str(Path(directory) / 'hub'),
+                'RDJ_HUB_CODE_ROOT': str(root.parent / 'rdj-source-hub')}):
+            core = adapter.owner()
+            reader = PublicFetcher(Path(directory) / 'unused-local-cache')
+            self.assertIsNotNone(reader.hub)
+            def raw(url, *, use_cache=True):
+                physical.append(url)
+                self.assertIn(url, pages)
+                return {'url': url, 'final_url': url, 'body': pages[url], 'status': 200,
+                        'sha256': sha256(pages[url].encode()).hexdigest()}
+            with patch.object(reader, '_get', side_effect=raw), \
+                    patch('urllib.request.OpenerDirector.open', side_effect=AssertionError('No external HTTP')):
+                # Exercise the actual consumer type which production returns.
+                page = reader.html(adapter.INDEXES['nba'])
+                self.assertIsInstance(page, consumer.FetchedPage)
+                self.assertNotIsInstance(page, core.rdj.FetchedPage)
+                bridge = adapter.CanonicalReader(reader, core.rdj)
+                self.assertIs(bridge.html.__self__.hub, reader.hub)
+                self.assertIsInstance(bridge.html(adapter.INDEXES['nba']), core.rdj.FetchedPage)
+                first = {sport: collect('rdj_' + sport, DAY, reader, now=instant) for sport in ('nba', 'tennis')}
+                for sport, result in first.items():
+                    self.assertEqual(result['status'], 'ready', result['issues'])
+                    self.assertEqual(len(result['items']), 2)
+                before = list(physical)
+                # A second actual consumer shares the HTTP records without
+                # double-locking or repeating a physical request.
+                second = PublicFetcher(Path(directory) / 'other-unused-cache')
+                with patch.object(second, '_get', side_effect=AssertionError('Shared HTTP must be reused')):
+                    repeated = {sport: collect('rdj_' + sport, DAY, second, now=instant) for sport in ('nba', 'tennis')}
+                self.assertEqual(repeated, first)
+                self.assertEqual(physical, before)
+                self.assertEqual(len(physical), 6)
+                self.assertEqual(reader.requests, 0)
+                self.assertEqual(second.requests, 0)
 
 
 if __name__ == '__main__':

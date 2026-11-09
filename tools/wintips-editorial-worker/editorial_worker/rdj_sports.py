@@ -42,6 +42,30 @@ def publisher_url(value, identity):
     return value
 
 
+class CanonicalReader:
+    """Convert the consumer's page type without hiding its shared HTTP hub.
+
+    The canonical collector deliberately accepts only its own FetchedPage.
+    Keeping html as a bound method with the original hub also prevents the
+    collector from entering the same shared URL lock a second time.
+    """
+    def __init__(self, reader, canonical):
+        self.reader = reader
+        self.canonical = canonical
+        self.hub = getattr(reader, 'hub', None)
+
+    def html(self, url):
+        from .vendor.rdj_collector import FetchedPage as ConsumerPage
+        page = self.reader.html(url)
+        if isinstance(page, str):
+            return self.canonical.FetchedPage(url, page)
+        if isinstance(page, self.canonical.FetchedPage):
+            return page
+        if isinstance(page, ConsumerPage):
+            return self.canonical.FetchedPage(page.url, page.html, page.status)
+        raise ValueError('rdj_sports_consumer_page_invalid')
+
+
 def valid_proof(proof, item, edition):
     from .sources import iso
     try:
@@ -65,7 +89,8 @@ def collect(edition, fetcher, *, sport, now, resolver=None, lead=30):
     from .sources import iso, utc_text, paragraphs, checked, eligible
     checked(sport in INDEXES and lead >= 30, 'rdj_sports_parameters_invalid')
     module = owner()
-    packet = module.collect(edition, sport, now=now, fetcher=fetcher.html, schedule_resolver=resolver)
+    reader = CanonicalReader(fetcher, module.rdj)
+    packet = module.collect(edition, sport, now=now, fetcher=reader.html, schedule_resolver=resolver)
     checked(packet.get('edition') == edition and packet.get('source_key') == 'rdj_' + sport
             and packet.get('journal_kind') == sport and packet.get('source_url') == INDEXES[sport], 'rdj_sports_packet_identity_invalid')
     checked(packet.get('status') in {'ready', 'source_absent', 'source_incomplete', 'outside_publication_window'}, 'rdj_sports_packet_status_invalid')
