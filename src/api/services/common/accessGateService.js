@@ -156,6 +156,38 @@ async function startOrSwitchUnlock(userId, category, durationMinutes) {
       durationMinutes: doc.selectedOption.durationMinutes, unlockedAt: null, expiresAt: null,
       isAccessActive: false, resumed: true };
   }
+  if (doc?.status === 'in_progress' && doc.nonce) {
+    // A signed SSV callback can arrive between the initial read and this offer
+    // change. Read verifiedCount inside Mongo instead of saving a stale counter.
+    // The nonce and every verified reward stay attached to the same attempt.
+    let updated = await UserAccessUnlock.findOneAndUpdate(
+      { _id: doc._id, nonce: doc.nonce, status: 'in_progress' },
+      [
+        { $set: { selectedOption: { $literal: {
+          durationMinutes: option.durationMinutes ?? null, adsRequired: option.adsRequired
+        } } } },
+        { $set: { status: { $cond: [
+          { $gte: [{ $ifNull: ['$verifiedCount', 0] }, option.adsRequired] }, 'unlocked', 'in_progress'
+        ] } } },
+        { $set: {
+          unlockedAt: { $cond: [{ $eq: ['$status', 'unlocked'] }, '$$NOW', null] },
+          expiresAt: { $cond: [{ $eq: ['$status', 'unlocked'] },
+            option.durationMinutes == null ? null : { $add: ['$$NOW', option.durationMinutes * 60000] }, null] }
+        } }
+      ], { new: true }
+    );
+    // A concurrent final SSV may have granted access under the previous offer.
+    // Preserve that access rather than replacing its duration or its receipts.
+    if (!updated) updated = await UserAccessUnlock.findOne({ _id: doc._id });
+    if (!updated || updated.nonce !== doc.nonce ||
+        (updated.status !== 'in_progress' && !updated.isAccessActive())) {
+      throw new AppError('La progression a changé. Réessaie.', 409, ErrorCodes.OPERATION_NOT_ALLOWED);
+    }
+    return { nonce: updated.nonce, status: updated.status, verifiedCount: updated.verifiedCount || 0,
+      adsWatched: updated.verifiedCount || 0, adsRequired: updated.selectedOption.adsRequired,
+      durationMinutes: updated.selectedOption.durationMinutes, unlockedAt: updated.unlockedAt,
+      expiresAt: updated.expiresAt, isAccessActive: updated.isAccessActive(), resumed: true };
+  }
   const carriedCount = (doc && doc.status === 'in_progress') ? (doc.verifiedCount || 0) : 0;
 
   if (!doc) {

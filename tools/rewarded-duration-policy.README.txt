@@ -1,0 +1,32 @@
+Rewarded duration offers: reviewed maintenance, never a runtime override
+=====================================================================
+
+Existing free-category offers are capped at 1h=2 ads, 24h=3, 7d=8,
+30d=15, lifetime=20. Offers already cheaper stay cheaper. No new category,
+duration or gate is created. The back office remains configurable afterwards.
+An unknown duration fails the entire plan for review instead of guessing.
+
+Scopes: bigwin-five (database bigwin-api-v2) or wintips (database wintips).
+WinTips currently has no category ad gate: its reviewed plan must be empty.
+Never turn the free WinTips editorial categories into ad-locked categories.
+
+1. Test locally and commit/review before deployment. Push then pull production.
+2. Set REWARDED_DURATION_MONGO_URI privately from the existing API configuration.
+3. Produce a private read-only plan (new output file; never overwrite):
+   node tools/rewarded-duration-policy.cjs --scope bigwin-five --plan --out /private/plan.json
+4. Review all exact categories/durations/counts and the printed plan SHA256.
+5. Apply atomically on a replica set, with the exact reviewed plan:
+   node tools/rewarded-duration-policy.cjs --scope bigwin-five --apply --plan-file /private/plan.json --confirm-sha256 REVIEWED_SHA --confirm-category-offer-mutation --out /private/receipt.json
+6. Read public metadata again for all five apps, plus WinTips.
+   Reapplying the same plan is idempotent; a BO edit refuses stale writes.
+   Conditional rollback uses --rollback with the same reviewed plan and hash;
+   it also refuses a later independent BO edit. Nothing is ever deleted.
+
+Only categories.accessGate.options changes. No users, nonces, SSV receipts,
+verified counters, active accesses, subscriptions, prices, wheel/affiliate packs,
+weekly journal credits, timestamps or notification state are modified.
+Existing in-progress attempts adopt the cheaper offer on their next normal
+startOrSwitchUnlock call, carrying every verified reward and the same nonce.
+If their verified count already covers it, that normal call grants the access.
+Already active accesses retain their duration/expiry. Rewarded SSV verification,
+transaction deduplication and subscriber bypass are unchanged.
