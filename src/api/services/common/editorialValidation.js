@@ -79,6 +79,20 @@ function overnightProof(input, item) {
     item.editionConvention = 'journal_following_day';
     return;
   }
+  if (item.source === 'rdj_nba' && input.editionConvention === 'rdj_sport_following_night') {
+    const proof = input.scheduleProof;
+    keys(proof, ['sourceUrl', 'sourceId', 'indexUrl', 'method', 'provider', 'editionDate', 'matchedParticipants', 'startsAtUtc', 'status'], 'scheduleProof');
+    if (!nbaFollowingNight(item.startsAtUtc, item.editionDate, item) || proof.method !== 'rdj_sport_detail_clock_v1' ||
+        proof.provider !== 'rdj' || proof.sourceUrl !== item.sourceUrl || proof.sourceId !== item.sourceId ||
+        proof.indexUrl !== sourceByKey('rdj_nba').url || proof.editionDate !== item.editionDate ||
+        Date.parse(proof.startsAtUtc) !== Date.parse(item.startsAtUtc) || proof.status !== 'upcoming' ||
+        !Array.isArray(proof.matchedParticipants) || proof.matchedParticipants.length !== 2 ||
+        proof.matchedParticipants.some((name, index) => name !== item.teams[index === 0 ? 'home' : 'away'].name))
+      throw failure('Preuve horaire NBA RDJ incoherente');
+    item.editionConvention = 'rdj_sport_following_night';
+    item.scheduleProof = { ...proof, startsAtUtc: item.startsAtUtc, matchedParticipants: [...proof.matchedParticipants] };
+    return;
+  }
   if (item.source === 'basketusa_nba' && input.editionConvention === 'basketusa_following_night') {
     const proof = input.scheduleProof;
     keys(proof, ['sourceUrl', 'sourceId', 'method', 'provider', 'editionDate', 'articlePublishedAt', 'matchedParticipants', 'startsAtUtc', 'status'], 'scheduleProof');
@@ -168,7 +182,7 @@ function verifyIdentity(item, leg) {
   } else if (item.kind === 'horse_racing') {
     const route = url.pathname.match(/\/course\/(\d{2})-(\d{2})-(\d{4})\/R(\d+)\/C(\d+)\//);
     if (!route || `${route[3]}-${route[2]}-${route[1]}` !== item.editionDate || Number(route[4]) !== item.race.meetingNumber || Number(route[5]) !== item.race.raceNumber || item.sourceId !== `${item.editionDate}-R${Number(route[4])}C${Number(route[5])}`) throw failure('Identite ou date de course incoherente avec la fiche RDJ');
-  } else if (leg || item.source === 'rdj_football_analysis' || item.source === 'rdj_multisport_analysis') {
+  } else if (leg || ['rdj_football_analysis', 'rdj_multisport_analysis', 'rdj_nba', 'rdj_tennis'].includes(item.source)) {
     const publisherId = url.pathname.match(/-(\d+)\.html$/);
     if (!publisherId || publisherId[1] !== item.sourceId) throw failure('Identifiant de rencontre incoherent avec la fiche RDJ');
     if (item.source === 'rdj_multisport_analysis') {
@@ -234,6 +248,9 @@ function normalizeItem(input, source, editionDate, leg = false) {
     if (!normalized.competition) throw failure('Competition requise');
     if (source.startsWith('rdj_football') && normalized.sport.key !== 'football') throw failure('Sport incompatible avec cette source football');
     if (source === 'rdj_multisport_analysis' && !['basketball', 'volleyball'].includes(normalized.sport.key)) throw failure('Expert Multisports accepte uniquement le basket et le volley');
+    if (source === 'rdj_nba' && (normalized.sport.key !== 'basketball' || normalized.competition.name !== 'NBA')) throw failure('La source NBA RDJ accepte uniquement la NBA');
+    if (source === 'rdj_tennis' && normalized.sport.key !== 'tennis') throw failure('La source tennis RDJ accepte uniquement le tennis');
+    if (['rdj_nba', 'rdj_tennis'].includes(source) && (normalized.teams.home.name === normalized.teams.away.name || !normalized.startsAtUtc || normalized.selection.odds === null)) throw failure('Deux participants distincts, une heure et une cote source sont requis');
     if (source === 'basketusa_nba') {
       if (normalized.sport.key !== 'basketball' || normalized.competition.name !== 'NBA' || normalized.teams.home.name === normalized.teams.away.name)
         throw failure('Deux equipes NBA distinctes sont requises');
@@ -297,6 +314,7 @@ function validateBatch(body, now = new Date()) {
   keys(body, ['source', 'editionDate', 'items', 'editorialCopy', 'couponTeaser'], 'batch');
   const source = sourceByKey(body.source);
   if (!source) throw failure('Source editoriale inconnue');
+  if (source.importEnabled === false) throw failure('Cette ancienne source est disponible en lecture uniquement', 403);
   const editionDate = dateOnly(body.editionDate);
   if (editionDate !== editionDateFor(now)) throw failure('Seule une edition du jour Europe/Paris peut etre importee');
   if (!Array.isArray(body.items) || !body.items.length || body.items.length > 50) throw failure('Le lot doit contenir entre 1 et 50 contenus');

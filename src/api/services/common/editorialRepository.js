@@ -70,6 +70,7 @@ function createEditorialRepository({ Category, EditorialItem, EditorialReview, s
   sourceWindowItems: (ids, date) => EditorialItem.find({ categoryId: { $in: ids }, editionDate: date,
     source: { $in: ['rdj_petit_journal', 'rdj_turf_quinte'] } })
     .select('categoryId source editionDate sourceId kind startsAtUtc payload contentHash isPublished').limit(51).lean(),
+  legacyNbaPublished: (ids, editionDate) => EditorialItem.exists({ categoryId: { $in: ids }, editionDate, source: 'basketusa_nba', isPublished: true }),
   item: id => EditorialItem.findOne({ _id: id, isPublished: true }).lean(),
   copies: (sources, date) => copies().read(sources, date),
   copyStates: (sources, date) => copies().states(sources, date),

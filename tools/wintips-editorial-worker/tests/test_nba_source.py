@@ -1,4 +1,4 @@
-"""Offline integration: Basket USA remains its own edition and night calendar."""
+"""Historical Basket USA remains readable and is no longer an active source."""
 from copy import deepcopy
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -36,10 +36,13 @@ class NbaSourceTests(unittest.TestCase):
 
     def adapted(self, value=None, **kwargs):
         with patch.object(nba, 'owner', return_value=SimpleNamespace(collect=lambda *a, **k: value or packet())):
-            return collect(nba.SOURCE, DAY, self.fetcher, now=NOW, **kwargs)
+            try:
+                return nba.collect(DAY, self.fetcher, now=NOW, **kwargs)
+            except ValueError as error:
+                return {'status': 'source_incomplete', 'items': [], 'issues': [{'code': str(error)}]}
 
     def test_dedicated_nba_source_keeps_full_analysis_and_pick_out_of_the_teaser(self):
-        self.assertIn(nba.SOURCE, SOURCES)
+        self.assertNotIn(nba.SOURCE, SOURCES)
         value = self.adapted()
         self.assertEqual(value['status'], 'ready')
         item = value['items'][0]
@@ -49,7 +52,7 @@ class NbaSourceTests(unittest.TestCase):
         self.assertEqual(item['summary']['fr'], packet()['fixtures'][0]['teaser_fr'])
         self.assertEqual(item['analysis']['fr'][0]['paragraphs'], [packet()['fixtures'][0]['analysis_fr']])
         self.assertEqual(item['selection']['odds'], 1.85)
-        validate_item(item, nba.SOURCE, DAY, NOW, 30)
+        self.assertTrue(nba.valid_proof(item['scheduleProof'], item, DAY))
 
     def test_source_identity_is_stable_across_retries_and_distinct_from_rdj(self):
         first = self.adapted()['items'][0]
@@ -129,11 +132,11 @@ class NbaSourceTests(unittest.TestCase):
             json=lambda url: None, budget_refusals=[])
         instant = datetime(2026, 11, 6, 17, tzinfo=timezone.utc)
         with patch.dict(os.environ, {'NBA_JOURNAL_CODE_ROOT': str(root)}):
-            result = collect(nba.SOURCE, '2026-11-06', fetcher, now=instant)
+            result = nba.collect('2026-11-06', fetcher, now=instant)
         self.assertEqual(result['status'], 'ready', result['issues'])
         self.assertEqual(len(result['items']), 4)
         for item in result['items']:
-            validate_item(item, nba.SOURCE, '2026-11-06', instant, 30)
+            self.assertEqual(item['source'], nba.SOURCE)
         # Pure Node validation only, no checkout proof, database/API or write.
         api_root = Path(__file__).resolve().parents[3]
         script = "const fs=require('fs');const v=require('./tools/wintips-editorial-worker/validate-api-payload.cjs');console.log(JSON.stringify(v.validate(fs.readFileSync(0),new Date('2026-11-06T17:00:00Z'))));"
@@ -141,7 +144,7 @@ class NbaSourceTests(unittest.TestCase):
             input=json.dumps({'source': nba.SOURCE, 'editionDate': '2026-11-06', 'items': result['items']}).encode(),
             capture_output=True, timeout=30)
         report = json.loads(done.stdout)
-        self.assertTrue(report['passed'], report)
+        self.assertFalse(report['passed'], 'Historical publisher imports must remain disabled')
 
 
 if __name__ == '__main__':

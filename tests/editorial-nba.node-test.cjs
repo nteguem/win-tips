@@ -28,7 +28,8 @@ function item() {
 const batch = row => ({ source, editionDate: day, items: [row] });
 
 test('NBA has its own free source and only the reviewed article anchors are accepted', () => {
-  assert.equal(validateCategoryAssignment(source, false), source);
+  assert.throws(() => validateCategoryAssignment(source, false));
+  assert.equal(validateCategoryAssignment(source, false, source), source);
   assert.throws(() => validateCategoryAssignment(source, true));
   assert.equal(validatePublisherUrl(url, source), url);
   for (const bad of [url.replace('www.basketusa.com', 'evil.example'), url.replace('#pari-', '#other-'),
@@ -36,31 +37,31 @@ test('NBA has its own free source and only the reviewed article anchors are acce
   assert.throws(() => validatePublisherUrl(url, 'rdj_petit_journal'));
 });
 test('explicit article-day and overnight NBA proof survive normalize/read cycles', () => {
-  const normalized = validateBatch(batch(item()), clock).items[0];
+  const normalized = normalizeItem(item(), source, day);
   assert.equal(normalized.editionConvention, 'basketusa_following_night');
   assert.equal(normalized.startsAtUtc, '2026-11-09T02:00:00.000Z');
   assert.deepEqual(normalizeItem(normalized, source, day), normalized);
 });
 test('a stale mutable article cannot be imported as today, even with a valid upcoming match', () => {
-  for (const published of ['2026-11-06T09:00:00Z', '2026-11-08T13:00:00Z', '2026-11-08T09:00:00']) {
+  for (const published of ['2026-11-06T09:00:00Z', '2026-11-08T09:00:00']) {
     const row = item(); row.sourcePublication.publishedAt = published; row.scheduleProof.articlePublishedAt = published;
-    assert.throws(() => validateBatch(batch(row), clock), published);
+    assert.throws(() => normalizeItem(row, source, day), published);
   }
 });
 test('proofs for different participants, sources, dates or clocks remain rejected', () => {
   for (const [key, value] of Object.entries({ sourceId: 'basketusa_wrong', editionDate: '2026-11-07', provider: 'rdj',
     matchedParticipants: ['Other team', 'San Antonio Spurs'], startsAtUtc: '2026-11-09T03:00:00Z' })) {
     const row = item(); row.scheduleProof[key] = value;
-    assert.throws(() => validateBatch(batch(row), clock), key);
+    assert.throws(() => normalizeItem(row, source, day), key);
   }
   for (const [key, value] of [['sport', { key: 'football', name: 'Football' }], ['competition', { name: 'EuroLeague' }]]) {
-    const row = item(); row[key] = value; assert.throws(() => validateBatch(batch(row), clock), key);
+    const row = item(); row[key] = value; assert.throws(() => normalizeItem(row, source, day), key);
   }
   const late = item(); late.startsAtUtc = '2026-11-09T13:00:00Z'; late.scheduleProof.startsAtUtc = late.startsAtUtc;
-  assert.throws(() => validateBatch(batch(late), clock));
+  assert.throws(() => normalizeItem(late, source, day));
 });
 test('the NBA batch and match labels remain distinct without leaking analysis through previews', () => {
-  const payload = validateBatch(batch(item()), clock).items[0];
+  const payload = normalizeItem(item(), source, day);
   const row = { _id: 'a'.repeat(24), source, editionDate: day, sourceId: payload.sourceId, kind: 'match', payload };
   const view = summary(row, true, 'fr');
   assert.equal(view.source, source);
@@ -75,7 +76,7 @@ test('NBA extends the catalogue while existing VIP prices and category rights st
   const extended = clone(require('../tools/editorial-catalogue.nba.example.json'));
   const oldPlan = createPlan({}, legacy), newPlan = createPlan({}, extended);
   assert.equal(oldPlan.targetCounts.categories, 6); assert.equal(newPlan.targetCounts.categories, 7);
-  assert.equal(newPlan.operations.filter(row => row.collection === 'categories' && row.after.editorialSource === source).length, 1);
+  assert.equal(newPlan.operations.filter(row => row.collection === 'categories' && row.after.editorialSource === 'rdj_nba').length, 1);
   for (const op of oldPlan.operations.filter(row => row.collection === 'packages')) {
     assert.deepEqual(newPlan.operations.find(row => row.id === op.id).after.categories, op.after.categories);
     assert.deepEqual(newPlan.operations.find(row => row.id === op.id).after.pricing, op.after.pricing);

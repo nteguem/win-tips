@@ -1,4 +1,4 @@
-const { SOURCES, sourceByKey, failure } = require('./editorialSources');
+const { SOURCES, sourceByKey, failure, readableSources, categoryAcceptsSource } = require('./editorialSources');
 const { dateOnly } = require('./editorialValidation');
 const { editionDateFor } = require('./editorialCalendar');
 const { editorialAccess, requireEditorialAccess } = require('./editorialAccess');
@@ -120,18 +120,18 @@ function createEditorialLibrary({ repository, clock, sourceMatchesCategory, summ
   }
   async function dates(categories, requestDate) {
     const values = await repository.availableDates(categories.map(category => category._id), requestDate, 10,
-      categories.map(category => ({ categoryId: category._id, source: category.editorialSource })));
+      categories.flatMap(category => readableSources(category).map(source => ({ categoryId: category._id, source }))));
     return [...new Set(values.filter(value => { try { return dateOnly(value) <= requestDate; } catch (_) { return false; } }))].sort().reverse().slice(0, 10);
   }
   function rowsFor(category, rows, date) {
-    const selected = rows.filter(row => id(row.categoryId) === id(category) && row.source === category.editorialSource &&
+    const selected = rows.filter(row => id(row.categoryId) === id(category) && categoryAcceptsSource(category, row.source) &&
       row.editionDate === date && row.isPublished !== false && row.payload?.source === row.source && row.payload?.editionDate === date);
     if (selected.length > 100) throw failure('Edition trop volumineuse', 503);
     return selected;
   }
   function dailyDescription(category, items, copies, lang) {
     const { boundCopy } = require('./editorialCopy');
-    const record = copies.find(record => record.source === category.editorialSource);
+    const record = copies.find(record => record.source === (items[0]?.source || category.editorialSource));
     const copy = boundCopy(record, items);
     // Read-time presentation only: one short hook, regardless of match count.
     // Existing source content and immutable notification snapshots stay intact.
@@ -178,7 +178,7 @@ function createEditorialLibrary({ repository, clock, sourceMatchesCategory, summ
       // silently relabelled as today's content; ten real dates remain selectable.
       const [availableDates, rows, copies, stats, openings] = await Promise.all([
         dates(categories, requestDate), repository.items(categories.map(category => category._id), editionDate),
-        repository.copies ? repository.copies([...new Set(categories.map(category => category.editorialSource))], editionDate) : [],
+        repository.copies ? repository.copies([...new Set(categories.flatMap(readableSources))], editionDate) : [],
         repository.reviewSummaries(categories.map(category => category._id), editionDate),
         repository.openingCounts ? repository.openingCounts(categories.map(category => category._id), editionDate) : [],
       ]);
@@ -189,7 +189,7 @@ function createEditorialLibrary({ repository, clock, sourceMatchesCategory, summ
       const instant = new Date(clock()), requestDate = editionDateFor(instant);
       const { category, editionDate, items } = await loadEdition(categoryId, date, requestDate);
       const [copies, stats, openings] = await Promise.all([
-        repository.copies ? repository.copies([category.editorialSource], editionDate) : [],
+        repository.copies ? repository.copies(readableSources(category), editionDate) : [],
         repository.reviewSummaries([category._id], editionDate),
         repository.openingCounts ? repository.openingCounts([category._id], editionDate) : [],
       ]);

@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const { sourceMatchesCategory } = require('./editorialService');
-const { failure } = require('./editorialSources');
+const { failure, sourceByKey } = require('./editorialSources');
 
 const id = value => String(value && value._id || value);
 const identityKeys = { appId: 1, categoryId: 1, source: 1, editionDate: 1 };
@@ -18,7 +18,7 @@ function createEditorialNotificationRepository({ Category, EditorialItem, Editor
     } catch (_) { throw failure('Index de notification non initialise', 503); }
   },
   async groups({ source, editionDate }) {
-    const categories = (await Category.find({ isActive: true, catalogueArchived: { $ne: true }, editorialSource: source || { $ne: null } }).lean()).filter(sourceMatchesCategory);
+    const categories = (await Category.find({ isActive: true, catalogueArchived: { $ne: true }, editorialSource: source || { $ne: null } }).lean()).filter(category => sourceMatchesCategory(category) && sourceByKey(category.editorialSource)?.importEnabled !== false);
     const items = await EditorialItem.find({ categoryId: { $in: categories.map(category => category._id) }, editionDate, isPublished: true }).sort({ startsAtUtc: 1, sourceId: 1 }).lean();
     const copies = await require('./editorialCopyStorage').createCopyStorage(EditorialItem).read([...new Set(categories.map(category => category.editorialSource))], editionDate);
     return categories.map(category => {
@@ -28,6 +28,7 @@ function createEditorialNotificationRepository({ Category, EditorialItem, Editor
     });
   },
   async categoryStillMatches(key, isVip) {
+    if (sourceByKey(key.source)?.importEnabled === false) return false;
     return !!await Category.exists({ _id: key.categoryId, isActive: true, catalogueArchived: { $ne: true }, editorialSource: key.source, isVip });
   },
   async claim(key, notificationId, now, snapshot = {}) {

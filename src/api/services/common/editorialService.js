@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const { SOURCES, sourceByKey, validateCategorySource, failure } = require('./editorialSources');
+const { SOURCES, sourceByKey, validateCategorySource, failure, readableSources, categoryAcceptsSource } = require('./editorialSources');
 const { validateBatch, normalizeItem, dateOnly, hasCompleteEnglish, requireCompleteEnglish, completeEnglishWithFallback } = require('./editorialValidation');
 const { editionDateFor } = require('./editorialCalendar');
 const { editorialAccess, requireEditorialAccess } = require('./editorialAccess');
@@ -89,6 +89,8 @@ function createEditorialService({ repository, clock = () => new Date(), importEn
     async workerConfig() {
       const categories = await repository.categories();
       const instant = clock(), editionDate = editionDateFor(instant);
+      const nbaIds = categories.filter(c => c.editorialSource === 'rdj_nba').map(c => c._id);
+      const preserveNbaEdition = nbaIds.length && repository.legacyNbaPublished && await repository.legacyNbaPublished(nbaIds, editionDate);
       const ticketState = repository.ticketState ? await repository.ticketState(editionDate) : undefined;
       const copyStates = repository.copyStates ? await repository.copyStates(SOURCES.map(source => source.key), editionDate) : [];
       const teaserStates = repository.teaserStates ? await repository.teaserStates(SOURCES.map(source => source.key), editionDate) : [];
@@ -98,7 +100,7 @@ function createEditorialService({ repository, clock = () => new Date(), importEn
         sources: SOURCES.map(s => ({ ...s, couponTeaserState: teaserStates.find(row => row.source === s.key)?.state || 'unknown', editorialCopyState: (() => {
           const state = copyStates.find(row => row.source === s.key);
           return state ? { state: state.state, legacy: state.legacy } : { state: 'unknown', legacy: false };
-        })(), categoryIds: categories.filter(c => c.editorialSource === s.key && sourceMatchesCategory(c)).map(c => id(c)) })).filter(s => s.categoryIds.length) };
+        })(), categoryIds: categories.filter(c => c.editorialSource === s.key && sourceMatchesCategory(c)).map(c => id(c)) })).filter(s => s.categoryIds.length && s.importEnabled !== false && !(s.key === 'rdj_nba' && preserveNbaEdition)) };
     },
 
     async importBatch(body) {
@@ -110,6 +112,8 @@ function createEditorialService({ repository, clock = () => new Date(), importEn
       }
       const categories = (await repository.categories()).filter(c => c.editorialSource === batch.source && sourceMatchesCategory(c));
       if (!categories.length) return { source: batch.source, date: batch.editionDate, ignored: true, reason: 'no_active_category_mapping', imported: 0, notificationsSent: 0 };
+      if (batch.source === 'rdj_nba' && repository.legacyNbaPublished && await repository.legacyNbaPublished(categories.map(c => c._id), batch.editionDate))
+        return { source: batch.source, date: batch.editionDate, ignored: true, reason: 'published_legacy_nba_edition_preserved', imported: 0, notificationsSent: 0 };
       // Every item and every target is validated before the first DAL write.
       const operations = [];
       for (const category of categories) {
@@ -148,12 +152,12 @@ function createEditorialService({ repository, clock = () => new Date(), importEn
       const language = lang === 'en' ? 'en' : 'fr';
       const categories = (await repository.categories()).filter(c => c.isVip === isVip && sourceMatchesCategory(c));
       const rows = await repository.items(categories.map(c => c._id), editionDate);
-      const copies = repository.copies ? await repository.copies([...new Set(categories.map(c => c.editorialSource))], editionDate) : [];
+      const copies = repository.copies ? await repository.copies([...new Set(categories.flatMap(readableSources))], editionDate) : [];
       const output = [];
       for (const category of categories) {
         const state = await access(category, user);
-        const items = rows.filter(row => id(row.categoryId) === id(category) && row.source === category.editorialSource);
-        const record = copies.find(copy => copy.source === category.editorialSource);
+        const items = rows.filter(row => id(row.categoryId) === id(category) && categoryAcceptsSource(category, row.source));
+        const record = copies.find(copy => copy.source === (items[0]?.source || category.editorialSource));
         const dailyCopy = require('./editorialCopy').boundCopy(record, items);
         const teaser = require('./couponTeaser').boundTeaser(record, items);
         output.push({ id: id(category), name: pickLang(category.name, language),
@@ -170,7 +174,7 @@ function createEditorialService({ repository, clock = () => new Date(), importEn
       const row = await repository.item(itemId);
       if (!row) throw failure('Contenu introuvable', 404);
       const category = await repository.category(row.categoryId);
-      if (!category || !category.isActive || category.editorialSource !== row.source || !sourceMatchesCategory(category)) throw failure('Contenu introuvable', 404);
+      if (!category || !category.isActive || !categoryAcceptsSource(category, row.source) || !sourceMatchesCategory(category)) throw failure('Contenu introuvable', 404);
       const state = await access(category, user);
       requireEditorialAccess(state, category, user);
       const language = lang === 'en' ? 'en' : 'fr';

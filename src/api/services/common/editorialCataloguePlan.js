@@ -4,7 +4,7 @@ const { validateExplicitPricing } = require('./packagePricing');
 
 const VERSION = 'wintips-rdj-catalogue-v1';
 const TARGETS = SOURCES.filter(source => source.selectable !== false).map(source => source.key);
-const BASE_TARGETS = TARGETS.filter(key => key !== 'basketusa_nba');
+const BASE_TARGETS = TARGETS.filter(key => !['rdj_nba', 'rdj_tennis'].includes(key));
 const VIP = TARGETS.filter(key => SOURCES.find(source => source.key === key).access === 'vip');
 const plain = value => JSON.parse(JSON.stringify(value));
 const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object'
@@ -17,10 +17,10 @@ function fail(code, message) { throw Object.assign(new Error(message), { code })
 function id(value) { if (typeof value !== 'string' || !/^[a-f\d]{24}$/i.test(value)) fail('INVALID_MAPPING', 'Category/package ObjectId expected'); return value.toLowerCase(); }
 function validateConfig(config) {
   if (!config || config.version !== VERSION || config.appId !== 'wintips') fail('CONFIG', 'WinTips catalogue version required');
-  if (!Array.isArray(config.categories) || ![BASE_TARGETS.length, TARGETS.length].includes(config.categories.length) ||
+  if (!Array.isArray(config.categories) || (config.categories.length < BASE_TARGETS.length || config.categories.length > TARGETS.length) ||
       new Set(config.categories.map(row => row.source)).size !== config.categories.length ||
       config.categories.some(row => !TARGETS.includes(row.source)) || BASE_TARGETS.some(source => !config.categories.some(row => row.source === source)))
-    fail('CONFIG', 'The six established categories and optional NBA category are required');
+    fail('CONFIG', 'The six established categories and optional NBA/tennis categories are required');
   for (const row of config.categories) {
     if (!row.name?.fr || !row.name?.en || !row.description?.fr || !row.description?.en) fail('CONFIG', 'Bilingual category name and description required');
   }
@@ -55,7 +55,7 @@ function createPlan(state, config, now = new Date().toISOString()) {
     operations.push({ collection, id: docId, before: before ? plain(before) : null, after: plain(after), reason });
   }
   for (const spec of config.categories) {
-    const key = `${VERSION}:category:${spec.source}`;
+    const key = `${VERSION}:category:${spec.source === 'rdj_nba' ? 'basketusa_nba' : spec.source}`;
     const managed = currentCategories.filter(row => row.catalogueKey === key);
     if (managed.length > 1) fail('DUPLICATE_CATALOGUE', 'Duplicate managed category');
     const adopted = config.adoptCategoryIds?.[spec.source];
@@ -63,7 +63,7 @@ function createPlan(state, config, now = new Date().toISOString()) {
     if (adopted && !existing) fail('MAPPING_NOT_FOUND', 'Category mapping not found');
     const source = SOURCES.find(row => row.key === spec.source), isVip = source.access === 'vip';
     if (existing && (existing.isVip !== isVip || (existing.catalogueKey && existing.catalogueKey !== key))) fail('MAPPING_CONFLICT', 'Category access/ownership cannot be overwritten');
-    const docId = existing ? idOf(existing._id) : stableId(`category:${spec.source}`);
+    const docId = existing ? idOf(existing._id) : stableId(`category:${spec.source === 'rdj_nba' ? 'basketusa_nba' : spec.source}`);
     if (!existing && currentCategories.some(row => idOf(row._id) === docId)) fail('ID_CONFLICT', 'Stable category ID already owned');
     const after = { ...(existing || {}), _id: oid(docId), catalogueKey: key, name: spec.name,
       description: spec.description, icon: spec.icon || '📰', isVip, isActive: true,
@@ -73,7 +73,7 @@ function createPlan(state, config, now = new Date().toISOString()) {
     if (!existing) { after.successRate = null; after.externalSources = []; }
     categories[spec.source] = docId;
     operation('categories', docId, existing, after, existing ? 'adopt_or_update_category' : 'create_category');
-    const unmapped = currentCategories.filter(row => idOf(row._id) !== docId && row.editorialSource === spec.source && row.isActive === true);
+    const unmapped = currentCategories.filter(row => idOf(row._id) !== docId && (row.editorialSource === spec.source || spec.source === 'rdj_nba' && row.editorialSource === 'basketusa_nba') && row.isActive === true);
     if (unmapped.length) fail('CATEGORY_MAPPING_REQUIRED', 'An existing active source category must be explicitly adopted, not duplicated');
   }
   for (const spec of config.packages) {

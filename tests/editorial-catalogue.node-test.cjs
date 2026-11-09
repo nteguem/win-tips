@@ -42,8 +42,8 @@ function night(n = 111) {
   return row;
 }
 
-test('seven selectable sources have fixed free/VIP roles; the legacy source is editable only in place', () => {
-  assert.equal(SOURCES.filter(row => row.selectable).length, 7);
+test('eight selectable sources have fixed free/VIP roles; the legacy source is editable only in place', () => {
+  assert.equal(SOURCES.filter(row => row.selectable).length, 8);
   assert.equal(SOURCES.filter(row => row.selectable && row.access === 'vip').length, 4);
   assert.equal(SOURCES.find(row => row.key === 'rdj_petit_journal').label, 'Le Petit Journal');
   assert.throws(() => validateCategoryAssignment('rdj_football_combine', true));

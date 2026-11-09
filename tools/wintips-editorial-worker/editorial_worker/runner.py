@@ -395,7 +395,7 @@ def validate_item(item, source, edition, now, lead):
         raise ValueError("item_stable_source_id_required")
     path = urlsplit(source_url(item.get("sourceUrl"))).path
     patterns = {"rdj_petit_journal": r"/paris-sportifs/le-petit-journal/\d+[^/?#]+\.html",
-                "basketusa_nba": r"/paris-sportifs/pronostics-nba/",
+                "rdj_nba": MATCH_PATH, "rdj_tennis": MATCH_PATH,
                 "rdj_football_analysis": MATCH_PATH,
                 "rdj_multisport_analysis": MATCH_PATH,
                 "rdj_turf_quinte": RACE_PATH, "rdj_football_combine": COMBI_PATH,

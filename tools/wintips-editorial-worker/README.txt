@@ -466,3 +466,48 @@ collect_turf(edition, fetcher, now=UTC, lead=30, limit=1) conserve le contrat
 status/items/issues. Si fetcher.hub est configuré, rdj_hub.turf partage la
 collecte normalisée et appelle _collect_turf_uncached comme seul adaptateur.
 Sans hub, le même adaptateur s'exécute directement ; aucune copie du parseur.
+
+
+NBA ET TENNIS RDJ (2026-11-09)
+Les sources actives sont rdj_nba et rdj_tennis. Basket USA reste une source
+historique en lecture seule : aucun import, affectation nouvelle ou nouvel envoi.
+Le collecteur unique est journal_worker.rdj_sports dans le checkout BigWin;
+RDJ_HUB_CODE_ROOT pointe sur /var/www/proxidream/api-bigwin/tools/rdj-source-hub.
+Le worker WinTips ne copie pas ce parseur. Aucun nouveau secret ou runtime.
+Les index autorisés sont /pronostics/nba-943387.html et /pronostics/tennis.html;
+chaque sélection conserve la fiche RDJ, ses participants, ses paragraphes et sa
+cote. La traduction FR/EN et son repli français suivent le pipeline existant.
+Le tennis appartient au jour Paris de son événement. Seule la NBA peut utiliser
+le lendemain avant midi Paris avec rdj_sport_detail_clock_v1 lié à la fiche,
+à l'index, aux deux équipes, à l'édition et au départ. Délai minimal: 30 minutes.
+
+Après revue, commit/push main, arrêter les timers et attendre les services
+inactifs avant le pull --ff-only des deux dépôts. Relancer l'API uniquement
+après cohérence des checkouts et restaurer les timers observés.
+Conserver unités privées/drop-ins, clés, états, caches et ledgers. Si ExecStart
+filtre encore --source basketusa_nba, retirer ce filtre ou choisir rdj_nba et
+rdj_tennis. Le service par défaut utilise les sources mappées par l'API.
+
+Migration de catégories, depuis le checkout API WinTips (URI privée fournie
+uniquement par WINTIPS_CATALOGUE_MONGO_URI, sans charger le bootstrap applicatif):
+  node tools/editorial-rdj-sports-categories.cjs --plan --out /private/rdj-sports-plan.json
+Relire le plan, son planHash, l'ID NBA conservé et l'unique nouvelle catégorie
+Tennis. Appliquer le plan exact avec le mécanisme transactionnel existant:
+  node tools/editorial-rdj-sports-categories.cjs --apply --plan-file /private/rdj-sports-plan.json --confirm-sha256 PLAN_HASH --confirm-catalogue-mutation --out /private/rdj-sports-receipt.json
+La même application peut être répétée avec un nouveau chemin de reçu; les
+opérations déjà appliquées sont ignorées. Un nouveau plan devient vide. La
+migration ne modifie que editorialSource sur la catégorie NBA existante et crée
+Tennis gratuit; elle préserve ID, champs BO, accès, forfaits, avis et ouvertures.
+L'API conserve les lectures historiques Basket USA sous ce même ID, dans la
+bibliothèque, les éditions et les liens des anciennes applications. Si une
+édition NBA Basket USA est déjà publiée à la date courante, rdj_nba est exclue
+de la configuration du worker et tout import RDJ pour cette édition est ignoré
+avant écriture ou notification. Aucun ancien contenu n'est republié ni renommé.
+Aucun index nouveau, clear de cache, reset de ledger ou test sur compte requis.
+
+Tests locaux sans réseau, modèle, API ou base réelle:
+  python -B -m unittest discover -s tests -p test_rdj_sports.py
+Depuis la racine API:
+  node --test tests/editorial-rdj-sports.node-test.cjs tests/editorial-nba.node-test.cjs tests/editorial-library.node-test.cjs tests/editorial-catalogue.node-test.cjs
+Pour le replay du vrai parseur, fournir RDJ_TEST_SPORTS_ROOT explicitement sur
+le tools/journal-parieur-worker du checkout BigWin et lancer test_rdj_sports.

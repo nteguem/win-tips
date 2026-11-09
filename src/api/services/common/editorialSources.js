@@ -1,7 +1,8 @@
 // Fixed publisher catalogue; category selection stays under back-office control.
 const SOURCES = Object.freeze([
   { key: 'rdj_petit_journal', label: 'Le Petit Journal', description: 'Les matchs et analyses du jour', access: 'free', selectable: true, url: 'https://www.ruedesjoueurs.com/paris-sportifs/le-petit-journal.html', kinds: ['match'] },
-  { key: 'basketusa_nba', label: 'NBA du jour', description: 'Les rencontres NBA et leurs analyses', access: 'free', selectable: true, url: 'https://www.basketusa.com/paris-sportifs/pronostics-nba/', kinds: ['match'], constraints: { sports: ['basketball'], competition: 'NBA' } },
+  { key: 'rdj_nba', label: 'NBA du jour', description: 'Les rencontres NBA et leurs analyses', access: 'free', selectable: true, url: 'https://www.ruedesjoueurs.com/pronostics/nba-943387.html', kinds: ['match'], constraints: { sports: ['basketball'], competition: 'NBA' } },
+  { key: 'rdj_tennis', label: 'Tennis du jour', description: 'Les rencontres de tennis et leurs analyses', access: 'free', selectable: true, url: 'https://www.ruedesjoueurs.com/pronostics/tennis.html', kinds: ['match'], constraints: { sports: ['tennis'] } },
   { key: 'rdj_turf_quinte', label: 'Le Quinté du Jour', description: 'Les courses, analyses et sélections du Quinté+', access: 'free', selectable: true, url: 'https://www.ruedesjoueurs.com/turf/pronostic-turf.html', kinds: ['horse_racing'] },
   { key: 'rdj_football_analysis', label: 'Sélection Expert', description: 'Des paris simples et leur analyse football', access: 'vip', selectable: true, url: 'https://www.ruedesjoueurs.com/pronostics/foot.html', kinds: ['match'] },
   { key: 'rdj_football_duo', label: 'Le Duo du Jour', description: 'Deux rencontres, une cote totale de 2 à 4', access: 'vip', selectable: true, url: 'https://www.ruedesjoueurs.com/actualites/paris-sportifs.html', kinds: ['combine'], constraints: { minEvents: 2, maxEvents: 2, minTotalOdds: 2, maxTotalOdds: 4 } },
@@ -9,6 +10,7 @@ const SOURCES = Object.freeze([
   { key: 'rdj_multisport_analysis', label: 'Expert Multisports', description: 'Des paris simples analysés en basket et volley', access: 'vip', selectable: true, url: 'https://www.ruedesjoueurs.com/pronostics.html', kinds: ['match'], constraints: { sports: ['basketball', 'volleyball'] } },
   // Existing category mappings and past imports remain readable. This source
   // cannot be newly assigned through the back-office or the catalogue seed.
+  { key: 'basketusa_nba', label: 'NBA du jour (archives)', access: 'free', selectable: false, importEnabled: false, legacy: true, url: 'https://www.basketusa.com/paris-sportifs/pronostics-nba/', kinds: ['match'], constraints: { sports: ['basketball'], competition: 'NBA' } },
   { key: 'rdj_football_combine', label: 'Combinés RDJ (ancien)', access: 'vip', selectable: false, legacy: true, url: 'https://www.ruedesjoueurs.com/actualites/paris-sportifs.html', kinds: ['combine'] },
 ].map(s => Object.freeze({ ...s, kinds: Object.freeze(s.kinds),
   ...(s.constraints ? { constraints: Object.freeze(Object.fromEntries(Object.entries(s.constraints).map(([key, value]) => [key, Array.isArray(value) ? Object.freeze(value) : value]))) } : {}),
@@ -62,6 +64,8 @@ function validatePublisherUrl(value, source) {
     throw failure('Une URL canonique HTTPS RueDesJoueurs est requise');
   }
   const patterns = {
+    rdj_nba: /^\/pronostic\/[\w-]+-\d+\.html$/,
+    rdj_tennis: /^\/pronostic\/[\w-]+-\d+\.html$/,
     rdj_petit_journal: /^\/paris-sportifs\/le-petit-journal(?:\/[\w-]+)?\.html$/,
     rdj_turf_quinte: /^\/turf\/pronostic-turf(?:\/course\/\d{2}-\d{2}-\d{4}\/R\d+\/C\d+\/[\w-]+|\/pronostics-quinte\/[\w-]+)?\.html$/,
     rdj_football_analysis: /^\/pronostic\/[\w-]+-\d+\.html$/,
@@ -74,4 +78,8 @@ function validatePublisherUrl(value, source) {
   return url.href;
 }
 
-module.exports = { SOURCES, sourceByKey, validateCategorySource, validateCategoryAssignment, validatePublisherUrl, containsEditorialField, failure };
+// Only this explicit migration admits an older publisher under the same category.
+// Import and notifications continue to require the category's current source.
+const readableSources = category => category.editorialSource === 'rdj_nba' ? ['rdj_nba', 'basketusa_nba'] : [category.editorialSource];
+const categoryAcceptsSource = (category, source) => readableSources(category).includes(source);
+module.exports = { SOURCES, sourceByKey, validateCategorySource, validateCategoryAssignment, validatePublisherUrl, containsEditorialField, failure, readableSources, categoryAcceptsSource };

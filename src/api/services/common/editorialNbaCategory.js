@@ -1,9 +1,9 @@
 'use strict';
 // Add one optional NBA family. Existing categories/packages are never rewritten.
 const { VERSION, stableId, hash, idOf, verifyPlan } = require('./editorialCataloguePlan');
-const SOURCE = 'basketusa_nba';
-const ID = stableId('category:' + SOURCE);
-const KEY = VERSION + ':category:' + SOURCE;
+const SOURCE = 'rdj_nba';
+const ID = stableId('category:basketusa_nba');
+const KEY = VERSION + ':category:basketusa_nba';
 const fail = code => { throw Object.assign(new Error(code), { code }); };
 
 function createNbaCategoryPlan(state, now = new Date().toISOString()) {
