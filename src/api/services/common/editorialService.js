@@ -184,7 +184,7 @@ function createEditorialService({ repository, clock = () => new Date(), importEn
 }
 
 function sourceMatchesCategory(category) {
-  if (!category || category.isActive !== true || !category.editorialSource) return false;
+  if (!category || category.isActive !== true || !category.editorialSource || sourceByKey(category.editorialSource)?.appEnabled === false) return false;
   try { return !!validateCategorySource(category.editorialSource, category.isVip); } catch (_) { return false; }
 }
 

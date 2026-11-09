@@ -18,8 +18,6 @@ HOST = "https://www.ruedesjoueurs.com"
 SOURCES = {
     "rdj_petit_journal": HOST + "/paris-sportifs/le-petit-journal.html",
     "rdj_turf_quinte": HOST + "/turf/pronostic-turf.html",
-    "rdj_nba": HOST + "/pronostics/nba-943387.html",
-    "rdj_tennis": HOST + "/pronostics/tennis.html",
     "rdj_football_analysis": HOST + "/pronostics/foot.html",
     "rdj_football_combine": HOST + "/actualites/paris-sportifs.html",
     "rdj_football_duo": HOST + "/paris-sportifs/sport-news/news-pmu-sport.html",
@@ -1219,10 +1217,6 @@ def collect(source, edition, fetcher, *, now, lead=30, exclude_ids=None, exclude
                 "rdj_football_analysis": collect_football, "rdj_football_combine": collect_combine,
                 "rdj_football_duo": collect_combine, "rdj_football_goals": collect_combine,
                 "rdj_multisport_analysis": collect_multisport}
-    if source in {'rdj_nba', 'rdj_tennis'}:
-        from .rdj_sports import collect as collect_sport
-        adapters[source] = collect_sport
-        kwargs['sport'] = source.removeprefix('rdj_')
     if source in {"rdj_football_duo", "rdj_football_goals"}:
         kwargs["source"] = source
     if source in {"rdj_football_duo", "rdj_football_goals"}:

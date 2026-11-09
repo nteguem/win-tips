@@ -71,31 +71,16 @@ test('the NBA batch and match labels remain distinct without leaking analysis th
   const notification = message('wintips', { category: { _id: 'b'.repeat(24), isVip: false }, source, editionDate: day, items: [row] }, 'fr');
   assert.match(notification.title, /NBA/); assert.doesNotMatch(notification.title, /Petit Journal|Quinté/);
 });
-test('NBA extends the catalogue while existing VIP prices and category rights stay intact', () => {
+test('the established six-category catalogue rejects optional NBA activation', () => {
   const legacy = clone(require('../tools/editorial-catalogue.example.json'));
   const extended = clone(require('../tools/editorial-catalogue.nba.example.json'));
-  const oldPlan = createPlan({}, legacy), newPlan = createPlan({}, extended);
-  assert.equal(oldPlan.targetCounts.categories, 6); assert.equal(newPlan.targetCounts.categories, 7);
-  assert.equal(newPlan.operations.filter(row => row.collection === 'categories' && row.after.editorialSource === 'rdj_nba').length, 1);
-  for (const op of oldPlan.operations.filter(row => row.collection === 'packages')) {
-    assert.deepEqual(newPlan.operations.find(row => row.id === op.id).after.categories, op.after.categories);
-    assert.deepEqual(newPlan.operations.find(row => row.id === op.id).after.pricing, op.after.pricing);
-  }
-  const missing = clone(extended); missing.categories = missing.categories.filter(row => row.source !== 'rdj_turf_quinte');
-  assert.throws(() => createPlan({}, missing));
+  assert.equal(createPlan({}, legacy).targetCounts.categories, 6);
+  assert.throws(() => createPlan({}, extended), { code: 'CONFIG' });
 });
-test('targeted activation never rewrites existing categories, prices, packages or rights', () => {
-  const { createNbaCategoryPlan, verifyNbaCategoryPlan, ID } = require('../src/api/services/common/editorialNbaCategory');
-  const state = { databaseName: 'test-only', categories: [{ _id: { $oid: 'f'.repeat(24) }, name: { fr: 'Custom' }, isVip: true }],
-    packages: [{ _id: { $oid: 'e'.repeat(24) }, pricing: { XAF: 9999 }, categories: ['f'.repeat(24)] }] };
-  const original = clone(state), plan = createNbaCategoryPlan(state, '2026-11-08T12:00:00Z');
-  assert.deepEqual(state, original); assert.equal(plan.operations.length, 1);
-  assert.equal(plan.operations[0].id, ID); assert.equal(plan.operations[0].before, null);
-  assert.equal(plan.operations[0].collection, 'categories'); assert.equal(plan.operations[0].after.icon, '🏀');
-  verifyNbaCategoryPlan(plan, plan.planHash);
-  assert.throws(() => verifyNbaCategoryPlan(plan, 'bad-hash'));
-  state.categories.push(clone(plan.operations[0].after));
-  assert.equal(createNbaCategoryPlan(state).operations.length, 0);
-  state.categories[state.categories.length - 1].isVip = true;
-  assert.throws(() => createNbaCategoryPlan(state));
+test('dedicated NBA category activation is disabled without modifying existing state', () => {
+  const { createNbaCategoryPlan } = require('../src/api/services/common/editorialNbaCategory');
+  const state = { categories: [{ _id: { $oid: 'f'.repeat(24) }, isVip: true }], packages: [{ pricing: { XAF: 9999 } }] };
+  const before = clone(state);
+  assert.throws(() => createNbaCategoryPlan(state), { code: 'SPORT_SOURCES_DISABLED_FOR_WINTIPS' });
+  assert.deepEqual(state, before);
 });

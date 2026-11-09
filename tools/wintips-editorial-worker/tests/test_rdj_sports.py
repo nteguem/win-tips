@@ -38,12 +38,15 @@ class RdjSportsTests(unittest.TestCase):
     def adapted(self, value=None, sport='nba', **kwargs):
         fetcher = SimpleNamespace(html=lambda url: None, json=lambda url: self.fail('No schedule HTTP'), budget_refusals=[])
         with patch.object(adapter, 'owner', return_value=SimpleNamespace(rdj=SimpleNamespace(), collect=lambda *a, **k: value or packet(sport))):
-            return collect('rdj_' + sport, DAY, fetcher, now=NOW, **kwargs)
+            try:
+                return adapter.collect(DAY, fetcher, sport=sport, now=NOW, resolver=None, **kwargs)
+            except ValueError as error:
+                return {'status': 'source_incomplete', 'items': [], 'issues': [{'code': str(error)}]}
 
-    def test_active_sources_replace_basketusa_and_do_not_copy_the_core_parser(self):
+    def test_dedicated_sport_sources_are_not_selected_by_the_wintips_worker(self):
         self.assertNotIn('basketusa_nba', SOURCES)
-        self.assertIn('rdj_nba', SOURCES)
-        self.assertIn('rdj_tennis', SOURCES)
+        self.assertNotIn('rdj_nba', SOURCES)
+        self.assertNotIn('rdj_tennis', SOURCES)
         with patch.dict(os.environ, {'RDJ_HUB_CODE_ROOT': '', 'RDJ_SPORTS_CODE_ROOT': ''}):
             with self.assertRaises(ValueError): adapter.owner()
 
@@ -88,7 +91,7 @@ class RdjSportsTests(unittest.TestCase):
         self.assertEqual(self.adapted(value)['status'], 'source_incomplete')
         self.assertEqual(self.adapted(lead=29)['status'], 'source_incomplete')
 
-    def test_existing_api_preflight_accepts_original_french_with_english_fallback(self):
+    def test_existing_api_preflight_refuses_dedicated_sports_for_wintips(self):
         root = Path(__file__).resolve().parents[3]
         for sport, night in [('nba', True), ('tennis', False)]:
             result = self.adapted(packet(sport, night), sport=sport)
@@ -97,7 +100,7 @@ class RdjSportsTests(unittest.TestCase):
                 input=json.dumps({'source': 'rdj_' + sport, 'editionDate': DAY, 'items': result['items']}).encode(),
                 capture_output=True, timeout=30)
             self.assertEqual(done.returncode, 0, done.stderr.decode())
-            self.assertTrue(json.loads(done.stdout)['passed'], done.stdout)
+            self.assertFalse(json.loads(done.stdout)['passed'], done.stdout)
 
     @unittest.skipUnless(os.environ.get('RDJ_TEST_SPORTS_ROOT'), 'Explicit canonical BigWin checkout required')
     def test_real_rdg_archive_crosses_the_canonical_collector_and_actual_win_api_validator(self):
@@ -114,7 +117,7 @@ class RdjSportsTests(unittest.TestCase):
             fetcher = SimpleNamespace(html=raw, json=lambda url: self.fail('No schedule HTTP'), budget_refusals=[])
             with patch('urllib.request.OpenerDirector.open', side_effect=AssertionError('No external HTTP')):
                 for sport, expected in [('nba', ['6019800', '6019802']), ('tennis', ['6578491', '6558663'])]:
-                    result = collect('rdj_' + sport, DAY, fetcher, now=instant)
+                    result = adapter.collect(DAY, fetcher, sport=sport, now=instant, resolver=None)
                     self.assertEqual(result['status'], 'ready', result['issues'])
                     self.assertEqual(sorted(row['sourceId'] for row in result['items']), sorted(expected))
                     for row in result['items']:
@@ -124,7 +127,7 @@ class RdjSportsTests(unittest.TestCase):
                         input=json.dumps({'source': 'rdj_' + sport, 'editionDate': DAY, 'items': result['items']}).encode(),
                         capture_output=True, timeout=30)
                     self.assertEqual(done.returncode, 0, done.stderr.decode())
-                    self.assertTrue(json.loads(done.stdout)['passed'], done.stdout)
+                    self.assertFalse(json.loads(done.stdout)['passed'], done.stdout)
             self.assertEqual(len(physical), 6)
 
     @unittest.skipUnless(os.environ.get('RDJ_TEST_SPORTS_ROOT'), 'Explicit canonical BigWin checkout required')
@@ -156,7 +159,7 @@ class RdjSportsTests(unittest.TestCase):
                 bridge = adapter.CanonicalReader(reader, core.rdj)
                 self.assertIs(bridge.html.__self__.hub, reader.hub)
                 self.assertIsInstance(bridge.html(adapter.INDEXES['nba']), core.rdj.FetchedPage)
-                first = {sport: collect('rdj_' + sport, DAY, reader, now=instant) for sport in ('nba', 'tennis')}
+                first = {sport: adapter.collect(DAY, reader, sport=sport, now=instant, resolver=None) for sport in ('nba', 'tennis')}
                 for sport, result in first.items():
                     self.assertEqual(result['status'], 'ready', result['issues'])
                     self.assertEqual(len(result['items']), 2)
@@ -165,7 +168,7 @@ class RdjSportsTests(unittest.TestCase):
                 # double-locking or repeating a physical request.
                 second = PublicFetcher(Path(directory) / 'other-unused-cache')
                 with patch.object(second, '_get', side_effect=AssertionError('Shared HTTP must be reused')):
-                    repeated = {sport: collect('rdj_' + sport, DAY, second, now=instant) for sport in ('nba', 'tennis')}
+                    repeated = {sport: adapter.collect(DAY, second, sport=sport, now=instant, resolver=None) for sport in ('nba', 'tennis')}
                 self.assertEqual(repeated, first)
                 self.assertEqual(physical, before)
                 self.assertEqual(len(physical), 6)

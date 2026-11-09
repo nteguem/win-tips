@@ -20,7 +20,7 @@ function validateConfig(config) {
   if (!Array.isArray(config.categories) || (config.categories.length < BASE_TARGETS.length || config.categories.length > TARGETS.length) ||
       new Set(config.categories.map(row => row.source)).size !== config.categories.length ||
       config.categories.some(row => !TARGETS.includes(row.source)) || BASE_TARGETS.some(source => !config.categories.some(row => row.source === source)))
-    fail('CONFIG', 'The six established categories and optional NBA/tennis categories are required');
+    fail('CONFIG', 'Only the six established WinTips categories are permitted');
   for (const row of config.categories) {
     if (!row.name?.fr || !row.name?.en || !row.description?.fr || !row.description?.en) fail('CONFIG', 'Bilingual category name and description required');
   }

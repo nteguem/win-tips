@@ -1,3 +1,15 @@
+SCOPE UPDATE - 2026-11-09
+Dedicated NBA and tennis journals belong to the five BigWin-family apps only.
+WinTips keeps its established Petit Journal, Quinte and existing VIP sources.
+Historical NBA/tennis records are retained in storage but no longer exposed,
+imported or notified. Old activation commands now refuse any activation plan.
+To withdraw the accidentally enabled dedicated categories, use
+  node tools/editorial-withdraw-dedicated-sports.cjs --plan --out /private/plan.json
+Review the plan, then apply with its exact SHA and the existing catalogue CLI
+confirmation flags. This changes only isActive/catalogueArchived on matching
+categories. No item, review, opening, package, subscription or credit is deleted.
+The rest of this document retains the historical implementation reference.
+
 WINTIPS — WORKER ÉDITORIAL RDJ
 
 REPRISE ET STATUT GLOBAL — 8 NOVEMBRE 2026

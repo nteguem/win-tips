@@ -1,16 +1,16 @@
 // Fixed publisher catalogue; category selection stays under back-office control.
 const SOURCES = Object.freeze([
   { key: 'rdj_petit_journal', label: 'Le Petit Journal', description: 'Les matchs et analyses du jour', access: 'free', selectable: true, url: 'https://www.ruedesjoueurs.com/paris-sportifs/le-petit-journal.html', kinds: ['match'] },
-  { key: 'rdj_nba', label: 'NBA du jour', description: 'Les rencontres NBA et leurs analyses', access: 'free', selectable: true, url: 'https://www.ruedesjoueurs.com/pronostics/nba-943387.html', kinds: ['match'], constraints: { sports: ['basketball'], competition: 'NBA' } },
-  { key: 'rdj_tennis', label: 'Tennis du jour', description: 'Les rencontres de tennis et leurs analyses', access: 'free', selectable: true, url: 'https://www.ruedesjoueurs.com/pronostics/tennis.html', kinds: ['match'], constraints: { sports: ['tennis'] } },
+  { key: 'rdj_nba', label: 'NBA du jour', description: 'Les rencontres NBA et leurs analyses', access: 'free', selectable: false, importEnabled: false, appEnabled: false, legacy: true, url: 'https://www.ruedesjoueurs.com/pronostics/nba-943387.html', kinds: ['match'], constraints: { sports: ['basketball'], competition: 'NBA' } },
+  { key: 'rdj_tennis', label: 'Tennis du jour', description: 'Les rencontres de tennis et leurs analyses', access: 'free', selectable: false, importEnabled: false, appEnabled: false, legacy: true, url: 'https://www.ruedesjoueurs.com/pronostics/tennis.html', kinds: ['match'], constraints: { sports: ['tennis'] } },
   { key: 'rdj_turf_quinte', label: 'Le Quinté du Jour', description: 'Les courses, analyses et sélections du Quinté+', access: 'free', selectable: true, url: 'https://www.ruedesjoueurs.com/turf/pronostic-turf.html', kinds: ['horse_racing'] },
   { key: 'rdj_football_analysis', label: 'Sélection Expert', description: 'Des paris simples et leur analyse football', access: 'vip', selectable: true, url: 'https://www.ruedesjoueurs.com/pronostics/foot.html', kinds: ['match'] },
   { key: 'rdj_football_duo', label: 'Le Duo du Jour', description: 'Deux rencontres, une cote totale de 2 à 4', access: 'vip', selectable: true, url: 'https://www.ruedesjoueurs.com/actualites/paris-sportifs.html', kinds: ['combine'], constraints: { minEvents: 2, maxEvents: 2, minTotalOdds: 2, maxTotalOdds: 4 } },
   { key: 'rdj_football_goals', label: 'Combiné Buts', description: 'Deux ou trois rencontres sur les marchés de buts', access: 'vip', selectable: true, url: 'https://www.ruedesjoueurs.com/actualites/paris-sportifs.html', kinds: ['combine'], constraints: { minEvents: 2, maxEvents: 3, markets: ['btts', 'over_under_goals', 'team_goals'] } },
   { key: 'rdj_multisport_analysis', label: 'Expert Multisports', description: 'Des paris simples analysés en basket et volley', access: 'vip', selectable: true, url: 'https://www.ruedesjoueurs.com/pronostics.html', kinds: ['match'], constraints: { sports: ['basketball', 'volleyball'] } },
-  // Existing category mappings and past imports remain readable. This source
-  // cannot be newly assigned through the back-office or the catalogue seed.
-  { key: 'basketusa_nba', label: 'NBA du jour (archives)', access: 'free', selectable: false, importEnabled: false, legacy: true, url: 'https://www.basketusa.com/paris-sportifs/pronostics-nba/', kinds: ['match'], constraints: { sports: ['basketball'], competition: 'NBA' } },
+  // Keep historical identities in storage. Dedicated sports are disabled in
+  // WinTips, including old Basket USA imports and saved activation mappings.
+  { key: 'basketusa_nba', label: 'NBA du jour (archives)', access: 'free', selectable: false, importEnabled: false, appEnabled: false, legacy: true, url: 'https://www.basketusa.com/paris-sportifs/pronostics-nba/', kinds: ['match'], constraints: { sports: ['basketball'], competition: 'NBA' } },
   { key: 'rdj_football_combine', label: 'Combinés RDJ (ancien)', access: 'vip', selectable: false, legacy: true, url: 'https://www.ruedesjoueurs.com/actualites/paris-sportifs.html', kinds: ['combine'] },
 ].map(s => Object.freeze({ ...s, kinds: Object.freeze(s.kinds),
   ...(s.constraints ? { constraints: Object.freeze(Object.fromEntries(Object.entries(s.constraints).map(([key, value]) => [key, Array.isArray(value) ? Object.freeze(value) : value]))) } : {}),
