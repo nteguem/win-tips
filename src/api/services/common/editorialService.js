@@ -129,6 +129,10 @@ function createEditorialService({ repository, clock = () => new Date(), importEn
       }
       const result = await repository.upsertBatch(operations, { source: batch.source, editionDate: batch.editionDate,
         editorialCopy: batch.editorialCopy || null, ...(batch.couponTeaser ? { couponTeaser: batch.couponTeaser } : {}) });
+      if (batch.source === 'rdj_petit_journal' && result.ignored === true &&
+          result.reason === require('./editorialCopyStorage').PETIT_PUBLISHED)
+        return { source: batch.source, date: batch.editionDate, ignored: true, reason: result.reason,
+          imported: 0, notificationsSent: 0 };
       let notificationResult = { disabled: true, sent: 0 };
       if (notifications && notifications.enabled()) {
         try { notificationResult = await notifications.drain({ source: batch.source, editionDate: batch.editionDate, dryRun: false }); }

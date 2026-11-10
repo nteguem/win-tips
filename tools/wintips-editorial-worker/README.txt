@@ -1,3 +1,50 @@
+PETIT JOURNAL RECOVERY - 2026-11-10
+The reviewed shared hub can explicitly enable
+RDJ_PETIT_PUBLICATION_POLICY=upcoming-verified-cards-v1 for both workers through
+its existing shared environment file. Without that operator opt-in, the
+historical all-cards-required-v1 policy remains in force. WinTips requires the
+hub's complete selection receipt before accepting a partial Petit Journal.
+An already started, too-close or unverified source card is excluded; another
+fully verified upcoming card can still publish. Never replace a source card
+with an unrelated match. Naive event clocks under this policy require the
+canonical hub's approved schedule evidence; publication keeps its 30-minute
+minimum lead and rechecks each retained card after translation.
+
+selection-audits/YYYY-MM-DD/rdj_petit_journal.json is private worker evidence.
+It preserves the exact hub selection, reasons for every excluded card, original
+event clocks, photo identity resolution and schedule proof. last-run.json binds
+that audit by SHA256. None of those audit fields enters the strict API schema.
+If translation closes one card's window, only that card is removed and the
+delivery selection is appended to the same audit; obsolete optional copy is
+discarded. Existing upsert identities, notifications, paid rights, weekly
+readings, historical records and category scope remain unchanged. This enables
+partial recovery of the established Petit Journal, not dedicated NBA/tennis
+categories in WinTips.
+The first published subset stays frozen for that source/day. The worker uses
+the authenticated API's frozen copy state and hash-validated published inventory,
+not a local last-run flag or the current number of cards on RDJ. Missing or
+inconsistent inventory prevents a rewrite. The API state is read again before
+the first import so a publication completed during translation is preserved.
+An explicit current new/non-legacy state permits a first publication only.
+The API also enforces the Petit freeze inside its existing source/day copy
+transaction, before article writes or cosmetic updates. A competing or legacy
+publication returns ignored/published_petit_journal_edition_preserved without a
+new notification or persisted copy/revision mutation. Only the exact copy-lock
+_id creation conflict can retry one aborted transaction; other indexes and
+unknown commit results are never replayed by this rule. VIP and Quinte retain
+their prior upsert behaviour. Deploying this API guard requires the usual
+reviewed WinTips Node process reload as well as the next oneshot worker run.
+
+Optional real Mongo qualification: tests/editorial-petit-atomic-mongo.node-test.cjs.
+It skips unless WINTIPS_PETIT_QA_MONGO_URI is explicitly supplied. Also require
+WINTIPS_PETIT_QA_OWNER_NONCE (16 hex characters) and WINTIPS_PETIT_QA_DATABASE
+equal to qa_journal_atomic_20261110_<that nonce>. Review the script before use.
+It forces a separate connection/database, refuses any existing collections,
+checks an ownership marker before QA writes, and retains its small evidence DB.
+Never print an URI, reuse a production database name or load application .env
+from the test itself. The operator's reviewed wrapper may pass the cluster URI
+in memory only. No disposable Mongo binary/runtime installation is needed.
+
 SCOPE UPDATE - 2026-11-09
 Dedicated NBA and tennis journals belong to the five BigWin-family apps only.
 WinTips keeps its established Petit Journal, Quinte and existing VIP sources.

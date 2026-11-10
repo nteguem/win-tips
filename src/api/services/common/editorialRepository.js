@@ -83,6 +83,7 @@ function createEditorialRepository({ Category, EditorialItem, EditorialReview, s
     catch (_) { return { ready: false, editionDate, reason: 'ticket_reservations_require_review' }; }
   },
   upsertBatch: async (operations, copyContext) => {
+    const immutablePetit = copyContext?.source === 'rdj_petit_journal';
     // Deployment explicitly prepares this index after operator approval. A read
     // request/import must never create collections/indexes behind the scenes.
     let indexes;
@@ -98,7 +99,10 @@ function createEditorialRepository({ Category, EditorialItem, EditorialReview, s
     const ticketOps = operations.filter(op => tickets().TICKET_SOURCES.includes(op.updateOne.filter.source));
     try {
       if (!ticketOps.length && !copyContext) return await EditorialItem.bulkWrite(operations, { ordered: true });
-      if (copyContext) await copies().prepare(copyContext);
+      if (copyContext) {
+        if (immutablePetit) await copies().assertReady();
+        else await copies().prepare(copyContext);
+      }
       if (ticketOps.length) await ticketStorage();
       const dates = [...new Set(ticketOps.map(op => op.updateOne.filter.editionDate))];
       if (ticketOps.length && (dates.length !== 1 || ticketOps.length !== operations.length)) throw failure('Un lot de tickets doit porter sur une seule edition', 409);
@@ -111,7 +115,8 @@ function createEditorialRepository({ Category, EditorialItem, EditorialReview, s
       }
       const session = await EditorialItem.db.startSession();
       try {
-        return await session.withTransaction(async () => {
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try { return await session.withTransaction(async () => {
           if (copyContext) await copies().lockAndInitialize(copyContext, operations, session);
           let state;
           if (ticketOps.length) {
@@ -130,10 +135,22 @@ function createEditorialRepository({ Category, EditorialItem, EditorialReview, s
             if (saved.matchedCount !== 1) throw failure('Reservation du ticket indisponible', 409);
           }
           return result;
-        }, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } });
+          }, { readConcern: { level: 'snapshot' }, writeConcern: { w: 'majority' } }); }
+          catch (error) {
+            const key = copyContext && require('./editorialCopyStorage').copyId(copyContext.source, copyContext.editionDate);
+            if (!(immutablePetit && attempt === 0 && error.code === 11000 && error.petitLockCreationConflict === key)) throw error;
+            // The first transaction aborted before its article write. One fresh
+            // transaction may now read the winning frozen copy; no other index,
+            // bulkWrite failure or unknown commit result is retried here.
+          }
+        }
       } finally { await session.endSession(); }
     }
     catch (error) {
+      const { PETIT_PUBLISHED } = require('./editorialCopyStorage');
+      if (immutablePetit && error.code === PETIT_PUBLISHED) return {
+        ignored: true, reason: PETIT_PUBLISHED, upsertedCount: 0, matchedCount: 0,
+      };
       if (hasDuo && error.code === 11000) throw failure('Le Duo du Jour de cette edition est deja choisi; son identite doit etre conservee', 409);
       throw error;
     }

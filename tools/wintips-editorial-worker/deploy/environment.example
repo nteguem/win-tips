@@ -1,6 +1,10 @@
 # Review the API origin before deployment. Real secrets stay outside Git.
 WINTIPS_EDITORIAL_API_BASE=https://api.wintips-expert.com
 WINTIPS_EDITORIAL_WORKER_TOKEN=
+# Optional recovery policy is provisioned by the shared hub installer in its
+# shared EnvironmentFile, after review, for both workers together:
+# RDJ_PETIT_PUBLICATION_POLICY=upcoming-verified-cards-v1
+# Requires the matching canonical shared hub; absent means all-cards-required-v1.
 # Explicit cloud provider. Put the credential in a private EnvironmentFile.
 # No account/key is created here. Never commit a real key.
 WINTIPS_EDITORIAL_TRANSLATOR=gemini

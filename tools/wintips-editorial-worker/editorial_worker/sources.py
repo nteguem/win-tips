@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
+from copy import deepcopy
 import json
 import hashlib
 import math
+import os
 import re
 from urllib.parse import urljoin, urlsplit
 
@@ -12,6 +14,7 @@ from .vendor import rdj_collector as rdj
 from .vendor.timing import OfficialKickoffs, _provider_name
 from .calendar import edition_day, source_event_day, paris_timezone
 from .verified import VerifiedKickoffs
+from .http import FetchError
 from .markets import market as describe_market, GOAL_TYPES, MarketError
 
 HOST = "https://www.ruedesjoueurs.com"
@@ -482,27 +485,127 @@ def _night_schedule_valid(proof):
     return abs((requested - instant.date()).days) <= 1
 
 
+PETIT_UPCOMING_POLICY = 'upcoming-verified-cards-v1'
+
+
+def _petit_selection_audit(packet, edition, now, lead):
+    """Accept a subset only under the operator's explicit canonical contract.
+
+    Keep the original hub selection and every excluded card in private worker
+    evidence. This audit is deliberately separate from the strict API payload.
+    """
+    policy = os.environ.get('RDJ_PETIT_PUBLICATION_POLICY', 'all-cards-required-v1')
+    checked(policy in {'all-cards-required-v1', PETIT_UPCOMING_POLICY}, 'petit_publication_policy_invalid')
+    selection = packet.get('provenance', {}).get('card_selection')
+    if policy != PETIT_UPCOMING_POLICY:
+        checked(selection is None or selection.get('policy') != PETIT_UPCOMING_POLICY,
+            'petit_partial_policy_not_enabled')
+        return None
+    checked(isinstance(selection, dict) and selection.get('policy') == policy
+        and selection.get('minimum_lead_minutes') == 30, 'petit_selection_contract_required')
+    fixtures = packet.get('fixtures', [])
+    included = selection.get('included_card_indexes')
+    excluded = selection.get('excluded')
+    count = selection.get('source_card_count')
+    checked(type(count) is int and 1 <= count <= 50 and isinstance(included, list)
+        and isinstance(excluded, list) and len(included) == len(fixtures)
+        and selection.get('included_count') == len(fixtures)
+        and selection.get('excluded_count') == len(excluded)
+        and len(included) + len(excluded) == count
+        and selection.get('included_source_ids') == [fixture['id'] for fixture in fixtures]
+        and included == [fixture['provenance']['card_index'] for fixture in fixtures],
+        'petit_selection_contract_invalid')
+    indexes = included + [row.get('card_index') for row in excluded]
+    validated = selection.get('validated_card_count')
+    checked(all(type(index) is int for index in indexes) and sorted(indexes) == list(range(count))
+        and len({fixture['id'] for fixture in fixtures}) == len(fixtures)
+        and type(validated) is int and len(fixtures) <= validated <= count
+        and validated == len(fixtures) + sum(row.get('reason') == 'minimum_publication_lead_not_met' for row in excluded)
+        and all(row.get('reason') in {'minimum_publication_lead_not_met', 'source_card_not_verified'}
+            for row in excluded), 'petit_selection_contract_invalid')
+    checked(iso(selection['checked_at_utc']) <= now, 'petit_selection_clock_invalid')
+    return {'source': 'rdj_petit_journal', 'editionDate': edition,
+        'canonicalSelection': deepcopy(selection), 'consumerCheckedAtUtc': utc_text(now),
+        'minimumLeadMinutes': lead, 'includedSourceIds': [], 'consumerExcluded': [],
+        'fixtureEvidence': []}
+
+
+def _petit_fixture_evidence(fixture, detail, page):
+    """Bind the typed reread to the canonical event, not its mutable photograph."""
+    checked(fixture['source_url'] == page.url and fixture['id'] == MATCH_PATH.fullmatch(urlsplit(page.url).path)[1]
+        and all(fixture[key] == detail[key] for key in ('home', 'away', 'sport', 'competition'))
+        and datetime.fromisoformat(fixture['kickoff_local']['detail']) == detail['kickoff'],
+        'petit_canonical_fixture_changed')
+    proof = fixture.get('provenance', {})
+    photos = proof.get('participant_identity_resolution')
+    if photos is not None:
+        checked(detail['sport'] == 'tennis' and photos.get('method') == 'rdj_linked_tennis_player_names_v1'
+            and photos.get('source_url') == page.url
+            and photos.get('journal_photo_ids') == proof.get('participant_logo_ids')
+            and photos.get('detail_photo_ids') == detail['participant_logos'],
+            'petit_canonical_photo_proof_changed')
+    elif proof.get('participant_logo_ids') is not None:
+        checked(proof['participant_logo_ids'] == detail['participant_logos'], 'petit_canonical_participants_changed')
+    if 'analysis_fr' in fixture:
+        checked(fixture['analysis_fr'] == detail['analysis_fr'], 'petit_canonical_analysis_changed')
+    return {'sourceId': fixture['id'], 'sourceUrl': page.url, 'kickoffUtc': fixture['kickoff_utc'],
+        'kickoffLocal': deepcopy(fixture['kickoff_local']), 'provenance': deepcopy(proof)}
+
+
 def collect_petit(edition, fetcher, *, now, resolver, lead=30, limit=8):
     packet = rdj.collect_edition(edition, fetcher=fetcher.html, kickoff_resolver=resolver, now=now, max_index_pages=2)
+    audit = _petit_selection_audit(packet, edition, now, lead) if packet.get('fixtures') or packet.get('provenance', {}).get('card_selection') else None
+    evidence = {'sourceSelectionAudit': audit} if audit is not None else {}
     if packet["status"] != "ready":
-        return {"status": packet["status"], "items": [], "issues": packet.get("issues", [])}
+        return {"status": packet["status"], "items": [], "issues": packet.get("issues", []), **evidence}
     items, normalizations = [], []
     for fixture in packet["fixtures"]:
-        p = fetcher.html(fixture["source_url"])
-        clock = fixture.get('kickoff_local', {}).get('journal')
-        reference = datetime.fromisoformat(clock) if isinstance(clock, str) else iso(fixture['kickoff_utc'])
-        detail = rdj._detail(p, clock_reference=reference)
-        item = match_item(detail, p, "rdj_petit_journal", edition, resolver=resolver,
-                          pick=fixture["pick_fr"], odds=fixture["odds"], kickoff=iso(fixture["kickoff_utc"]),
-                          journal_fixture=fixture)
+        try:
+            p = fetcher.html(fixture["source_url"])
+            if audit is not None:
+                page_root(p)
+            clock = fixture.get('kickoff_local', {}).get('journal')
+            reference = datetime.fromisoformat(clock) if isinstance(clock, str) else iso(fixture['kickoff_utc'])
+            detail = rdj._detail(p, clock_reference=reference)
+            fixture_evidence = _petit_fixture_evidence(fixture, detail, p) if audit is not None else None
+            item = match_item(detail, p, "rdj_petit_journal", edition, resolver=resolver,
+                              pick=fixture["pick_fr"], odds=fixture["odds"], kickoff=iso(fixture["kickoff_utc"]),
+                              journal_fixture=fixture)
+        except (ValueError, OSError) as error:
+            # A physical collection-budget refusal is global, never a card
+            # exclusion authorizing publication of a truncated source.
+            code = getattr(error, 'code', None)
+            source_error = (isinstance(error, (ParseError, rdj.SourceError, FetchError, OSError))
+                or (type(error).__name__ == 'SourceError' and type(error).__module__ == 'journal_worker.collector'))
+            if (audit is None or not source_error
+                    or code in {'public_request_budget_exceeded', 'public_time_budget_exceeded'}):
+                raise
+            if isinstance(error, ParseError):
+                code = str(error)
+            if not isinstance(code, str) or not re.fullmatch(r'[a-zA-Z0-9_]{1,100}', code):
+                code = type(error).__name__
+            audit['consumerExcluded'].append({'sourceId': fixture['id'],
+                'sourceUrl': fixture['source_url'],
+                'reason': 'consumer_fixture_no_longer_verified', 'code': code})
+            continue
         item["sourceUrl"] = fixture["journal_source_url"]
-        if not eligible(item, edition, now, lead):
+        if (audit is not None and iso(item['startsAtUtc']) <= now + timedelta(minutes=lead)) or not eligible(item, edition, now, lead):
+            if audit is not None:
+                audit['consumerExcluded'].append({'sourceId': fixture['id'],
+                    'reason': 'consumer_publication_window_closed', 'kickoffUtc': fixture['kickoff_utc']})
+                continue
             return {"status": "outside_publication_window", "items": [], "issues": []}
         items.append(item)
+        if audit is not None:
+            audit['includedSourceIds'].append(fixture['id'])
+            audit['fixtureEvidence'].append(fixture_evidence)
         if detail.get('source_canonicalization_audit') is not None:
             normalizations.append(detail['source_canonicalization_audit'])
     checked(len(items) <= limit, "petit_card_limit")
-    return {"status": "ready", "items": items, "issues": [], 'sourceCanonicalizationAudits': normalizations}
+    invalid = audit is not None and any(row['reason'] == 'consumer_fixture_no_longer_verified' for row in audit['consumerExcluded'])
+    return {"status": "ready" if items else "source_incomplete" if invalid else "outside_publication_window", "items": items,
+        "issues": [{'code': 'petit_consumer_has_no_verified_cards'}] if not items and invalid else [],
+        'sourceCanonicalizationAudits': normalizations, **evidence}
 
 
 def _fixture_links(root):

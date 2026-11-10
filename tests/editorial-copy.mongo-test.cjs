@@ -95,27 +95,30 @@ test('a v2 retry preserves the exact stored v1 copy and completed notification s
   }
   assert.equal(await EditorialNotification.countDocuments(), 1);
 });
-test('concurrent first imports select one copy and share one source/day registry across category mappings', async () => {
+test('concurrent first Petit imports freeze the first complete category snapshot without adding another mapping', async () => {
   const one = context(), two = alternativeContext();
-  await Promise.all([repo.upsertBatch([operation()], one), repo.upsertBatch([operation(payload(), new mongoose.Types.ObjectId())], two)]);
+  const outcomes = await Promise.all([repo.upsertBatch([operation()], one), repo.upsertBatch([operation(payload(), new mongoose.Types.ObjectId())], two)]);
+  assert.equal(outcomes.filter(row => row.ignored === true).length, 1);
   const records = await collection.find().toArray(); assert.equal(records.length, 1); assert.equal(records[0].initialized, true);
   assert.ok([one.editorialCopy.body.fr, two.editorialCopy.body.fr].includes(records[0].copy.body.fr));
-  assert.equal(await EditorialItem.countDocuments(), 2);
+  assert.equal(await EditorialItem.countDocuments(), 1);
 });
-test('all legacy source/day rows including unpublished/old category rows freeze a null copy with no retrofit', async () => {
+test('all legacy Petit source/day rows including unpublished/old categories are preserved without creating a registry or new article', async () => {
   const old = operation(payload('old'), new mongoose.Types.ObjectId()); old.updateOne.update.$set.isPublished = false;
   await EditorialItem.bulkWrite([old]); const before = await EditorialItem.findOne().lean();
-  await repo.upsertBatch([operation()], context());
+  assert.equal((await repo.upsertBatch([operation()], context())).ignored, true);
   const record = await collection.findOne({ _id: copyId(source, editionDate) });
-  assert.equal(record.legacy, true); assert.equal(record.copy, null); assert.equal(record.copySha256, null);
+  assert.equal(record, null);
   assert.deepEqual(await EditorialItem.findById(before._id).lean(), before);
-  await repo.upsertBatch([operation()], context()); assert.equal((await collection.findOne({ _id: record._id })).copy, null);
+  assert.equal((await repo.upsertBatch([operation()], context())).ignored, true);
+  assert.equal(await collection.countDocuments(), 0); assert.equal(await EditorialItem.countDocuments(), 1);
 });
 test('a historical notification without remaining items also prevents retrofitting a daily copy', async () => {
   await EditorialNotification.create({ appId: 'wintips', categoryId: category, source, editionDate, notificationId: 'old', status: 'completed' });
   const before = await EditorialNotification.findOne().lean();
-  await repo.upsertBatch([operation()], context());
-  assert.equal((await collection.findOne({ _id: copyId(source, editionDate) })).copy, null);
+  assert.equal((await repo.upsertBatch([operation()], context())).ignored, true);
+  assert.equal(await collection.findOne({ _id: copyId(source, editionDate) }), null);
+  assert.equal(await EditorialItem.countDocuments(), 0);
   assert.deepEqual(await EditorialNotification.findById(before._id).lean(), before);
 });
 test('publication without optional copy freezes null; a later copy cannot be added that day', async () => {
@@ -140,15 +143,15 @@ test('content failure rolls back initialized copy and all items; a safe retry ca
     bulkWrite: async () => { throw new Error('synthetic bulk failure'); } }, subscriptionService: {}, accessGateService: {} });
   await assert.rejects(broken.upsertBatch([operation()], context()), /synthetic bulk failure/);
   assert.equal(await EditorialItem.countDocuments(), 0); const record = await collection.findOne({ _id: copyId(source, editionDate) });
-  assert.equal(record.initialized, false); assert.equal(record.copy, undefined);
-  await repo.upsertBatch([operation()], context()); assert.equal((await collection.findOne({ _id: record._id })).initialized, true);
+  assert.equal(record, null);
+  await repo.upsertBatch([operation()], context()); assert.equal((await collection.findOne({ _id: copyId(source, editionDate) })).initialized, true);
 });
-test('changed article hash invalidates display binding without overwriting the immutable copy', async () => {
+test('a changed Petit retry cannot invalidate article hashes or the bound immutable copy', async () => {
   await repo.upsertBatch([operation()], context()); const before = await collection.findOne({ _id: copyId(source, editionDate) });
   const changed = payload(); changed.analysis.fr[0].paragraphs.push('Actualisation.');
-  await repo.upsertBatch([operation(changed)], context([changed]));
+  assert.equal((await repo.upsertBatch([operation(changed)], context([changed]))).ignored, true);
   const next = await collection.findOne({ _id: before._id }); assert.deepEqual(next.copy, before.copy);
-  assert.equal(boundCopy(next, await EditorialItem.find().lean()), null);
+  assert.deepEqual(boundCopy(next, await EditorialItem.find().lean()), before.copy);
 });
 test('malformed duplicate identity or unprovisioned storage blocks before item writes and never creates a collection', async () => {
   await collection.insertOne({ _id: 'incorrect', appId: 'wintips', source, editionDate, initialized: false });

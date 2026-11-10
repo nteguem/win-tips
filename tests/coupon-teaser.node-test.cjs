@@ -105,7 +105,7 @@ test('import passes the separate teaser to storage without modifying source hash
   assert.equal(written[1].context.couponTeaser, undefined);
   assert.equal(written[0].context.editorialCopy, null);
 });
-test('a published frozen copy accepts only the separate caption field and is not reworded on retries', async () => {
+test('a published frozen Petit refuses cosmetic caption changes before any set operation', async () => {
   const h = fixture(1), record = clone(h.record), writes = [];
   delete record.couponTeaser; record.revision = 1;
   const frozen = clone({ copy: record.copy, copySha256: record.copySha256, itemHashes: record.itemHashes });
@@ -117,16 +117,18 @@ test('a published frozen copy accepts only the separate caption field and is not
   } };
   const storage = createCopyStorage({ db: { db: { collection: () => collection } } });
   const context = { source, editionDate: day, couponTeaser: h.teaser };
-  await storage.lockAndInitialize(context, operations, {});
-  await storage.lockAndInitialize(context, operations, {});
-  assert.equal(writes.filter(update => update.$set).length, 1);
-  assert.deepEqual(writes.find(update => update.$set), { $set: { couponTeaser: h.teaser } });
+  const reason = 'published_petit_journal_edition_preserved';
+  await assert.rejects(storage.lockAndInitialize(context, operations, {}), { code: reason });
+  await assert.rejects(storage.lockAndInitialize(context, operations, {}), { code: reason });
+  assert.equal(writes.filter(update => update.$set).length, 0);
   assert.deepEqual({ copy: record.copy, copySha256: record.copySha256, itemHashes: record.itemHashes }, frozen);
-  assert.deepEqual(boundTeaser(record, h.rows), h.teaser);
+  assert.equal(boundTeaser(record, h.rows), null);
   assert.equal(teaserForOperations({ ...context, couponTeaser: {} }, operations), null);
-  record.couponTeaser.body.fr = 'x'.repeat(101);
-  await storage.lockAndInitialize(context, operations, {});
-  assert.deepEqual(record.couponTeaser, h.teaser, 'a malformed caption with the same source hash can be repaired');
+  record.couponTeaser = clone(h.teaser); record.couponTeaser.body.fr = 'x'.repeat(101);
+  const unchanged = clone(record.couponTeaser);
+  await assert.rejects(storage.lockAndInitialize(context, operations, {}), { code: reason });
+  assert.deepEqual(record.couponTeaser, unchanged, 'a frozen Petit is never cosmetically repaired by another import');
+  assert.equal(writes.filter(update => update.$set).length, 0);
   assert.deepEqual({ copy: record.copy, copySha256: record.copySha256, itemHashes: record.itemHashes }, frozen);
 });
 test('worker readiness is read only, bound to current source facts, and degrades safely when unavailable', async () => {

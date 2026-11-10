@@ -15,7 +15,7 @@ from urllib.error import HTTPError
 from urllib.request import Request, HTTPRedirectHandler, ProxyHandler, build_opener
 
 from .http import PublicFetcher
-from .sources import SOURCES, MATCH_PATH, RACE_PATH, COMBI_PATH, collect, eligible, iso, source_url, ticket_fingerprint
+from .sources import SOURCES, MATCH_PATH, RACE_PATH, COMBI_PATH, PETIT_UPCOMING_POLICY, collect, eligible, iso, utc_text, source_url, ticket_fingerprint
 from .calendar import edition_day, EDITION_TIMEZONE
 
 
@@ -41,7 +41,8 @@ def run_summary(report):
         source = row.get('source')
         if not isinstance(source, str):
             continue
-        already_published = row.get('publishedSourceWindow', {}).get('inventoryMatched') is True
+        already_published = (row.get('publishedSourceWindow', {}).get('inventoryMatched') is True
+            or row.get('publishedSnapshot', {}).get('verified') is True)
         if row.get('imported') is True or already_published:
             if source not in published:
                 published.append(source)
@@ -179,6 +180,66 @@ def ticket_reservations(configured, edition):
     if duo and any(row['fingerprint'] == duo['fingerprint'] for row in goals):
         raise ValueError('authoritative_ticket_reservations_conflict')
     return duo, {row['fingerprint'] for row in goals}
+
+
+def published_petit_snapshot(configured, edition, now, *, required=False):
+    """Freeze the first published subset using CURRENT authenticated API state.
+
+    The API checks stored payload hashes before returning a ready inventory.
+    A frozen copy without that inventory never grants another import. Unlike
+    the historical optimisation below, publication need not cover every card
+    currently visible on the publisher's page.
+    """
+    if (not required and os.environ.get('RDJ_PETIT_PUBLICATION_POLICY') != PETIT_UPCOMING_POLICY) or configured is None:
+        return None
+    reason = 'petit_authoritative_publication_state_unavailable'
+    if configured.get('date') != edition or edition_day(now).isoformat() != edition:
+        raise ValueError(reason)
+    mappings = [row for row in configured.get('sources', []) if row.get('key') == 'rdj_petit_journal']
+    state = configured.get('publishedSourceWindows')
+    if (len(mappings) != 1 or mappings[0].get('access') != 'free'
+            or not isinstance(state, dict) or state.get('version') != 'published-source-windows-v1'
+            or state.get('editionDate') != edition
+            or abs((iso(state.get('checkedAtUtc')) - now).total_seconds()) > 300):
+        raise ValueError(reason)
+    copy = mappings[0].get('editorialCopyState')
+    if not isinstance(copy, dict):
+        raise ValueError(reason)
+    windows = [row for row in state.get('sources', []) if row.get('source') == 'rdj_petit_journal']
+    if copy.get('state') == 'new' and copy.get('legacy') is False:
+        if any(row.get('ready') is True or row.get('items') or row.get('count') for row in windows):
+            raise ValueError(reason)
+        return None
+    if copy.get('state') != 'frozen' or len(windows) != 1:
+        raise ValueError(reason)
+    window = windows[0]
+    category = window.get('categoryId')
+    items = window.get('items')
+    if (window.get('ready') is not True or not isinstance(category, str)
+            or re.fullmatch(r'[a-fA-F0-9]{24}', category) is None
+            or mappings[0].get('categoryIds') != [category]
+            or not isinstance(items, list) or not 1 <= len(items) <= 8
+            or type(window.get('count')) is not int or window['count'] != len(items)
+            or len({item['sourceId'] for item in items}) != len(items)):
+        raise ValueError(reason)
+    starts = [iso(item['startsAtUtc']) for item in items]
+    if iso(window.get('latestStartsAtUtc')) != max(starts):
+        raise ValueError(reason)
+    for item in items:
+        if (not isinstance(item.get('sourceId'), str) or not re.fullmatch(r'\d+', item['sourceId'])
+                or item.get('kind') != 'match' or not item.get('teams', {}).get('home', {}).get('name')
+                or not item.get('teams', {}).get('away', {}).get('name')
+                or item['teams']['home']['name'] == item['teams']['away']['name']
+                or not item.get('competition', {}).get('name')
+                or not re.fullmatch(r'/paris-sportifs/le-petit-journal/\d+[^/?#]+\.html',
+                    urlsplit(source_url(item.get('sourceUrl'))).path)):
+            raise ValueError(reason)
+    return {'version': state['version'], 'editionDate': edition, 'categoryId': category,
+        'sourceIds': [item['sourceId'] for item in items], 'publishedCount': len(items),
+        'verified': True, 'checkedAtUtc': state['checkedAtUtc'],
+        'apiInventorySha256': hashlib.sha256(json.dumps(window, sort_keys=True,
+            ensure_ascii=False, separators=(',', ':')).encode('utf-8')).hexdigest(),
+        'reason': 'first_published_petit_snapshot_preserved'}
 
 
 def published_source_window(source, configured, edition, fetcher, now, lead=30):
@@ -536,6 +597,7 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
             pass
     with single_run(output), ExitStack() as resources:
         collected = []
+        selection_audits = {}
         seen_duo_tickets = set()
         pinned_duo, seen_goal_tickets, ticket_state_error = None, set(), None
         if configured is not None and any(source in {'rdj_football_duo', 'rdj_football_goals'} for source in selected):
@@ -549,6 +611,12 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
         # Translation time must not consume the fetcher's four-minute budget.
         for source in selected:
             try:
+                snapshot = published_petit_snapshot(configured, edition, instant) if source == 'rdj_petit_journal' else None
+                if snapshot is not None:
+                    seen_free.update(snapshot['sourceIds'])
+                    report['sources'].append({'source': source, 'status': 'published_snapshot_preserved', 'itemCount': 0,
+                        'issues': [], 'imported': False, 'publishedSnapshot': snapshot})
+                    continue
                 closed = published_source_window(source, configured, edition, fetched, instant, args.minimum_lead_minutes)
                 if closed is not None:
                     if source == 'rdj_petit_journal':
@@ -575,6 +643,13 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
                 write_json(file, payload)
                 row = {'source': source, 'status': result['status'], 'itemCount': len(result['items']),
                     'issues': list(result['issues']), 'payloadFile': str(file), 'imported': False}
+                if result.get('sourceSelectionAudit') is not None:
+                    from .azure_translation import _write_private
+                    selection_file = output / 'selection-audits' / edition / (source + '.json')
+                    _write_private(selection_file, result['sourceSelectionAudit'])
+                    row['sourceSelectionAuditFile'] = str(selection_file)
+                    row['sourceSelectionAuditSha256'] = hashlib.sha256(selection_file.read_bytes()).hexdigest()
+                    selection_audits[source] = result['sourceSelectionAudit']
                 if result.get('sourceCanonicalizationAudits'):
                     from .azure_translation import _write_private
                     audit_file = output / 'normalization-audits' / edition / (source + '.json')
@@ -691,6 +766,43 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
                     check_clock = clock() if clock else datetime.now(timezone.utc)
                     if edition_day(check_clock).isoformat() != edition:
                         raise ValueError('edition_changed_during_collection')
+                    if (source == 'rdj_petit_journal' and source in selection_audits
+                            and os.environ.get('RDJ_PETIT_PUBLICATION_POLICY') == PETIT_UPCOMING_POLICY):
+                        # A BO/manual publication may have appeared while the
+                        # worker was translating. Never re-import its snapshot.
+                        current = client.request('/api/internal/editorial/config')
+                        snapshot = published_petit_snapshot(current, edition, check_clock)
+                        if snapshot is not None:
+                            row['status'] = 'published_snapshot_preserved'
+                            row['publishedSnapshot'] = snapshot
+                            continue
+                    if source in selection_audits:
+                        # Translation can outlive one card's publication window.
+                        # Reconsider only the explicitly authorized subset; all
+                        # identity/schema checks still run on the retained items.
+                        cutoff = check_clock + timedelta(minutes=args.minimum_lead_minutes)
+                        retained = [item for item in payload['items'] if iso(item['startsAtUtc']) > cutoff]
+                        if len(retained) != len(payload['items']):
+                            audit = selection_audits[source]
+                            audit['deliverySelection'] = {'checkedAtUtc': utc_text(check_clock),
+                                'includedSourceIds': [item['sourceId'] for item in retained],
+                                'excluded': [{'sourceId': item['sourceId'], 'startsAtUtc': item['startsAtUtc'],
+                                    'reason': 'minimum_publication_lead_not_met_after_translation'}
+                                    for item in payload['items'] if item not in retained]}
+                            from .azure_translation import _write_private
+                            selection_file = Path(row['sourceSelectionAuditFile'])
+                            _write_private(selection_file, audit)
+                            row['sourceSelectionAuditSha256'] = hashlib.sha256(selection_file.read_bytes()).hexdigest()
+                            payload['items'] = retained
+                            # Optional copy generated for the former full set is
+                            # no longer a truthful description of this subset.
+                            payload.pop('editorialCopy', None)
+                            payload.pop('couponTeaser', None)
+                            row['itemCount'] = len(retained)
+                            write_json(Path(row['payloadFile']), payload)
+                        if not retained:
+                            row['status'] = 'outside_publication_window'
+                            continue
                     for item in payload['items']:
                         validate_item(item, source, edition, check_clock, args.minimum_lead_minutes)
                     from .api_preflight import validate_api_payload
@@ -698,6 +810,19 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
                     if row['apiPreflight'].get('passed') is not True:
                         raise ValueError('api_validator_rejected')
                     outcome = client.request('/api/internal/editorial/import', payload)
+                    if (source == 'rdj_petit_journal' and outcome.get('ignored') is True
+                            and outcome.get('reason') == 'published_petit_journal_edition_preserved'):
+                        # The transactional API guard may win a final race after
+                        # our last GET. Classify preservation only after a new
+                        # authenticated, hash-validated inventory proves it.
+                        current = client.request('/api/internal/editorial/config')
+                        snapshot = published_petit_snapshot(current, edition, check_clock, required=True)
+                        if snapshot is None:
+                            raise ValueError('petit_preserved_publication_not_proven')
+                        row['status'] = 'published_snapshot_preserved'
+                        row['publishedSnapshot'] = snapshot
+                        row['apiResult'] = outcome
+                        continue
                     row['imported'] = not bool(outcome.get('ignored', False))
                     row['apiResult'] = outcome
                     report['published'] = report['published'] or not outcome.get('ignored', False)

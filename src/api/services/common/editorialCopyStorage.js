@@ -4,6 +4,12 @@ const COLLECTION = 'editorialcopies';
 const APP = 'wintips';
 const INDEX = { key: { appId: 1, source: 1, editionDate: 1 }, name: 'editorial_copy_source_day_unique', unique: true };
 const copyId = (source, editionDate) => APP + ':' + source + ':' + editionDate;
+const PETIT_PUBLISHED = 'published_petit_journal_edition_preserved';
+function preservePetit() {
+  const error = new Error(PETIT_PUBLISHED);
+  error.code = PETIT_PUBLISHED;
+  throw error;
+}
 function createCopyStorage(EditorialItem) {
   const collection = () => EditorialItem.db.db.collection(COLLECTION);
   async function assertReady() {
@@ -23,10 +29,31 @@ function createCopyStorage(EditorialItem) {
     },
     async lockAndInitialize(context, operations, session) {
       const { source, editionDate } = context, key = { _id: copyId(source, editionDate) };
-      const locked = await collection().updateOne(key, { $inc: { revision: 1 } }, { session });
-      if (locked.matchedCount !== 1) throw failure('Reservation de copie indisponible', 409);
+      const petit = source === 'rdj_petit_journal';
+      // Petit creates and locks its registry INSIDE the transaction. A legacy
+      // publication rejected below leaves no new empty registry/revision behind.
+      let locked;
+      try {
+        locked = await collection().updateOne(key, { $inc: { revision: 1 },
+          ...(petit ? { $setOnInsert: { appId: APP, source, editionDate, initialized: false } } : {}) },
+        { session, ...(petit ? { upsert: true } : {}) });
+      } catch (error) {
+        // Mongo does not always retry a concurrent transactional upsert. Mark
+        // ONLY this exact copy-lock _id conflict, before any article write.
+        if (petit && error.code === 11000 && error.keyPattern &&
+            Object.keys(error.keyPattern).length === 1 && error.keyPattern._id === 1 &&
+            error.keyValue?._id === key._id && !error.hasErrorLabel?.('UnknownTransactionCommitResult'))
+          error.petitLockCreationConflict = key._id;
+        if (petit && error.code === 11000 && error.keyPattern &&
+            JSON.stringify(error.keyPattern) === JSON.stringify(INDEX.key) &&
+            error.keyValue?.appId === APP && error.keyValue?.source === source && error.keyValue?.editionDate === editionDate)
+          throw failure('Identite de copie incoherente', 409);
+        throw error;
+      }
+      if (locked.matchedCount !== 1 && !(petit && locked.upsertedCount === 1)) throw failure('Reservation de copie indisponible', 409);
       const record = await collection().findOne(key, { session });
       if (!record || record.appId !== APP || record.source !== source || record.editionDate !== editionDate) throw failure('Identite de copie incoherente', 409);
+      if (petit && record.initialized === true) preservePetit();
       const couponTeaser = require('./couponTeaser').teaserForOperations(context, operations);
       if (record.initialized === true) {
         // This independent, cosmetic caption can be added to a published issue.
@@ -41,6 +68,7 @@ function createCopyStorage(EditorialItem) {
       const previous = await EditorialItem.collection.findOne({ source, editionDate }, { session, projection: { _id: 1 } });
       const oldLedger = await EditorialItem.db.db.collection('editorialnotifications').findOne({ appId: APP, source, editionDate }, { session, projection: { _id: 1 } });
       const legacy = !!(previous || oldLedger);
+      if (petit && legacy) preservePetit();
       const value = legacy ? null : context.editorialCopy || null;
       const unique = new Map();
       for (const operation of operations) {
@@ -94,4 +122,4 @@ function createCopyStorage(EditorialItem) {
     },
   };
 }
-module.exports = { COLLECTION, INDEX, copyId, createCopyStorage };
+module.exports = { COLLECTION, INDEX, copyId, PETIT_PUBLISHED, createCopyStorage };
