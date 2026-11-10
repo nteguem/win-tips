@@ -15,8 +15,9 @@ const clone = value => structuredClone(value);
 test('real Mongo Petit lock/rollback/concurrent publication qualification in an owned isolated QA database',
   { skip: !URI, timeout: 180000 }, async () => {
     assert.match(OWNER || '', /^[a-f0-9]{16}$/);
-    assert.equal(DATABASE, 'qa_journal_atomic_20261110_' + OWNER);
-    assert.match(DATABASE, /^qa_journal_atomic_20261110_[a-f0-9]{16}$/);
+    assert.equal(DATABASE, 'qa_petit_261110_' + OWNER);
+    assert.match(DATABASE, /^qa_petit_261110_[a-f0-9]{16}$/);
+    assert.ok(Buffer.byteLength(DATABASE, 'utf8') <= 38, 'QA database name must fit the service limit');
     assert.equal(typeof URI, 'string');
     assert.ok(/^mongodb(?:\+srv)?:\/\//.test(URI), 'explicit Mongo URI required');
     const mongoose = require('mongoose');
