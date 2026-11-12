@@ -19,6 +19,8 @@ function eventStart(item) {
   return values.length && values.every(Number.isFinite) ? Math.min(...values) : NaN;
 }
 function eligibleItem(item, now) {
+  if (item.kind === 'article' && item.source === 'rdj_petit_journal')
+    return item.editionDate === editionDateFor(now);
   return item.status === 'upcoming' && eventStart(item) >= now.getTime() + 30 * 60000 &&
     (item.kind !== 'combine' || item.legs.every(leg => leg.status === 'upcoming'));
 }
@@ -38,6 +40,7 @@ function message(appId, group, language) {
   };
   const names = group.items.flatMap(row => {
     const p = row.payload;
+    if (p.kind === 'article') return [p.title?.[language] || p.title?.fr || p.title?.en || ''];
     if (p.kind === 'horse_racing') return [p.race.name + (p.race.racecourse ? ' · ' + p.race.racecourse : '')];
     return (p.kind === 'combine' ? p.legs : [p]).map(item => `${item.teams.home.name} — ${item.teams.away.name}`);
   });

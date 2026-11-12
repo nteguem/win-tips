@@ -81,6 +81,19 @@ test('disabled flags, global stop and other app prevent both sends and ledger wr
     assert.equal(result.disabled, true); assert.equal(state.claims, 0); assert.equal(state.calls.length, 0);
   }
 });
+
+test('plain Petit Journal notification needs no event clock or result and remains deduplicated', async () => {
+  const h = harness();
+  const p = h.state.groups[0].items[0].payload;
+  Object.assign(p, { kind: 'article', source: 'rdj_petit_journal', editionDate: date, status: 'unknown', startsAtUtc: null });
+  delete p.teams;
+  const result = await h.service.drain({ dryRun: false });
+  assert.equal(result.sent, 2);
+  const calls = h.state.calls.length;
+  await h.service.drain({ dryRun: false });
+  assert.equal(h.state.calls.length, calls);
+  assert.ok(h.state.calls.every(row => row.notification.body.includes('Brest')));
+});
 test('secure dry-run groups languages without provider calls or delivery-state mutations', async () => {
   const { service, state } = harness(); const result = await service.drain();
   assert.deepEqual(result.groups[0].languages, { fr: 1, en: 1 }); assert.equal(state.claims, 0); assert.equal(state.finishes, 0); assert.equal(state.calls.length, 0);
