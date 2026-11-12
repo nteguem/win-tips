@@ -1,6 +1,6 @@
 // Fixed publisher catalogue; category selection stays under back-office control.
 const SOURCES = Object.freeze([
-  { key: 'rdj_petit_journal', label: 'Le Petit Journal', description: 'Les matchs et analyses du jour', access: 'free', selectable: true, url: 'https://www.ruedesjoueurs.com/paris-sportifs/le-petit-journal.html', kinds: ['match'] },
+  { key: 'rdj_petit_journal', label: 'Le Petit Journal', description: 'Les matchs et analyses du jour', access: 'free', selectable: true, url: 'https://www.ruedesjoueurs.com/paris-sportifs/le-petit-journal.html', kinds: ['match', 'article'] },
   { key: 'rdj_nba', label: 'NBA du jour', description: 'Les rencontres NBA et leurs analyses', access: 'free', selectable: false, importEnabled: false, appEnabled: false, legacy: true, url: 'https://www.ruedesjoueurs.com/pronostics/nba-943387.html', kinds: ['match'], constraints: { sports: ['basketball'], competition: 'NBA' } },
   { key: 'rdj_tennis', label: 'Tennis du jour', description: 'Les rencontres de tennis et leurs analyses', access: 'free', selectable: false, importEnabled: false, appEnabled: false, legacy: true, url: 'https://www.ruedesjoueurs.com/pronostics/tennis.html', kinds: ['match'], constraints: { sports: ['tennis'] } },
   { key: 'rdj_turf_quinte', label: 'Le Quinté du Jour', description: 'Les courses, analyses et sélections du Quinté+', access: 'free', selectable: true, url: 'https://www.ruedesjoueurs.com/turf/pronostic-turf.html', kinds: ['horse_racing'] },

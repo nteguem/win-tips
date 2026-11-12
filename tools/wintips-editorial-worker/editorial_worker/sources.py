@@ -553,6 +553,11 @@ def _petit_fixture_evidence(fixture, detail, page):
 
 
 def collect_petit(edition, fetcher, *, now, resolver, lead=30, limit=8):
+    from .plain_journal import collect_text
+    return collect_text(edition, fetcher, now)
+
+
+def _historical_collect_petit(edition, fetcher, *, now, resolver, lead=30, limit=8):
     packet = rdj.collect_edition(edition, fetcher=fetcher.html, kickoff_resolver=resolver, now=now, max_index_pages=2)
     audit = _petit_selection_audit(packet, edition, now, lead) if packet.get('fixtures') or packet.get('provenance', {}).get('card_selection') else None
     evidence = {'sourceSelectionAudit': audit} if audit is not None else {}

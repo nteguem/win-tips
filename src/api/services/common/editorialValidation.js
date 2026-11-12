@@ -1,7 +1,7 @@
 const { sourceByKey, validatePublisherUrl, failure } = require('./editorialSources');
 const { editionDateFor } = require('./editorialCalendar');
 
-const KINDS = ['match', 'horse_racing', 'combine'];
+const KINDS = ['match', 'horse_racing', 'combine', 'article'];
 const STATUSES = ['upcoming', 'started', 'finished', 'cancelled', 'unknown'];
 
 function object(value, name) {
@@ -195,12 +195,13 @@ function verifyIdentity(item, leg) {
     const dateInUrl = url.pathname.match(/(\d{2})-(\d{2})-(\d{4})(?=\D|$)/);
     if (dateInUrl && `${dateInUrl[3]}-${dateInUrl[2]}-${dateInUrl[1]}` !== item.editionDate) throw failure('Cet article combine correspond a une autre edition');
   } else {
-    if (!/^\d+$/.test(item.sourceId)) throw failure('Identifiant de rencontre RDJ requis');
+    if (!(item.kind === 'article' ? /^[A-Za-z0-9_-]{1,120}$/ : /^\d+$/).test(item.sourceId)) throw failure('Identifiant editorial RDJ requis');
     const numericDate = url.pathname.match(/(\d{2})-(\d{2})-(\d{4})(?=\D|$)/);
     const months = { janvier: '01', fevrier: '02', mars: '03', avril: '04', mai: '05', juin: '06', juillet: '07', aout: '08', septembre: '09', octobre: '10', novembre: '11', decembre: '12' };
     const frenchDate = url.pathname.match(/(?:^|-)(\d{1,2})(?:er)?-(janvier|fevrier|mars|avril|mai|juin|juillet|aout|septembre|octobre|novembre|decembre)(?:-(\d{4}))?(?=-|\.html|$)/i);
     const explicitDates = [numericDate ? `${numericDate[3]}-${numericDate[2]}-${numericDate[1]}` : null,
       frenchDate ? `${frenchDate[3] || item.editionDate.slice(0, 4)}-${months[frenchDate[2].toLowerCase()]}-${frenchDate[1].padStart(2, '0')}` : null].filter(Boolean);
+    if (item.kind === 'article' && !explicitDates.length) throw failure('Date explicite du journal requise');
     if (explicitDates.some(date => date !== item.editionDate)) throw failure('Le Petit Journal indique une autre date dans son URL');
   }
 }
@@ -241,6 +242,16 @@ function normalizeItem(input, source, editionDate, leg = false) {
       normalized.competition.countryCode = input.competition.countryCode;
     }
     if (input.competition.logo) normalized.competition.logo = image(input.competition.logo, 'competition.logo');
+  }
+  if (input.kind === 'article') {
+    if (source !== 'rdj_petit_journal' || leg || input.startsAtUtc != null || input.legs || input.race
+      || input.scheduleProof || input.clockReconciliation || input.editionConvention || input.curation)
+      throw failure('Un article du Petit Journal est du texte editorial, sans resultat ni horaire requis');
+    normalized.status = 'unknown';
+    if (input.teams) normalized.teams = { home: team(input.teams.home, 'home'), away: team(input.teams.away, 'away') };
+    if (/<\s*\/?[a-z!]/i.test(JSON.stringify(normalized.analysis))) throw failure('Le journal doit contenir du texte sans HTML');
+    verifyIdentity(normalized, false);
+    return normalized;
   }
   if (input.kind === 'match') {
     keys(input.teams, ['home', 'away'], 'teams');
@@ -325,6 +336,7 @@ function validateBatch(body, now = new Date()) {
     throw failure('Lot NBA futur ou trop volumineux');
   const earliest = now.getTime() + 30 * 60 * 1000;
   for (const item of items) {
+    if (item.kind === 'article' && source.key === 'rdj_petit_journal') continue;
     const events = item.kind === 'combine' ? item.legs : [item];
     for (const event of events) {
       if (!event.startsAtUtc || new Date(event.startsAtUtc).getTime() < earliest || event.status !== 'upcoming') throw failure('Publication requise au moins 30 minutes avant chaque depart verifie');

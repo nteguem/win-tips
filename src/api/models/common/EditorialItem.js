@@ -6,7 +6,7 @@ const EditorialItemSchema = new mongoose.Schema({
   source: { type: String, enum: SOURCES.map(s => s.key), required: true },
   editionDate: { type: String, required: true, match: /^\d{4}-\d{2}-\d{2}$/ },
   sourceId: { type: String, required: true, maxlength: 220 },
-  kind: { type: String, enum: ['match', 'horse_racing', 'combine'], required: true },
+  kind: { type: String, enum: ['match', 'horse_racing', 'combine', 'article'], required: true },
   startsAtUtc: { type: Date, default: null },
   // The complete payload is normalized by editorialValidation before any write.
   payload: { type: mongoose.Schema.Types.Mixed, required: true },

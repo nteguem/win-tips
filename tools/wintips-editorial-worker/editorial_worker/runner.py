@@ -218,10 +218,22 @@ def published_petit_snapshot(configured, edition, now, *, required=False):
     if (window.get('ready') is not True or not isinstance(category, str)
             or re.fullmatch(r'[a-fA-F0-9]{24}', category) is None
             or mappings[0].get('categoryIds') != [category]
-            or not isinstance(items, list) or not 1 <= len(items) <= 8
+            or not isinstance(items, list) or not 1 <= len(items) <= 30
             or type(window.get('count')) is not int or window['count'] != len(items)
             or len({item['sourceId'] for item in items}) != len(items)):
         raise ValueError(reason)
+    if all(item.get('kind') == 'article' for item in items):
+        for item in items:
+            if (not isinstance(item.get('sourceId'), str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,120}', item['sourceId'])
+                    or not re.fullmatch(r'/paris-sportifs/le-petit-journal/\d+[^/?#]+\.html',
+                        urlsplit(source_url(item.get('sourceUrl'))).path)):
+                raise ValueError(reason)
+        return {'version': state['version'], 'editionDate': edition, 'categoryId': category,
+            'sourceIds': [item['sourceId'] for item in items], 'publishedCount': len(items),
+            'verified': True, 'checkedAtUtc': state['checkedAtUtc'],
+            'apiInventorySha256': hashlib.sha256(json.dumps(window, sort_keys=True,
+                ensure_ascii=False, separators=(',', ':')).encode('utf-8')).hexdigest(),
+            'reason': 'published_editorial_text_preserved'}
     starts = [iso(item['startsAtUtc']) for item in items]
     if iso(window.get('latestStartsAtUtc')) != max(starts):
         raise ValueError(reason)
@@ -463,7 +475,8 @@ def validate_item(item, source, edition, now, lead):
                 "rdj_football_duo": COMBI_PATH, "rdj_football_goals": COMBI_PATH}
     if re.fullmatch(patterns[source], path) is None:
         raise ValueError("source_url_does_not_match_adapter")
-    if not eligible(item, edition, now, lead) or item.get("status") != "upcoming":
+    article = source == 'rdj_petit_journal' and item.get('kind') == 'article'
+    if not article and (not eligible(item, edition, now, lead) or item.get("status") != "upcoming"):
         raise ValueError("item_outside_publication_window")
     if not item.get("title", {}).get("fr") or not item.get("analysis", {}).get("fr"):
         raise ValueError("item_french_content_required")
@@ -686,7 +699,7 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
             first_record = len(getattr(translator, 'records', []))
             first_attempt = len(getattr(translator, 'attempts', []))
             try:
-                if bilingual:
+                if bilingual and not all(item.get('kind') == 'article' for item in payload['items']):
                     from .translation import translate_batch, require_bilingual, SourceFallbackTranslator
                     if translator is None:
                         try:

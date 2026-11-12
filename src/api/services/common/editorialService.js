@@ -31,7 +31,8 @@ async function publishedSourceWindows(repository, categories, editionDate, insta
           mappings[0].catalogueArchived === true || !/^[a-f\d]{24}$/i.test(id(mappings[0]))) throw new Error('mapping');
       const categoryId = id(mappings[0]);
       const selected = rows.filter(row => id(row.categoryId) === categoryId);
-      if (!selected.length || selected.length > (source === 'rdj_petit_journal' ? 8 : 1)) throw new Error('count');
+      if (!selected.length || selected.length > (source === 'rdj_petit_journal' && selected.every(row => row.kind === 'article') ? 30
+        : source === 'rdj_petit_journal' ? 8 : 1)) throw new Error('count');
       const items = selected.map(row => {
         if (row.isPublished !== true || row.source !== source || row.editionDate !== editionDate ||
             row.payload?.source !== source || row.payload?.editionDate !== editionDate ||
@@ -41,6 +42,8 @@ async function publishedSourceWindows(repository, categories, editionDate, insta
         const item = normalizeItem(row.payload, source, editionDate);
         // Inventory proves source identities and clocks. Existing publication
         // remains valid even when an English translation is unavailable.
+        if (source === 'rdj_petit_journal' && item.kind === 'article')
+          return { sourceId: item.sourceId, sourceUrl: item.sourceUrl, kind: 'article', startsAtUtc: null };
         if (!item.startsAtUtc || new Date(row.startsAtUtc).toISOString() !== item.startsAtUtc || item.status !== 'upcoming') throw new Error('clock');
         return { sourceId: item.sourceId, sourceUrl: item.sourceUrl, kind: item.kind, startsAtUtc: item.startsAtUtc,
           sport: { key: item.sport.key },
@@ -49,7 +52,8 @@ async function publishedSourceWindows(repository, categories, editionDate, insta
       });
       if (new Set(items.map(item => item.sourceId)).size !== items.length) throw new Error('duplicate');
       result.sources.push({ source, ready: true, categoryId, count: items.length,
-        latestStartsAtUtc: new Date(Math.max(...items.map(item => Date.parse(item.startsAtUtc)))).toISOString(), items });
+        latestStartsAtUtc: items.every(item => item.kind === 'article') ? null
+          : new Date(Math.max(...items.map(item => Date.parse(item.startsAtUtc)))).toISOString(), items });
     } catch (_) { result.sources.push(unknown(source, 'published_inventory_not_proven')); }
   }
   return result;

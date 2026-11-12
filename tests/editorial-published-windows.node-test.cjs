@@ -105,3 +105,13 @@ test('repository inventory is a bounded projection and readonly query in mono-ap
   assert.deepEqual(seen.query, { categoryId: { $in: ['cat'] }, editionDate: day, source: { $in: [petit, turf] } });
   assert.equal(seen.limit, 51); assert.match(seen.select, /payload contentHash isPublished/);
 });
+
+test('published editorial text has a stable inventory without event timestamps or results', async () => {
+  const p = payload(); p.kind = 'article'; p.startsAtUtc = null; p.status = 'unknown';
+  p.sourceId = day + '-article'; p.selection.odds = null;
+  const r = { ...row(), sourceId: p.sourceId, kind: 'article', startsAtUtc: null, payload: p,
+    contentHash: crypto.createHash('sha256').update(JSON.stringify(p)).digest('hex') };
+  const value = windowFor(await harness([r]).service.workerConfig());
+  assert.equal(value.ready, true); assert.equal(value.latestStartsAtUtc, null);
+  assert.equal(value.items[0].kind, 'article');
+});
