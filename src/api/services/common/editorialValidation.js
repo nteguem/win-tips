@@ -206,7 +206,7 @@ function verifyIdentity(item, leg) {
   }
 }
 function normalizeItem(input, source, editionDate, leg = false) {
-  keys(input, ['source', 'sourceId', 'sourceUrl', 'sourcePublication', 'editionDate', 'kind', 'title', 'summary', 'startsAtUtc', 'sport', 'competition', 'teams', 'race', 'analysis', 'selection', 'legs', 'status', 'curation', 'editionConvention', 'scheduleProof', 'clockReconciliation'], 'item');
+  keys(input, ['source', 'sourceId', 'sourceUrl', 'sourcePublication', 'editionDate', 'kind', 'title', 'summary', 'startsAtUtc', 'sourceTimeLabel', 'sport', 'competition', 'teams', 'artworkUrl', 'race', 'analysis', 'selection', 'legs', 'status', 'curation', 'editionConvention', 'scheduleProof', 'clockReconciliation'], 'item');
   if (input.source !== undefined && input.source !== source) throw failure('Source incoherente dans item');
   if (input.editionDate !== undefined && input.editionDate !== editionDate) throw failure('Date incoherente dans item');
   const info = sourceByKey(source);
@@ -222,6 +222,13 @@ function normalizeItem(input, source, editionDate, leg = false) {
     status: input.status || 'unknown',
   };
   if (!STATUSES.includes(normalized.status)) throw failure('Statut de rencontre inconnu');
+  if (input.artworkUrl) normalized.artworkUrl = image(input.artworkUrl, 'artworkUrl');
+  if (input.sourceTimeLabel !== undefined) {
+    if (input.kind !== 'article' || source !== 'rdj_petit_journal' ||
+        typeof input.sourceTimeLabel !== 'string' || !/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(input.sourceTimeLabel))
+      throw failure('Heure imprimee du journal invalide');
+    normalized.sourceTimeLabel = input.sourceTimeLabel;
+  }
   if (input.curation !== undefined) {
     keys(input.curation, ['kind', 'publisher', 'bookmaker', 'sourceUrl'], 'curation');
     if (input.curation.kind !== 'publisher_ticket' || input.curation.publisher !== 'RDJ' || input.kind !== 'combine' || leg) throw failure('Seul un ticket explicitement publie par RDJ est accepte');

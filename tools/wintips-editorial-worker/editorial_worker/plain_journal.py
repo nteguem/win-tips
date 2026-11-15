@@ -27,12 +27,18 @@ def shared(name):
 def collect_text(edition, fetcher, now):
     collector = shared('editorial_source')
     from journal_worker.collector import FetchedPage
+    pages = {}
     def fetch(url):
         page = fetcher.html(url)
+        pages[page.url] = page.html
         return FetchedPage(page.url, page.html, page.status)
     packet = collector.collect_editorial(edition, fetcher=fetch, now=now)
     if packet['status'] != 'ready':
         return {'status': packet['status'], 'items': [], 'issues': packet.get('issues', [])}
+    # Wrong publisher links cannot remove names/crests already printed on a
+    # dated card. The bounded index lookup enriches presentation only.
+    from .plain_journal_presentation import enrich_packet
+    enrich_packet(packet, pages.get(packet.get('source_url')), fetcher)
     translator = shared('text_translation')
     cache = Path(os.environ.get('WINTIPS_EDITORIAL_TEXT_CACHE', '/var/lib/wintips-editorial-worker/plain-text-translations'))
     packet = translator.translate(packet, config={}, cache_dir=cache)
@@ -54,8 +60,9 @@ def collect_text(edition, fetcher, now):
             'analysis': content, 'startsAtUtc': None, 'status': 'unknown',
             'sport': {'key': row.get('sport') or 'sport', 'name': row.get('sport') or 'Sport'},
             'selection': {'label': {'fr': row.get('pick_fr') or 'Analyse', 'en': row.get('pick_en') or 'Analysis'}, 'odds': None}}
-        if row.get('home') and row.get('away'):
-            item['teams'] = {'home': {'name': row['home']}, 'away': {'name': row['away']}}
+        # Presentation facts are optional: missing media must never block prose.
+        from .plain_journal_presentation import presentation
+        item.update(presentation(row))
         if row.get('competition'):
             item['competition'] = {'name': row['competition']}
         items.append(item)

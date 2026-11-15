@@ -71,7 +71,7 @@ function summary(row, locked, lang) {
     title: p.title, startsAtUtc: p.startsAtUtc, sport: p.sport, status: p.status, locked,
     ...metadata(p, lang) };
   if (!locked) out.summary = p.summary;
-  for (const key of ['competition', 'teams']) if (own(p, key)) out[key] = p[key];
+  for (const key of ['competition', 'teams', 'artworkUrl', 'sourceTimeLabel']) if (own(p, key)) out[key] = p[key];
   if (p.race) {
     const { runners, ...race } = p.race;
     out.race = race; // Race card metadata is public; tips/runners odds stay in detail.
