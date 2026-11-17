@@ -10,7 +10,8 @@ SOURCES = {'tools/wintips-editorial-worker/validate-api-payload.cjs',
     'src/api/services/common/editorialValidation.js', 'src/api/services/common/editorialNumericFacts.js',
     'src/api/services/common/editorialSources.js', 'src/api/services/common/editorialCalendar.js',
     'src/api/services/common/petitJournalClockProof.js',
-    'src/api/services/common/editorialCopy.js', 'src/api/services/common/couponTeaser.js'}
+    'src/api/services/common/editorialCopy.js', 'src/api/services/common/couponTeaser.js',
+    'src/api/services/common/dailyVipValidation.js'}
 
 
 class ApiPreflightRejected(ValueError):

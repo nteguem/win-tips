@@ -98,10 +98,22 @@ function createEditorialService({ repository, clock = () => new Date(), importEn
       const ticketState = repository.ticketState ? await repository.ticketState(editionDate) : undefined;
       const copyStates = repository.copyStates ? await repository.copyStates(SOURCES.map(source => source.key), editionDate) : [];
       const teaserStates = repository.teaserStates ? await repository.teaserStates(SOURCES.map(source => source.key), editionDate) : [];
+      const dailyCategories = categories.filter(c => c.editorialSource === 'wintips_daily_vip' && sourceMatchesCategory(c));
+      const dailyRows = dailyCategories.length ? await repository.items(dailyCategories.map(c => c._id), editionDate) : [];
+      let dailyVipState = { state: 'review_required' };
+      if (dailyCategories.length === 1 && dailyRows.length === 0) dailyVipState = { state: 'new' };
+      else if (dailyCategories.length === 1 && dailyRows.length === 1 && dailyRows[0].source === 'wintips_daily_vip' && dailyRows[0].sourceId === `daily-vip-${editionDate}`) {
+        try {
+          const row = dailyRows[0];
+          normalizeItem(row.payload, 'wintips_daily_vip', editionDate);
+          if (crypto.createHash('sha256').update(JSON.stringify(row.payload)).digest('hex') === row.contentHash)
+            dailyVipState = { state: 'frozen', sourceId: row.sourceId };
+        } catch (_) { /* A broken existing identity needs review, never replacement. */ }
+      }
       return { date: editionDate, importEnabled: !!importEnabled(), notificationsEnabled: !!(notifications && notifications.enabled()), requireEnglish: !!requireEnglish(),
         ...(ticketState ? { ticketState } : {}),
         publishedSourceWindows: await publishedSourceWindows(repository, categories, editionDate, instant),
-        sources: SOURCES.map(s => ({ ...s, couponTeaserState: teaserStates.find(row => row.source === s.key)?.state || 'unknown', editorialCopyState: (() => {
+        sources: SOURCES.map(s => ({ ...s, ...(s.key === 'wintips_daily_vip' ? { dailyVipState } : {}), couponTeaserState: teaserStates.find(row => row.source === s.key)?.state || 'unknown', editorialCopyState: (() => {
           const state = copyStates.find(row => row.source === s.key);
           return state ? { state: state.state, legacy: state.legacy } : { state: 'unknown', legacy: false };
         })(), categoryIds: categories.filter(c => c.editorialSource === s.key && sourceMatchesCategory(c)).map(c => id(c)) })).filter(s => s.categoryIds.length && s.importEnabled !== false && !(s.key === 'rdj_nba' && preserveNbaEdition)) };
@@ -115,6 +127,7 @@ function createEditorialService({ repository, clock = () => new Date(), importEn
         requireCompleteEnglish(batch.items);
       }
       const categories = (await repository.categories()).filter(c => c.editorialSource === batch.source && sourceMatchesCategory(c));
+      if (batch.source === 'wintips_daily_vip' && categories.length > 1) throw failure('Le combine du jour doit avoir une seule categorie active', 409);
       if (!categories.length) return { source: batch.source, date: batch.editionDate, ignored: true, reason: 'no_active_category_mapping', imported: 0, notificationsSent: 0 };
       if (batch.source === 'rdj_nba' && repository.legacyNbaPublished && await repository.legacyNbaPublished(categories.map(c => c._id), batch.editionDate))
         return { source: batch.source, date: batch.editionDate, ignored: true, reason: 'published_legacy_nba_edition_preserved', imported: 0, notificationsSent: 0 };
@@ -138,7 +151,7 @@ function createEditorialService({ repository, clock = () => new Date(), importEn
         return { source: batch.source, date: batch.editionDate, ignored: true, reason: result.reason,
           imported: 0, notificationsSent: 0 };
       let notificationResult = { disabled: true, sent: 0 };
-      if (notifications && notifications.enabled()) {
+      if (sourceByKey(batch.source)?.notificationsEnabled !== false && notifications && notifications.enabled()) {
         try { notificationResult = await notifications.drain({ source: batch.source, editionDate: batch.editionDate, dryRun: false }); }
         catch (_) { notificationResult = { pending: true, sent: 0, reason: 'notification_drain_unavailable' }; }
       }

@@ -4,12 +4,14 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+import re
 import time
 from urllib.error import HTTPError
 from urllib.parse import urlsplit
 from urllib.request import Request, HTTPRedirectHandler, build_opener
 
 PUBLIC_HOSTS = {"www.ruedesjoueurs.com", "ruedesjoueurs.com", "match.uefa.com",
+                "www.sportytrader.com",
                 "www.basketusa.com",
                 "site.api.espn.com", "cdn.nba.com", "en.volleyballworld.com"}
 
@@ -52,6 +54,32 @@ class PublicFetcher:
         from .content_hub import open_hub
         self.hub = open_hub()
 
+    def _sporty_cache(self):
+        """Isolated bounded disk cache; no accumulated multi-MB pages per day."""
+        directory = self.cache_dir / 'sportytrader'
+        if directory.is_symlink():
+            raise FetchError('public_cache_symlink_refused')
+        directory.mkdir(exist_ok=True)
+        return directory
+
+    def _prune_sporty_cache(self, directory):
+        entries = []
+        cutoff = time.time() - 2 * 86400
+        for path in directory.iterdir():
+            if path.is_symlink() or not re.fullmatch(r'[a-f0-9]{64}\.json', path.name) or not path.is_file():
+                continue
+            info = path.stat()
+            if info.st_mtime < cutoff:
+                path.unlink()
+            else:
+                entries.append((info.st_mtime, path.name, info.st_size, path))
+        total = sum(row[2] for row in entries)
+        for _, _, size, path in sorted(entries):
+            if total <= 80 * 1024 * 1024:
+                break
+            path.unlink()
+            total -= size
+
     def _refuse_budget(self, code):
         self.budget_refusals.append({'code': code, 'requests': self.requests,
             'maxRequests': self.max_requests, 'maxSeconds': self.max_seconds,
@@ -81,7 +109,11 @@ class PublicFetcher:
         if time.monotonic() - self.started >= self.max_seconds:
             self._refuse_budget("public_time_budget_exceeded")
         key = hashlib.sha256(url.encode()).hexdigest()
-        path = self.cache_dir / (key + ".json")
+        sporty = urlsplit(url).hostname == 'www.sportytrader.com'
+        directory = self._sporty_cache() if sporty else self.cache_dir
+        if sporty:
+            self._prune_sporty_cache(directory)
+        path = directory / (key + ".json")
         entry = None
         if use_cache and path.is_file() and not path.is_symlink():
             try:
@@ -120,6 +152,8 @@ class PublicFetcher:
                 temporary = path.with_suffix(".tmp")
                 temporary.write_text(json.dumps(entry, ensure_ascii=False), "utf-8")
                 temporary.replace(path)
+                if sporty:
+                    self._prune_sporty_cache(directory)
         self.memory[url] = entry
         self.records.append({k: entry[k] for k in ("url", "final_url", "status", "sha256")})
         return entry
