@@ -42,10 +42,9 @@ function night(n = 111) {
   return row;
 }
 
-test('six established sources and the new daily VIP have fixed roles; legacy sources remain editable only in place', () => {
-  assert.equal(SOURCES.filter(row => row.selectable).length, 7);
-  assert.equal(SOURCES.filter(row => row.selectable && row.access === 'vip').length, 5);
-  assert.equal(require('../src/api/services/common/editorialCataloguePlan').TARGETS.includes('wintips_daily_vip'), false, 'new daily VIP has its own additive entitlement migration');
+test('six selectable sources have fixed free/VIP roles; the legacy source is editable only in place', () => {
+  assert.equal(SOURCES.filter(row => row.selectable).length, 6);
+  assert.equal(SOURCES.filter(row => row.selectable && row.access === 'vip').length, 4);
   assert.equal(SOURCES.find(row => row.key === 'rdj_petit_journal').label, 'Le Petit Journal');
   assert.throws(() => validateCategoryAssignment('rdj_football_combine', true));
   assert.equal(validateCategoryAssignment('rdj_football_combine', true, 'rdj_football_combine'), 'rdj_football_combine');

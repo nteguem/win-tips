@@ -10,7 +10,6 @@ import os
 from pathlib import Path
 import re
 import sys
-import time
 from urllib.parse import urlsplit
 from urllib.error import HTTPError
 from urllib.request import Request, HTTPRedirectHandler, ProxyHandler, build_opener
@@ -463,9 +462,6 @@ class ApiClient:
 
 
 def validate_item(item, source, edition, now, lead):
-    if source == 'wintips_daily_vip':
-        from .daily_vip import validate
-        return validate(item, edition, now, lead)
     if item.get("source") != source or item.get("editionDate") != edition:
         raise ValueError("item_source_or_date_conflict")
     if not isinstance(item.get("sourceId"), str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,120}", item["sourceId"]):
@@ -570,22 +566,19 @@ def translation_failure_audit(error, translator, payload, first_record=0, first_
 
 
 def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock=None, api_validator=None):
-    collection_started = time.monotonic()
     instant = now or datetime.now(timezone.utc)
     edition = args.edition or edition_day(instant).isoformat()
     if date.fromisoformat(edition).isoformat() != edition or args.minimum_lead_minutes < 30:
         raise ValueError("canonical_edition_and_minimum_30_minutes_required")
     if args.publish and edition != edition_day(instant).isoformat():
         raise ValueError("publication_requires_current_source_edition")
-    # The new native coupon has its own bounded timer. Existing RDJ jobs must
-    # neither collect it twice nor spend their source/translation budget on it.
-    selected = [key for key in SOURCES if key != 'wintips_daily_vip'] if not args.source else list(dict.fromkeys(args.source))
+    selected = list(SOURCES) if not args.source else list(dict.fromkeys(args.source))
     if any(source not in SOURCES for source in selected):
         raise ValueError("unknown_source")
     # Free IDs must be known before VIP collection; the basic Duo owns its
     # composition before Goals, even when CLI/config sources arrive reversed.
     order = {key: index for index, key in enumerate(SOURCES)}
-    selected.sort(key=lambda key: (0 if key == 'rdj_petit_journal' else 1 if key == 'rdj_football_duo' else 3 if key == 'rdj_football_goals' else 4 if key == 'wintips_daily_vip' else 2, order[key]))
+    selected.sort(key=lambda key: (0 if key == 'rdj_petit_journal' else 1 if key == 'rdj_football_duo' else 3 if key == 'rdj_football_goals' else 2, order[key]))
     output = Path(args.output).resolve()
     output.mkdir(parents=True, exist_ok=True)
     fetched = fetcher or PublicFetcher(output / "http-cache", max_requests=args.max_requests,
@@ -631,17 +624,6 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
         # Translation time must not consume the fetcher's four-minute budget.
         for source in selected:
             try:
-                if source == 'wintips_daily_vip' and configured is not None:
-                    mappings = [n for n in configured.get('sources', []) if n.get('key') == source]
-                    state = mappings[0].get('dailyVipState') if len(mappings) == 1 else None
-                    if (not isinstance(state, dict) or state.get('state') not in {'new', 'frozen'}
-                            or state.get('state') == 'frozen' and state.get('sourceId') != 'daily-vip-' + edition
-                            or state.get('state') == 'new' and state.get('sourceId') not in {None, 'daily-vip-' + edition}):
-                        raise ValueError('daily_vip_authoritative_state_unavailable')
-                    if state['state'] == 'frozen':
-                        report['sources'].append({'source': source, 'status': 'published_snapshot_preserved', 'itemCount': 0,
-                            'issues': [], 'imported': False, 'publishedSnapshot': {'verified': True, 'sourceId': state['sourceId']}})
-                        continue
                 snapshot = published_petit_snapshot(configured, edition, instant) if source == 'rdj_petit_journal' else None
                 if snapshot is not None:
                     seen_free.update(snapshot['sourceIds'])
@@ -662,12 +644,10 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
                     extra = {'exclude_ticket_fingerprints': seen_duo_tickets if source == 'rdj_football_goals' else seen_goal_tickets}
                     if source == 'rdj_football_duo' and pinned_duo:
                         extra['pinned_ticket'] = pinned_duo
-                source_clock = instant + timedelta(seconds=time.monotonic() - collection_started) if source == 'wintips_daily_vip' else instant
-                result = collect(source, edition, fetched, now=source_clock, lead=args.minimum_lead_minutes, exclude_ids=seen_free, **extra)
+                result = collect(source, edition, fetched, now=instant, lead=args.minimum_lead_minutes, exclude_ids=seen_free, **extra)
                 payload = {"source": source, "editionDate": edition, "items": result["items"]}
                 for item in payload["items"]:
-                    validation_clock = instant + timedelta(seconds=time.monotonic() - collection_started) if source == 'wintips_daily_vip' else instant
-                    validate_item(item, source, edition, validation_clock, args.minimum_lead_minutes)
+                    validate_item(item, source, edition, instant, args.minimum_lead_minutes)
                 if source == 'rdj_petit_journal':
                     seen_free.update(item['sourceId'] for item in result['items'])
                 if source == 'rdj_football_duo':
@@ -676,8 +656,6 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
                 write_json(file, payload)
                 row = {'source': source, 'status': result['status'], 'itemCount': len(result['items']),
                     'issues': list(result['issues']), 'payloadFile': str(file), 'imported': False}
-                if result.get('dailyVipAudit') is not None:
-                    row['dailyVipAudit'] = result['dailyVipAudit']
                 if result.get('sourceSelectionAudit') is not None:
                     from .azure_translation import _write_private
                     selection_file = output / 'selection-audits' / edition / (source + '.json')
@@ -703,11 +681,7 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
         # Public HTTP surveillance remains light. If generation cannot finish
         # safely before BigWin, defer the complete delivery phase without waiting
         # for, acquiring, or keeping any shared model lock.
-        # Preserve the existing RDJ delivery-window guard even for an empty
-        # source run (including its notification drain). Native-only runs have
-        # no shared model or translation dependency.
-        legacy_delivery_window = not (args.source and set(args.source) == {'wintips_daily_vip'})
-        if (bilingual and legacy_delivery_window and os.environ.get('WINTIPS_EDITORIAL_MANAGE_MODEL') == 'true' and
+        if (bilingual and os.environ.get('WINTIPS_EDITORIAL_MANAGE_MODEL') == 'true' and
                 os.environ.get('WINTIPS_EDITORIAL_TRANSLATOR', 'ollama') not in {'azure', 'gemini'}):
             from .model_runtime import RuntimeDeferred, require_admission
             try:
@@ -718,20 +692,14 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
         for source, payload, row in collected:
             if not payload['items']:
                 continue
-            if report.get('deferred') and source != 'wintips_daily_vip':
+            if report.get('deferred'):
                 row['status'] = 'deferred_shared_window'
                 row['issues'].append(report['deferred']['reason'])
                 continue
             first_record = len(getattr(translator, 'records', []))
             first_attempt = len(getattr(translator, 'attempts', []))
             try:
-                if source == 'wintips_daily_vip':
-                    # All labels are deterministic FR/EN. This coupon contains
-                    # no prose and must never start or call a language model.
-                    final_file = output / 'editions' / edition / (source + '.json')
-                    write_json(final_file, payload)
-                    row.update(payloadFile=str(final_file), bilingual=True, translationPolicy='native-labels-no-prose-v1')
-                elif bilingual and not all(item.get('kind') == 'article' for item in payload['items']):
+                if bilingual and not all(item.get('kind') == 'article' for item in payload['items']):
                     from .translation import translate_batch, require_bilingual, SourceFallbackTranslator
                     if translator is None:
                         try:
@@ -769,8 +737,6 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
         # quota. Optional hooks never compete with later-source translations.
         if bilingual:
             for source, payload, row in prepared:
-                if source == 'wintips_daily_vip':
-                    continue
                 if not editorial_copy_allowed(configured, source, edition):
                     continue
                 try:
@@ -787,8 +753,6 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
         # coupon, never a concatenation or generation loop over its matches.
         if bilingual:
             for source, payload, row in prepared:
-                if source == 'wintips_daily_vip':
-                    continue
                 if not coupon_teaser_allowed(configured, source, edition):
                     continue
                 try:
@@ -809,10 +773,8 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
             report['runtimeCleanupError'] = safe_reason(exc)
             report['blocked'] = True
         delivery_allowed = not report.get('deferred') and not report.get('runtimeCleanupError')
-        if args.publish and not report.get('runtimeCleanupError'):
+        if args.publish and delivery_allowed:
             for source, payload, row in prepared:
-                if not delivery_allowed and source != 'wintips_daily_vip':
-                    continue
                 try:
                     check_clock = clock() if clock else datetime.now(timezone.utc)
                     if edition_day(check_clock).isoformat() != edition:
@@ -888,8 +850,7 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
                     report['blocked'] = True
         # Resume pending delivery even on a day/run with no new source item.
         # A preview never calls this POST route or any provider.
-        if (args.publish and delivery_allowed and legacy_delivery_window
-                and configured.get('notificationsEnabled') is True):
+        if args.publish and delivery_allowed and configured.get('notificationsEnabled') is True:
             try:
                 outcome = client.request('/api/internal/editorial/notifications/drain', {'dryRun': False})
                 report['notificationDrain'] = outcome

@@ -76,7 +76,7 @@ function createEditorialNotificationService({ repository, push, clock = () => ne
       if (!DAY.test(date) || date !== editionDateFor(now)) throw failure('Seule l edition du jour peut etre notifiee');
       if (appId() !== 'wintips') return { disabled: true, reason: 'wrong_app', sent: 0 };
       if (!dryRun && !activated()) return { disabled: true, reason: 'notifications_disabled', sent: 0 };
-      const groups = (await repository.groups({ source, editionDate: date })).filter(group => sourceByKey(group.source)?.notificationsEnabled !== false).map(group => {
+      const groups = (await repository.groups({ source, editionDate: date })).map(group => {
         // Notification text is rendered for each recipient language separately.
         // A missing or imperfect article translation must never silence it.
         const items = group.items.filter(row => eligibleItem(row.payload, now));
