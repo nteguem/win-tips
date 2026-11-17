@@ -130,6 +130,10 @@ function createEditorialLibrary({ repository, clock, sourceMatchesCategory, summ
     return selected;
   }
   function dailyDescription(category, items, copies, lang) {
+    if (category.editorialSource === 'wintips_daily_vip') {
+      const description = lang === 'en' ? 'One accumulator. Target odds 3–3.5. Odds may change.' : 'Un combiné. Objectif de cote 3–3,5. Les cotes peuvent évoluer.';
+      return { description, editorialDescription: description };
+    }
     const { boundCopy } = require('./editorialCopy');
     const record = copies.find(record => record.source === (items[0]?.source || category.editorialSource));
     const copy = boundCopy(record, items);
@@ -148,6 +152,9 @@ function createEditorialLibrary({ repository, clock, sourceMatchesCategory, summ
       locked: state.locked, requiresAuth: state.requiresAuth, gate: state.gate,
       itemCount: items.length, available: items.length > 0, editionDate: date, currentDate: requestDate,
       ...vipHeadline(category, items, date, requestDate, instant),
+      ...(category.editorialSource === 'wintips_daily_vip' && items.length === 1 ? {
+        dailyVip: require('./dailyVipValidation').publicMetadata(items[0].payload),
+      } : {}),
       openingCount: openings.find(row => id(row.categoryId) === id(category))?.openingCount || 0,
       coverKey: category.editorialSource, reviewSummary: safeSummary(stats.find(row => id(row.categoryId) === id(category))),
       // Force the allowlisted preview even for subscribers. Raw summaries can

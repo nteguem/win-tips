@@ -26,6 +26,7 @@ SOURCES = {
     "rdj_football_duo": HOST + "/paris-sportifs/sport-news/news-pmu-sport.html",
     "rdj_football_goals": HOST + "/actualites/paris-sportifs.html",
     "rdj_multisport_analysis": HOST + "/pronostics/basket.html",
+    "wintips_daily_vip": "https://www.sportytrader.com/pronostics/aujourdhui/",
 }
 COMBINE_INDEXES = tuple(dict.fromkeys((SOURCES["rdj_football_combine"], SOURCES["rdj_football_duo"], HOST + "/paris-sportifs.html")))
 MULTISPORT_INDEXES = (HOST + "/pronostics/basket.html", HOST + "/pronostics/volleyball.html")
@@ -1317,6 +1318,18 @@ def _dated_combine_links(root, edition):
 def collect(source, edition, fetcher, *, now, lead=30, exclude_ids=None, exclude_ticket_fingerprints=None, pinned_ticket=None):
     checked(source in SOURCES, "unknown_source")
     checked(date.fromisoformat(edition).isoformat() == edition and now.tzinfo is not None, "date_or_clock_invalid")
+    if source == 'wintips_daily_vip':
+        from .daily_vip import collect as collect_daily_vip
+        refused_before = len(getattr(fetcher, 'budget_refusals', []))
+        try:
+            result = collect_daily_vip(edition, fetcher, now=now, lead=lead)
+        except (ValueError, OSError) as exc:
+            result = {'status': 'source_incomplete', 'items': [], 'issues': [
+                {'code': getattr(exc, 'code', 'daily_vip_collection_unavailable')}]}
+        if getattr(fetcher, 'budget_refusals', [])[refused_before:]:
+            return {'status': 'source_incomplete', 'items': [], 'issues': [
+                *result['issues'], {'code': 'source_public_budget_refused', 'source': source}]}
+        return result
     resolver = VerifiedKickoffs(fetch_json=fetcher.json)
     kwargs = {"now": now, "resolver": resolver, "lead": lead}
     if source in {"rdj_football_analysis", "rdj_multisport_analysis", "rdj_football_duo", "rdj_football_goals", "rdj_football_combine"}:
