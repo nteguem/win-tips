@@ -83,6 +83,10 @@ function createEditorialRepository({ Category, EditorialItem, EditorialReview, s
     catch (_) { return { ready: false, editionDate, reason: 'ticket_reservations_require_review' }; }
   },
   upsertBatch: async (operations, copyContext) => {
+    if (copyContext?.source === 'wintips_daily_vip') {
+      if (operations.length !== 1) throw failure('Un seul combine quotidien et une seule categorie sont requis', 409);
+      return require('./dailyVipStorage').publishImmutable(EditorialItem.collection, operations[0]);
+    }
     const immutablePetit = copyContext?.source === 'rdj_petit_journal';
     // Deployment explicitly prepares this index after operator approval. A read
     // request/import must never create collections/indexes behind the scenes.

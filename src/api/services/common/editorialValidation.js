@@ -206,6 +206,10 @@ function verifyIdentity(item, leg) {
   }
 }
 function normalizeItem(input, source, editionDate, leg = false) {
+  if (source === 'wintips_daily_vip') {
+    if (leg) throw failure('Un combine quotidien doit etre normalise comme un seul coupon');
+    return require('./dailyVipValidation').normalizeDailyVip(input, editionDate);
+  }
   keys(input, ['source', 'sourceId', 'sourceUrl', 'sourcePublication', 'editionDate', 'kind', 'title', 'summary', 'startsAtUtc', 'sourceTimeLabel', 'sport', 'competition', 'teams', 'artworkUrl', 'race', 'analysis', 'selection', 'legs', 'status', 'curation', 'editionConvention', 'scheduleProof', 'clockReconciliation'], 'item');
   if (input.source !== undefined && input.source !== source) throw failure('Source incoherente dans item');
   if (input.editionDate !== undefined && input.editionDate !== editionDate) throw failure('Date incoherente dans item');
@@ -337,8 +341,13 @@ function validateBatch(body, now = new Date()) {
   if (editionDate !== editionDateFor(now)) throw failure('Seule une edition du jour Europe/Paris peut etre importee');
   if (!Array.isArray(body.items) || !body.items.length || body.items.length > 50) throw failure('Le lot doit contenir entre 1 et 50 contenus');
   if (source.key === 'rdj_football_duo' && body.items.length !== 1) throw failure('Un seul Duo du Jour est autorise par edition');
+  if (source.key === 'wintips_daily_vip' && body.items.length !== 1) throw failure('Un seul combine du jour est autorise par edition');
   if (Buffer.byteLength(JSON.stringify(body), 'utf8') > 2 * 1024 * 1024) throw failure('Lot editorial trop volumineux');
   const items = body.items.map(item => normalizeItem(item, source.key, editionDate));
+  if (source.key === 'wintips_daily_vip') {
+    if (body.editorialCopy !== undefined || body.couponTeaser !== undefined) throw failure('Le combine quotidien utilise son format coupon');
+    require('./dailyVipValidation').validateObservationTime(items[0], now);
+  }
   if (source.key === 'basketusa_nba' && (items.length > 16 || items.some(item => Date.parse(item.sourcePublication.publishedAt) > now.getTime() + 300000)))
     throw failure('Lot NBA futur ou trop volumineux');
   const earliest = now.getTime() + 30 * 60 * 1000;
@@ -372,6 +381,10 @@ function validateBatch(body, now = new Date()) {
 }
 
 function hasCompleteEnglish(item) {
+  if (item.source === 'wintips_daily_vip') {
+    const valid = value => value && ['fr', 'en'].every(lang => typeof value[lang] === 'string' && value[lang].trim());
+    return !!(valid(item.title) && valid(item.selection?.label) && (!item.legs || item.legs.every(hasCompleteEnglish)));
+  }
   // Publication requires usable text, not proof that a translator chose the
   // same wording or numeric representation. Quality diagnostics are advisory.
   const translated = value => value && typeof value.en === 'string' && value.en.trim();
