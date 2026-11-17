@@ -20,7 +20,6 @@ const EditorialItemSchema = new mongoose.Schema({
 
 EditorialItemSchema.index({ categoryId: 1, source: 1, editionDate: 1, sourceId: 1 }, { unique: true, name: 'editorial_identity_unique' });
 EditorialItemSchema.index({ categoryId: 1, source: 1, editionDate: 1 }, { unique: true, name: 'editorial_duo_one_per_day', partialFilterExpression: { source: 'rdj_football_duo' } });
-EditorialItemSchema.index({ categoryId: 1, source: 1, editionDate: 1 }, { unique: true, name: 'editorial_daily_vip_one_per_day', partialFilterExpression: { source: 'wintips_daily_vip' } });
 EditorialItemSchema.index({ editionDate: -1, categoryId: 1, isPublished: 1, startsAtUtc: 1 }, { name: 'editorial_feed_by_date' });
 EditorialItemSchema.index({ categoryId: 1, isPublished: 1, editionDate: -1 }, { name: 'editorial_library_available_dates' });
 

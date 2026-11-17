@@ -3,9 +3,7 @@ const { SOURCES } = require('./editorialSources');
 const { validateExplicitPricing } = require('./packagePricing');
 
 const VERSION = 'wintips-rdj-catalogue-v1';
-// This is the historical RDJ v1 rollout. A later, independently reviewed
-// daily-VIP migration must not silently expand its category/package rights.
-const TARGETS = SOURCES.filter(source => source.selectable !== false && source.key !== 'wintips_daily_vip').map(source => source.key);
+const TARGETS = SOURCES.filter(source => source.selectable !== false).map(source => source.key);
 const BASE_TARGETS = TARGETS.filter(key => !['rdj_nba', 'rdj_tennis'].includes(key));
 const VIP = TARGETS.filter(key => SOURCES.find(source => source.key === key).access === 'vip');
 const plain = value => JSON.parse(JSON.stringify(value));
