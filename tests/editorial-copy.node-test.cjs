@@ -95,7 +95,7 @@ test('feed exposes the localized copy in the description read by existing phones
     assert.equal(typeof out.description, 'string');
     assert.equal(out.description, value.body[language]); assert.equal(out.editorialDescription, out.description);
     assert.notEqual(out.description, category.description[language]);
-    assert.equal(out.name, category.name[language]);
+    assert.equal(out.name, language === 'en' ? 'Daily Analysis' : 'Analyse du jour');
     assert.deepEqual(out.items[0].summary, original.summary);
   }
   assert.deepEqual(row.payload, original);

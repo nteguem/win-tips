@@ -65,6 +65,52 @@ class DailyVipTests(unittest.TestCase):
         self.assertEqual(detail['prices']['Unibet'], Decimal('1.40'))
         self.assertEqual(detail['prices']['PMU Play'], Decimal('1.45'))
 
+    def test_competition_geography_is_proven_by_its_breadcrumb_not_its_teams(self):
+        self.assertEqual(candidate()['competition'], {
+            'name': 'Ligue des Nations', 'country': 'International', 'scope': 'international'})
+        # Player portraits and German / US flags do not prove where a tournament
+        # takes place. Its actual tournament name remains available by itself.
+        self.assertEqual(candidate('zverev', ZVEREV)['competition'], {'name': 'ATP Finals'})
+        source = entry('denmark-prediction', DENMARK)
+        source['body'] = source['body'].replace('/football/europe/ligue-des-nations-81218/',
+            '/football/france/ligue-1-4/').replace('Ligue des Nations', 'Ligue 1')
+        domestic = d.prediction(source, DENMARK, DAY, NOW)
+        self.assertEqual(domestic['competition'], {
+            'name': 'Ligue 1', 'country': 'France', 'countryCode': 'FR', 'scope': 'national'})
+        # These are deliberately Danish/Norwegian participants: the metadata
+        # must come from the competition URL, not a home participant shortcut.
+        self.assertEqual(domestic['teams']['home']['name'], 'Danemark')
+
+    def test_international_scope_never_replaces_the_competition_name(self):
+        for region, name in [('afrique', "Coupe d’Afrique des Nations"),
+                             ('europe', 'Ligue des Nations'), ('international', 'Coupe du monde')]:
+            source = entry('denmark-prediction', DENMARK)
+            source['body'] = source['body'].replace('/football/europe/ligue-des-nations-81218/',
+                f'/football/{region}/competition-81218/').replace('Ligue des Nations', name)
+            detail = d.prediction(source, DENMARK, DAY, NOW)
+            self.assertEqual(detail['competition'], {
+                'name': name, 'country': 'International', 'scope': 'international'})
+
+    def test_missing_unknown_or_untrusted_geography_does_not_block_a_proven_event(self):
+        for path in ['/pronostics/football/unidentified/competition-81218/',
+                     '/pronostics/football/competition-81218/',
+                     '/pronostics/tennis/france/competition-81218/',
+                     'https://evil.invalid/pronostics/football/france/competition-81218/']:
+            source = entry('denmark-prediction', DENMARK)
+            source['body'] = source['body'].replace(
+                'https://www.sportytrader.com/pronostics/football/europe/ligue-des-nations-81218/',
+                path if path.startswith('https:') else d.HOST + path)
+            detail = d.prediction(source, DENMARK, DAY, NOW)
+            self.assertEqual(detail['competition'], {'name': 'Ligue des Nations'})
+
+    def test_explicit_competition_country_conflict_between_prediction_and_odds_is_rejected(self):
+        detail = candidate()
+        source = entry('denmark-odds', detail['oddsUrl'])
+        source['body'] = source['body'].replace('/football/europe/ligue-des-nations-81218/',
+            '/football/france/ligue-des-nations-81218/')
+        with self.assertRaisesRegex(d.DailyVipError, 'odds_event_identity_conflict'):
+            d.prices(source, detail, NOW)
+
     def test_country_flag_is_retained_when_the_source_has_no_team_crest(self):
         node = Document('<div><span class="font-semibold">Allemagne</span>'
             '<img src="https://static.sportytrader.com/icons/countries/20x20/germany_1.webp" alt="Allemagne"></div>').root.children[0]
@@ -215,7 +261,7 @@ class DailyVipTests(unittest.TestCase):
         self.assertEqual(report['diagnostics'], [])
 
     def test_new_config_without_source_id_publishes_native_coupon_without_model(self):
-        posted, routes = [], []
+        posted, routes, drains = [], [], []
         class Client:
             def request(self, route, payload=None):
                 routes.append(route)
@@ -225,6 +271,9 @@ class DailyVipTests(unittest.TestCase):
                 if route.endswith('/import'):
                     posted.append(payload)
                     return {'ignored': False, 'notificationsSent': 0}
+                if route.endswith('/notifications/drain'):
+                    drains.append(payload)
+                    return {'sent': 2}
                 raise AssertionError('Unexpected API route')
         fake_fetch = SimpleNamespace(requests=0, records=[])
         with TemporaryDirectory() as folder:
@@ -238,9 +287,74 @@ class DailyVipTests(unittest.TestCase):
                                     api_validator=lambda *args: {'passed': True})
         self.assertFalse(report['blocked'], report)
         self.assertEqual(len(posted), 1)
-        self.assertEqual(routes, ['/api/internal/editorial/config', '/api/internal/editorial/import'])
+        self.assertEqual(routes, ['/api/internal/editorial/config', '/api/internal/editorial/import',
+                                  '/api/internal/editorial/notifications/drain'])
+        self.assertEqual(drains, [{'dryRun': False, 'source': d.SOURCE}])
+        self.assertEqual(report['notificationsAccepted'], 2)
+        self.assertTrue(report['notificationsSent'])
         self.assertEqual(posted[0]['items'][0]['selection']['totalOdds'], 3.13)
         self.assertEqual(report['sources'][0]['translationPolicy'], 'native-labels-no-prose-v1')
+
+    def test_frozen_native_coupon_retries_failed_notifications_without_fetch_or_model(self):
+        calls, attempts = [], []
+        class Client:
+            def request(self, route, payload=None):
+                calls.append((route, payload))
+                if route.endswith('/config'):
+                    return {'date': DAY, 'importEnabled': True, 'notificationsEnabled': True,
+                        'sources': [{'key': d.SOURCE, 'categoryIds': ['a' * 24],
+                            'dailyVipState': {'state': 'frozen', 'sourceId': 'daily-vip-' + DAY}}]}
+                if route.endswith('/notifications/drain'):
+                    attempts.append(payload)
+                    if len(attempts) == 1:
+                        raise ValueError('delivery_temporarily_unavailable')
+                    return {'sent': 2}
+                raise AssertionError('Frozen coupon must not import again')
+        fetch = SimpleNamespace(requests=0, records=[])
+        with TemporaryDirectory() as folder:
+            args = SimpleNamespace(edition=DAY, minimum_lead_minutes=30, publish=True,
+                source=[d.SOURCE], output=folder, api_base='https://api.wintips-expert.com', translate=False)
+            with patch.object(runner, 'collect', side_effect=AssertionError('No source fetch')), \
+                    patch.object(runner, 'make_translator', side_effect=AssertionError('No model')), \
+                    patch.dict('os.environ', {'WINTIPS_EDITORIAL_MANAGE_MODEL': 'true',
+                                              'WINTIPS_EDITORIAL_TRANSLATOR': 'ollama'}):
+                first = runner.run(args, fetcher=fetch, api_client=Client(), now=NOW)
+                retry = runner.run(args, fetcher=fetch, api_client=Client(), now=NOW)
+        self.assertTrue(first['blocked'])
+        self.assertEqual(first['notificationDrain'], {
+            'pending': True, 'reason': 'ValueError'})
+        self.assertFalse(first['notificationsSent'])
+        self.assertFalse(retry['blocked'])
+        self.assertEqual(retry['publishedSources'], [d.SOURCE])
+        self.assertEqual(retry['sources'][0]['status'], 'published_snapshot_preserved')
+        self.assertTrue(retry['notificationsSent'])
+        self.assertEqual(retry['notificationsAccepted'], 2)
+        self.assertEqual(attempts, [{'dryRun': False, 'source': d.SOURCE}] * 2)
+        self.assertEqual([route for route, _ in calls], [
+            '/api/internal/editorial/config', '/api/internal/editorial/notifications/drain'] * 2)
+
+    def test_native_notification_drain_requires_publish_and_enabled_notifications(self):
+        for publish, enabled in [(False, True), (True, False)]:
+            with self.subTest(publish=publish, enabled=enabled):
+                calls = []
+                class Client:
+                    def request(self, route, payload=None):
+                        calls.append(route)
+                        if not route.endswith('/config'):
+                            raise AssertionError('Notification delivery must remain disabled')
+                        return {'date': DAY, 'importEnabled': True, 'notificationsEnabled': enabled,
+                            'sources': [{'key': d.SOURCE, 'categoryIds': ['a' * 24],
+                                'dailyVipState': {'state': 'frozen', 'sourceId': 'daily-vip-' + DAY}}]}
+                with TemporaryDirectory() as folder:
+                    args = SimpleNamespace(edition=DAY, minimum_lead_minutes=30, publish=publish,
+                        source=[d.SOURCE], output=folder, api_base='https://api.wintips-expert.com', translate=False)
+                    with patch.object(runner, 'collect', side_effect=AssertionError('No source fetch')), \
+                            patch.object(runner, 'make_translator', side_effect=AssertionError('No model')):
+                        report = runner.run(args, fetcher=SimpleNamespace(requests=0, records=[]),
+                                            api_client=Client(), now=NOW)
+                self.assertEqual(calls, ['/api/internal/editorial/config'])
+                self.assertNotIn('notificationDrain', report)
+                self.assertFalse(report['notificationsSent'])
 
     def test_explicit_mixed_source_run_advances_daily_clock_after_slow_rdj(self):
         elapsed, clocks = [0], []

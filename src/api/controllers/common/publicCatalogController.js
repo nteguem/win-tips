@@ -20,6 +20,7 @@
  */
 const Category = require('../../models/common/Category');
 const { formatSuccess, formatError } = require('../../../utils/responseFormatter');
+const { categoryDisplayName } = require('../../services/common/editorialProductNames');
 
 const APP_ID = process.env.APP_ID || 'app';
 
@@ -30,7 +31,7 @@ const APP_ID = process.env.APP_ID || 'app';
 exports.listAllCategories = async (req, res) => {
   try {
     const cats = await Category.find({ isActive: true })
-      .select('_id name description icon isVip')
+      .select('_id name description icon isVip editorialSource')
       .sort({ _id: 1 })
       .lean();
 
@@ -38,9 +39,7 @@ exports.listAllCategories = async (req, res) => {
       _id: String(c._id),
       appId: APP_ID,
       appIds: [APP_ID],
-      name:
-        (c.name && (c.name.fr || c.name.en)) ||
-        (typeof c.name === 'string' ? c.name : ''),
+      name: categoryDisplayName(c, req.query.lang === 'en' ? 'en' : 'fr'),
       description:
         (c.description && (c.description.fr || c.description.en)) ||
         (typeof c.description === 'string' ? c.description : ''),

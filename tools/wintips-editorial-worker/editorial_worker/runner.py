@@ -888,10 +888,15 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
                     report['blocked'] = True
         # Resume pending delivery even on a day/run with no new source item.
         # A preview never calls this POST route or any provider.
-        if (args.publish and delivery_allowed and legacy_delivery_window
+        if (args.publish and delivery_allowed
                 and configured.get('notificationsEnabled') is True):
             try:
-                outcome = client.request('/api/internal/editorial/notifications/drain', {'dryRun': False})
+                # The native timer also retries a frozen coupon's delivery,
+                # without processing RDJ groups outside their model window.
+                drain = {'dryRun': False}
+                if not legacy_delivery_window:
+                    drain['source'] = 'wintips_daily_vip'
+                outcome = client.request('/api/internal/editorial/notifications/drain', drain)
                 report['notificationDrain'] = outcome
                 report['notificationsAccepted'] += int(outcome.get('sent', 0))
             except Exception as exc:

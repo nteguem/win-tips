@@ -4,6 +4,7 @@ const { validateBatch, normalizeItem, dateOnly, hasCompleteEnglish, requireCompl
 const { editionDateFor } = require('./editorialCalendar');
 const { editorialAccess, requireEditorialAccess } = require('./editorialAccess');
 const { editorialDescriptionFields } = require('./editorialDescriptions');
+const { categoryDisplayName, sourcePresentation, productTitle, payloadPresentation } = require('./editorialProductNames');
 
 const pickLang = (value, lang) => typeof value === 'string' ? value : (value && (value[lang] || value.fr || value.en)) || '';
 const id = value => String(value && value._id || value);
@@ -68,7 +69,7 @@ function summary(row, locked, lang) {
   const p = row.payload;
   // Explicit allowlist: never serialize payload/analysis/selection/sourceUrl/hash.
   const out = { id: id(row), source: row.source, sourceId: row.sourceId, editionDate: row.editionDate, kind: p.kind,
-    title: p.title, startsAtUtc: p.startsAtUtc, sport: p.sport, status: p.status, locked,
+    title: productTitle(p.title, row.source, lang), startsAtUtc: p.startsAtUtc, sport: p.sport, status: p.status, locked,
     ...metadata(p, lang) };
   if (!locked) out.summary = p.summary;
   for (const key of ['competition', 'teams', 'artworkUrl', 'sourceTimeLabel']) if (own(p, key)) out[key] = p[key];
@@ -88,7 +89,7 @@ function createEditorialService({ repository, clock = () => new Date(), importEn
 
   return {
     ...require('./editorialLibrary').createEditorialLibrary({ repository, clock, sourceMatchesCategory, summary, metadata }),
-    catalog: () => SOURCES.map(s => ({ ...s, kinds: [...s.kinds] })),
+    catalog: (lang = 'fr') => SOURCES.map(s => ({ ...sourcePresentation(s, lang), kinds: [...s.kinds] })),
 
     async workerConfig() {
       const categories = await repository.categories();
@@ -181,9 +182,9 @@ function createEditorialService({ repository, clock = () => new Date(), importEn
         const record = copies.find(copy => copy.source === (items[0]?.source || category.editorialSource));
         const dailyCopy = require('./editorialCopy').boundCopy(record, items);
         const teaser = require('./couponTeaser').boundTeaser(record, items);
-        output.push({ id: id(category), name: pickLang(category.name, language),
+        output.push({ id: id(category), name: categoryDisplayName(category, language),
           ...editorialDescriptionFields(items, language, dailyCopy, teaser),
-          icon: category.icon || '', isVip: category.isVip, editorialSource: category.editorialSource, source: { ...sourceByKey(category.editorialSource) },
+          icon: category.icon || '', isVip: category.isVip, editorialSource: category.editorialSource, source: { ...sourcePresentation(sourceByKey(category.editorialSource), language) },
           locked: state.locked, requiresAuth: state.requiresAuth, gate: state.gate,
           items: items.map(row => summary(row, state.locked, language)) });
       }
@@ -199,7 +200,7 @@ function createEditorialService({ repository, clock = () => new Date(), importEn
       const state = await access(category, user);
       requireEditorialAccess(state, category, user);
       const language = lang === 'en' ? 'en' : 'fr';
-      return { ...row.payload, id: id(row), categoryId: id(category), locked: false, ...metadata(row.payload, language) };
+      return { ...payloadPresentation(row.payload, language), id: id(row), categoryId: id(category), locked: false, ...metadata(row.payload, language) };
     },
   };
 }

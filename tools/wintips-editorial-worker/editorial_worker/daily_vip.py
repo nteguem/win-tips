@@ -37,6 +37,46 @@ BOOKMAKERS = {'unibet': 'Unibet', 'betclic': 'Betclic', 'winamax': 'Winamax',
               'bet365': 'Bet365', 'bwin': 'Bwin', 'pmu': 'PMU Play',
               'parionssport': 'Parions Sport', 'netbet': 'Netbet',
               'vbet': 'Vbet', 'zebet': 'Zebet', 'betsson': 'Betsson'}
+# Geography belongs to the competition, never to either participant. These
+# exact country/region segments are used only when present in its own source
+# breadcrumb URL; an unknown segment leaves the optional metadata absent.
+COMPETITION_COUNTRIES = {
+    'france': ('France', 'FR'), 'angleterre': ('Angleterre', 'GB'),
+    'ecosse': ('Écosse', 'GB'), 'pays-de-galles': ('Pays de Galles', 'GB'),
+    'irlande-du-nord': ('Irlande du Nord', 'GB'), 'irlande': ('Irlande', 'IE'),
+    'allemagne': ('Allemagne', 'DE'), 'espagne': ('Espagne', 'ES'),
+    'italie': ('Italie', 'IT'), 'portugal': ('Portugal', 'PT'),
+    'pays-bas': ('Pays-Bas', 'NL'), 'belgique': ('Belgique', 'BE'),
+    'suisse': ('Suisse', 'CH'), 'autriche': ('Autriche', 'AT'),
+    'danemark': ('Danemark', 'DK'), 'norvege': ('Norvège', 'NO'),
+    'suede': ('Suède', 'SE'), 'finlande': ('Finlande', 'FI'),
+    'islande': ('Islande', 'IS'), 'grece': ('Grèce', 'GR'),
+    'turquie': ('Turquie', 'TR'), 'pologne': ('Pologne', 'PL'),
+    'roumanie': ('Roumanie', 'RO'), 'croatie': ('Croatie', 'HR'),
+    'serbie': ('Serbie', 'RS'), 'ukraine': ('Ukraine', 'UA'),
+    'republique-tcheque': ('Tchéquie', 'CZ'), 'tchequie': ('Tchéquie', 'CZ'),
+    'slovaquie': ('Slovaquie', 'SK'), 'slovenie': ('Slovénie', 'SI'),
+    'hongrie': ('Hongrie', 'HU'), 'bulgarie': ('Bulgarie', 'BG'),
+    'chypre': ('Chypre', 'CY'), 'israel': ('Israël', 'IL'),
+    'usa': ('États-Unis', 'US'), 'etats-unis': ('États-Unis', 'US'),
+    'canada': ('Canada', 'CA'), 'mexique': ('Mexique', 'MX'),
+    'bresil': ('Brésil', 'BR'), 'argentine': ('Argentine', 'AR'),
+    'chili': ('Chili', 'CL'), 'colombie': ('Colombie', 'CO'),
+    'uruguay': ('Uruguay', 'UY'), 'equateur': ('Équateur', 'EC'),
+    'perou': ('Pérou', 'PE'), 'japon': ('Japon', 'JP'),
+    'chine': ('Chine', 'CN'), 'coree-du-sud': ('Corée du Sud', 'KR'),
+    'australie': ('Australie', 'AU'), 'nouvelle-zelande': ('Nouvelle-Zélande', 'NZ'),
+    'maroc': ('Maroc', 'MA'), 'algerie': ('Algérie', 'DZ'),
+    'tunisie': ('Tunisie', 'TN'), 'egypte': ('Égypte', 'EG'),
+    'cameroun': ('Cameroun', 'CM'), 'cote-d-ivoire': ("Côte d’Ivoire", 'CI'),
+    'senegal': ('Sénégal', 'SN'), 'nigeria': ('Nigeria', 'NG'),
+    'ghana': ('Ghana', 'GH'), 'afrique-du-sud': ('Afrique du Sud', 'ZA'),
+    'arabie-saoudite': ('Arabie saoudite', 'SA'), 'qatar': ('Qatar', 'QA'),
+    'emirats-arabes-unis': ('Émirats arabes unis', 'AE'), 'inde': ('Inde', 'IN'),
+}
+COMPETITION_REGIONS = {'international', 'monde', 'europe', 'afrique', 'asie',
+                       'amerique', 'amerique-du-nord', 'amerique-du-sud',
+                       'amerique-centrale', 'oceanie'}
 
 
 class DailyVipError(ValueError):
@@ -149,7 +189,21 @@ def breadcrumb(root, source_url):
     if urlsplit(source_url).path.startswith('/cotes/'):
         competition = re.sub(r'^Pari\s+', '', competition)
     require(competition and len(competition) < 180, 'daily_vip_competition_invalid')
-    return {'key': sport, 'name': name}, competition
+    metadata = {'name': competition}
+    try:
+        competition_path = urlsplit(canonical_url(trail[3].get('item'))).path
+        location = re.fullmatch(r'/(?:pronostics|cotes)/' + re.escape(match[1])
+                                + r'/([a-z-]+)/[a-z0-9-]+-\d+/', competition_path)
+        if location and location[1] in COMPETITION_COUNTRIES:
+            country, code = COMPETITION_COUNTRIES[location[1]]
+            metadata.update(country=country, countryCode=code, scope='national')
+        elif location and location[1] in COMPETITION_REGIONS:
+            metadata.update(country='International', scope='international')
+    except (DailyVipError, TypeError):
+        # Optional presentation metadata must not discard an otherwise proven
+        # event or manufacture a country from its teams / venue / player flag.
+        pass
+    return {'key': sport, 'name': name}, metadata
 
 
 def safe_logo(value):
@@ -261,7 +315,7 @@ def prediction(entry, url, edition, now, lead=30):
             continue
     odds_url = one(list(links), 'daily_vip_event_odds_link_missing_or_ambiguous')
     return {'sourceId': 'sp' + PREDICTION_PATH.fullmatch(urlsplit(url).path)[1], 'sourceUrl': url,
-            'editionDate': edition, 'teams': teams, 'sport': sport, 'competition': {'name': competition},
+            'editionDate': edition, 'teams': teams, 'sport': sport, 'competition': competition,
             'startsAtUtc': utc_text(start), 'pick': pick, 'oddsUrl': odds_url,
             'predictionObservedAtUtc': utc_text(observed)}
 
@@ -283,7 +337,11 @@ def prices(entry, detail, now):
     require([key(teams[s]['name']) for s in ('home', 'away')] ==
             [key(detail['teams'][s]['name']) for s in ('home', 'away')]
             and utc_text(start) == detail['startsAtUtc'] and sport == detail['sport']
-            and key(competition) == key(detail['competition']['name']), 'daily_vip_odds_event_identity_conflict')
+            and key(competition['name']) == key(detail['competition']['name'])
+            and all(competition[field] == detail['competition'][field]
+                    for field in ('country', 'countryCode', 'scope')
+                    if field in competition and field in detail['competition']),
+            'daily_vip_odds_event_identity_conflict')
     pick = detail['pick']
     if pick['betType'] == 'over_under_goals':
         section = one(html.find(root, lambda n: n.attrs.get('id') == 'UNDER_OVER'), 'daily_vip_odds_market_missing')

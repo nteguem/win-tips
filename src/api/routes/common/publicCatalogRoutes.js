@@ -7,7 +7,9 @@
 const express = require('express');
 const router = express.Router();
 const ctrl = require('../../controllers/common/publicCatalogController');
+const vipOfferController = require('../../controllers/common/publicVipOfferController');
 
 router.get('/categories', ctrl.listAllCategories);
+router.get('/vip-offer', vipOfferController.getVipOffer);
 
 module.exports = router;

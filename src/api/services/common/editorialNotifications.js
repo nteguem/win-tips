@@ -3,6 +3,7 @@ const { preferredLanguage } = require('./devicePreferences');
 const { sourceByKey, failure } = require('./editorialSources');
 const { editionDateFor } = require('./editorialCalendar');
 const { notificationSnapshot, digest } = require('./editorialCopy');
+const { productTitle } = require('./editorialProductNames');
 
 const id = value => String(value && value._id || value);
 const terminal = new Set(['completed', 'no_audience', 'review_required']);
@@ -27,7 +28,8 @@ function eligibleItem(item, now) {
 function message(appId, group, language) {
   const date = new Intl.DateTimeFormat(language === 'en' ? 'en-GB' : 'fr-FR', { day: 'numeric', month: 'long', timeZone: 'Europe/Paris' }).format(new Date(group.editionDate + 'T12:00:00Z'));
   const labels = {
-    rdj_petit_journal: { fr: `Le Petit Journal du ${date} est disponible`, en: `The ${date} Daily Journal is available` },
+    wintips_daily_vip: { fr: `Ton combiné VIP du ${date} est prêt`, en: `Your ${date} VIP accumulator is ready` },
+    rdj_petit_journal: { fr: `Analyse du jour disponible · ${date}`, en: `Daily Analysis is ready · ${date}` },
     rdj_nba: { fr: `La NBA du ${date} est disponible`, en: `NBA Today: ${date} analysis is available` },
     rdj_tennis: { fr: `Le tennis du ${date} est disponible`, en: `Tennis Today: ${date} analysis is available` },
     basketusa_nba: { fr: `La NBA du ${date} est disponible`, en: `NBA Today: ${date} analysis is available` },
@@ -40,11 +42,19 @@ function message(appId, group, language) {
   };
   const names = group.items.flatMap(row => {
     const p = row.payload;
-    if (p.kind === 'article') return [p.title?.[language] || p.title?.fr || p.title?.en || ''];
+    if (p.kind === 'article') {
+      const title = productTitle(p.title, group.source, language);
+      return [typeof title === 'string' ? title : title?.[language] || title?.fr || title?.en || ''];
+    }
     if (p.kind === 'horse_racing') return [p.race.name + (p.race.racecourse ? ' · ' + p.race.racecourse : '')];
     return (p.kind === 'combine' ? p.legs : [p]).map(item => `${item.teams.home.name} — ${item.teams.away.name}`);
   });
-  const body = (language === 'en' ? 'Analysis and statistics: ' : 'Analyses et statistiques : ') + names.join(' · ');
+  const selectionCount = group.items.reduce((count, row) => count + (row.payload.legs?.length || 0), 0);
+  const body = group.source === 'wintips_daily_vip'
+    ? (language === 'en'
+      ? `Your ${selectionCount} picks and the total odds are ready. Open your VIP coupon.`
+      : `Tes ${selectionCount} sélections et la cote totale sont prêtes. Ouvre ton coupon VIP.`)
+    : (language === 'en' ? 'Analysis and statistics: ' : 'Analyses et statistiques : ') + names.join(' · ');
   const single = group.items.length === 1;
   return {
     id: notificationId(appId, group), title: labels[group.source][language], body: group.editorialCopy ? (group.editorialCopy.notificationBody || group.editorialCopy.body)[language] : body.length > 180 ? body.slice(0, 177) + '…' : body,

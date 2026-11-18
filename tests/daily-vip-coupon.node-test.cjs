@@ -47,9 +47,44 @@ test('multisport daily coupon imports bilingual selections without forcing an ar
   assert.deepEqual(normalized.items[0].analysis, { fr: [], en: [] });
   assert.equal(hasCompleteEnglish(normalized.items[0]), true);
   const { service, state } = setup();
-  await service.importBatch(fixture());
+  const imported = await service.importBatch(fixture());
   assert.equal(state.writes, 1);
-  assert.equal(state.drains, 0, 'pilot is never mass-notified during import');
+  assert.equal(state.drains, 1, 'a published VIP coupon triggers the notification drain');
+  assert.equal(imported.notificationsSent, 10);
+});
+test('optional competition geography is retained in previews and paid content without changing legacy payloads', async () => {
+  const old = fixture();
+  assert.deepEqual(validateBatch(old, clock()).items[0].legs[0].competition, { name: 'Competition' });
+  const batch = fixture();
+  batch.items[0].legs[0].competition = { name: 'Ligue 1', country: 'France', countryCode: 'FR', scope: 'national',
+    logo: 'https://static.sportytrader.com/icons/foot/teams/256x256/competition.webp' };
+  batch.items[0].legs[1].competition = { name: 'ATP Finals' };
+  const { service, state } = setup();
+  await service.importBatch(batch);
+  const preview = (await service.library({ isVip: true })).categories[0].previewItems[0];
+  assert.deepEqual(preview.legs[0].competition, batch.items[0].legs[0].competition);
+  assert.deepEqual(preview.legs[1].competition, { name: 'ATP Finals' });
+  assert.equal(preview.legs[0].selection, undefined, 'Public metadata must not expose a selection');
+  state.access = true;
+  const content = await service.content(a, date, { user });
+  assert.deepEqual(content.items[0].legs[0].competition, batch.items[0].legs[0].competition);
+  // International is the scope of the same competition, never its new name.
+  const international = fixture();
+  international.items[0].legs[0].competition = {
+    name: 'Ligue des Nations', country: 'International', scope: 'international' };
+  assert.deepEqual(validateBatch(international, clock()).items[0].legs[0].competition,
+    international.items[0].legs[0].competition);
+});
+test('competition display metadata rejects invalid scope, unsafe logos, markup and unsupported fields before writes', async () => {
+  for (const extra of [{ scope: 'world' }, { country: '<script>bad</script>' }, { country: { name: 'France' } },
+    { countryCode: 'fr' }, { countryCode: 'FRA' }, { logo: 'http://static.sportytrader.com/logo.png' },
+    { logo: 'https://evil.invalid/logo.png' }, { logo: 'https://static.sportytrader.com@evil.invalid/logo.png' },
+    { logo: 'https://127.0.0.1/logo.png' }, { scope: 'international', countryCode: 'FR' }, { venue: 'Guess' }]) {
+    const batch = fixture(); Object.assign(batch.items[0].legs[0].competition, extra);
+    const { service, state } = setup();
+    await assert.rejects(service.importBatch(batch), { statusCode: 400 });
+    assert.equal(state.writes, 0);
+  }
 });
 test('wrong source/day/identity, forged URLs, duplicate legs, inconsistent product and forced odds fail before writes', async () => {
   const mutations = [
@@ -140,15 +175,69 @@ test('storage refuses incompatible or missing daily unique index before mutation
     await assert.rejects(publishImmutable(collection, operation(fixture().items[0])), { statusCode: 503 });
   }
 });
-test('global and explicit notification drain skip the pilot before device, ledger and delivery operations', async () => {
-  let pushes = 0;
-  const service = createEditorialNotificationService({ repository: { groups: async () => [{ source: SOURCE, items: [], category: {} }],
-    deviceBatch: async () => assert.fail('Pilot must not query an audience'), assertIndexes: async () => assert.fail('Pilot must not claim') },
-    push: async () => { pushes++; }, clock, enabled: () => true, importEnabled: () => true });
+test('global and explicit VIP notifications target current subscribers in FR/EN without duplicate delivery or pick leaks', async () => {
   for (const source of [undefined, SOURCE]) {
+    const payload = validateBatch(fixture(), clock()).items[0];
+    const row = { _id: 'c'.repeat(24), payload };
+    const category = { _id: a, isActive: true, isVip: true, editorialSource: SOURCE };
+    const devices = [
+      { user: 'subscribed', language: 'fr' },
+      { user: 'subscribed', language: 'en' },
+      { user: 'expired', userType: 'vip' },
+      { user: 'other-category' },
+      {},
+      { user: 'subscribed', notificationsEnabled: false },
+      { user: 'subscribed', editorialSchemaVersion: 0 },
+    ].map((value, index) => ({ _id: String(index + 1).padStart(24, '0'), deviceId: 'device-' + (index + 1), editorialSchemaVersion: 1, ...value }));
+    const calls = [], delivered = new Set();
+    let ledger = null, claims = 0;
+    const repository = {
+      groups: async () => [{ source: SOURCE, editionDate: date, items: [row], category }],
+      assertIndexes: async () => {}, categoryStillMatches: async () => true,
+      deviceBatch: async after => after ? [] : devices,
+      entitledUsers: async () => ['subscribed'],
+      claim: async (_, __, ___, snapshot) => {
+        if (ledger) return null;
+        claims++;
+        ledger = { lockToken: 'lock', status: 'processing', passes: 1, ...snapshot };
+        return { ...ledger };
+      },
+      ledgerState: async () => ledger,
+      checkpoint: async () => {},
+      finish: async (_, __, fields) => { Object.assign(ledger, fields); },
+      deliverySummary: async () => ({ accepted: delivered.size, retryable: 0, failed: 0, uncertain: 0 }),
+    };
+    const service = createEditorialNotificationService({ repository,
+      push: async (appId, notification, options) => {
+        calls.push({ appId, notification, options });
+        options.targeting.deviceIds.forEach(deviceId => delivered.add(deviceId));
+        return { fcm: options.targeting.deviceIds.length };
+      }, clock, enabled: () => true, importEnabled: () => true });
     const report = await service.drain({ source, dryRun: false });
-    assert.equal(report.sent, 0); assert.deepEqual(report.groups, []);
+    assert.equal(report.sent, 2); assert.equal(report.groups[0].status, 'completed');
+    assert.equal(claims, 1); assert.equal(calls.length, 2);
+    assert.deepEqual([...delivered], ['device-1', 'device-2']);
+    assert.equal(calls[0].notification.id, calls[1].notification.id);
+    for (const call of calls) {
+      const language = call.notification.extra.language;
+      assert.equal(call.notification.title, language === 'fr'
+        ? 'Ton combiné VIP du 17 novembre est prêt'
+        : 'Your 17 November VIP accumulator is ready');
+      assert.equal(call.notification.requiresVip, true);
+      assert.equal(call.notification.businessChannel, 'vip');
+      assert.equal(call.notification.extra.action, 'view_editorial');
+      assert.equal(call.notification.extra.categoryId, a);
+      assert.equal(call.notification.extra.itemId, row._id);
+      assert.equal(call.notification.extra.editionDate, date);
+      assert.equal(call.notification.extra.isVip, 'true');
+      assert.equal(call.options.respectNotificationPreferences, true);
+      assert.equal(call.options.respectEditorialSchemaVersion, true);
+      assert.match(call.notification.body, language === 'fr' ? /2 sélections/ : /2 picks/);
+      for (const secret of ['Club A gagne', 'Club A wins', '1.6', 'SportyTrader', 'provenance'])
+        assert.equal(JSON.stringify(call.notification).includes(secret), false, secret);
+    }
+    const repeated = await service.drain({ source, dryRun: false });
+    assert.equal(repeated.sent, 0); assert.equal(claims, 1); assert.equal(calls.length, 2);
   }
-  assert.equal(pushes, 0);
 });
 module.exports = { fixture };

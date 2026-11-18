@@ -4,6 +4,7 @@ const accessGateService = require('../../services/common/accessGateService');
 const UserAccessUnlock = require('../../models/common/UserAccessUnlock');
 const Category = require('../../models/common/Category');
 const { showLegacyTicket } = require('../../services/common/editorialLegacyBridge');
+const { categoryDisplayName } = require('../../services/common/editorialProductNames');
 
 class CouponController {
   
@@ -105,7 +106,7 @@ class CouponController {
           // Traduction du nom/description selon `lang` (catégories bilingues).
           categoriesMap.set(categoryId, {
             id: ticket.category._id,
-            name: Category.pickLang(ticket.category.name, lang),
+            name: categoryDisplayName(ticket.category, lang),
             icon: ticket.category.icon,
             successRate: ticket.category.successRate,
             description: Category.pickLang(ticket.category.description, lang) || null,
@@ -318,7 +319,7 @@ class CouponController {
       const couponWithCategory = {
         category: {
           id: ticket.category._id,
-          name: Category.pickLang(ticket.category.name, lang),
+          name: categoryDisplayName(ticket.category, lang),
           icon: ticket.category.icon,
           successRate: ticket.category.successRate,
           description: Category.pickLang(ticket.category.description, lang) || null,
@@ -511,7 +512,7 @@ class CouponController {
             // `lang` : l'app mobile attend des strings simples.
             categoriesMap.set(categoryId, {
               id: ticket.category._id,
-              name: Category.pickLang(ticket.category.name, lang),
+              name: categoryDisplayName(ticket.category, lang),
               description: Category.pickLang(ticket.category.description, lang) || null,
               icon: ticket.category.icon,
               successRate: ticket.category.successRate,

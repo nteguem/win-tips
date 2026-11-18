@@ -30,6 +30,7 @@ function coupons(cat) {
     '../../models/common/UserAccessUnlock': { find: async () => [] },
     '../../models/common/Category': { pickLang: value => typeof value === 'string' ? value : value && value.fr },
     '../../services/common/editorialLegacyBridge': bridge,
+    '../../services/common/editorialProductNames': require('../src/api/services/common/editorialProductNames'),
   }); return { controller, ticket, state };
 }
 

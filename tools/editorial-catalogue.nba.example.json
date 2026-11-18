@@ -8,8 +8,8 @@
     {
       "source": "rdj_petit_journal",
       "name": {
-        "fr": "Le Petit Journal",
-        "en": "The Daily Journal"
+        "fr": "Analyse du jour",
+        "en": "Daily Analysis"
       },
       "description": {
         "fr": "Les matchs et analyses du jour",

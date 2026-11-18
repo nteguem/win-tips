@@ -30,6 +30,13 @@ function sourceUrl(value, section = null) {
       (section ? !new RegExp(`^/${section}/[a-z0-9-]+-\\d+/$`).test(url.pathname) : url.href !== INDEX_URL)) throw failure('Une URL canonique SportyTrader est requise');
   return url.href;
 }
+function sourceLogo(value) {
+  let url;
+  try { url = new URL(value); } catch (_) { throw failure('Logo invalide'); }
+  // Display assets use the same trusted hosts for teams and competitions.
+  if (url.protocol !== 'https:' || !['www.sportytrader.com', 'static.sportytrader.com', 'cdn.sportytrader.com', 'flagcdn.com'].includes(url.hostname) || url.username || url.password || url.port || url.hash) throw failure('Logo source invalide');
+  return url.href;
+}
 function team(input, name) {
   keys(input, ['name', 'logo', 'countryCode'], name);
   const out = { name: text(input.name, `${name}.name`, 180) };
@@ -38,12 +45,9 @@ function team(input, name) {
     out.countryCode = input.countryCode;
   }
   if (input.logo !== undefined) {
-    let url;
-    try { url = new URL(input.logo); } catch (_) { throw failure('Logo invalide'); }
     // Logos are optional display assets. A source host allowlist prevents a
     // worker response from introducing a tracking URL or a private resource.
-    if (url.protocol !== 'https:' || !['www.sportytrader.com', 'static.sportytrader.com', 'cdn.sportytrader.com', 'flagcdn.com'].includes(url.hostname) || url.username || url.password || url.port || url.hash) throw failure('Logo source invalide');
-    out.logo = url.href;
+    out.logo = sourceLogo(input.logo);
   }
   return out;
 }
@@ -60,8 +64,18 @@ function normalizeDailyVip(input, editionDate) {
     keys(value.sport, ['key', 'name', 'icon'], 'sport');
     if (!(leg ? SPORTS : ['multisport', ...SPORTS]).includes(value.sport.key)) throw failure('Sport du combine inconnu');
     out.sport = { key: value.sport.key, name: text(value.sport.name, 'sport.name', 80) };
-    keys(value.competition, ['name', 'country', 'countryCode', 'logo'], 'competition');
+    keys(value.competition, ['name', 'country', 'countryCode', 'logo', 'scope'], 'competition');
     out.competition = { name: text(value.competition.name, 'competition.name', 180) };
+    if (value.competition.country !== undefined) out.competition.country = text(value.competition.country, 'competition.country', 100);
+    if (value.competition.countryCode !== undefined) {
+      if (!/^[A-Z]{2}$/.test(value.competition.countryCode)) throw failure('Code pays competition invalide');
+      out.competition.countryCode = value.competition.countryCode;
+    }
+    if (value.competition.logo !== undefined) out.competition.logo = sourceLogo(value.competition.logo);
+    if (value.competition.scope !== undefined) {
+      if (!['national', 'international'].includes(value.competition.scope) || value.competition.scope === 'international' && value.competition.countryCode !== undefined) throw failure('Portee competition invalide');
+      out.competition.scope = value.competition.scope;
+    }
     if (value.analysis !== undefined && (JSON.stringify(value.analysis) !== '{"fr":[],"en":[]}' && JSON.stringify(value.analysis) !== '{"en":[],"fr":[]}')) throw failure('Le combine contient des selections, pas un article');
     out.analysis = { fr: [], en: [] };
     keys(value.selection, ['betType', 'label', ...(leg ? ['odds'] : ['totalOdds'])], 'selection');

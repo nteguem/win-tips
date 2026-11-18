@@ -3,6 +3,7 @@ const { dateOnly } = require('./editorialValidation');
 const { editionDateFor } = require('./editorialCalendar');
 const { editorialAccess, requireEditorialAccess } = require('./editorialAccess');
 const { editorialDescriptionFields } = require('./editorialDescriptions');
+const { categoryDisplayName, sourcePresentation, payloadPresentation } = require('./editorialProductNames');
 
 const id = value => String(value && value._id || value);
 const languageOf = lang => lang === 'en' ? 'en' : 'fr';
@@ -145,10 +146,10 @@ function createEditorialLibrary({ repository, clock, sourceMatchesCategory, summ
   async function card(category, items, date, copies, stats, lang, user, requestDate, openings, instant) {
     const state = await editorialAccess(repository, category, user);
     const source = sourceByKey(category.editorialSource);
-    return { id: id(category), categoryId: id(category), name: pick(category.name, lang),
+    return { id: id(category), categoryId: id(category), name: categoryDisplayName(category, lang),
       ...dailyDescription(category, items, copies, lang), icon: category.icon || '',
       isVip: category.isVip === true, editorialSource: category.editorialSource,
-      source: { key: source.key, label: source.label, kinds: [...source.kinds] },
+      source: { key: source.key, label: sourcePresentation(source, lang).label, kinds: [...source.kinds] },
       locked: state.locked, requiresAuth: state.requiresAuth, gate: state.gate,
       itemCount: items.length, available: items.length > 0, editionDate: date, currentDate: requestDate,
       ...vipHeadline(category, items, date, requestDate, instant),
@@ -226,7 +227,7 @@ function createEditorialLibrary({ repository, clock, sourceMatchesCategory, summ
       requireEditorialAccess(await editorialAccess(repository, category, user), category, user);
       const language = languageOf(lang);
       return { categoryId: id(category), editionDate, locked: false, requestedLanguage: language,
-        items: items.map(row => ({ ...row.payload, id: id(row), categoryId: id(category), locked: false, ...metadata(row.payload, language) })) };
+        items: items.map(row => ({ ...payloadPresentation(row.payload, language), id: id(row), categoryId: id(category), locked: false, ...metadata(row.payload, language) })) };
     },
     async reviews(categoryId, date, { page, limit, user = null } = {}) {
       const window = pagination(page, limit);

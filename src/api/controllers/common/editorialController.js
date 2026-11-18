@@ -21,7 +21,7 @@ function language(req) { return req.query.lang || req.headers['x-language'] || r
 function createEditorialController(service) {
   const getService = typeof service === 'function' ? service : () => service;
   return {
-    catalog: handler(service => service.catalog(), getService),
+    catalog: handler((service, req) => service.catalog(language(req)), getService),
     workerConfig: handler(service => service.workerConfig(), getService),
     importBatch: handler((service, req) => service.importBatch(req.body), getService),
     drainNotifications: handler((service, req) => service.drainNotifications(req.body), getService),

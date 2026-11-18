@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const { SOURCES } = require('../../services/common/editorialSources');
+const { categoryDisplayName } = require('../../services/common/editorialProductNames');
 
 /**
  * Une offre de déblocage : visionner `adsRequired` pubs récompensées donne
@@ -139,7 +140,7 @@ function pickLang(field, lang) {
  */
 CategorySchema.methods.formatForLanguage = function (lang = 'fr') {
   const obj = this.toObject();
-  obj.name = pickLang(this.name, lang);
+  obj.name = categoryDisplayName(this, lang);
   obj.description = pickLang(this.description, lang);
   delete obj.__v;
   return obj;
