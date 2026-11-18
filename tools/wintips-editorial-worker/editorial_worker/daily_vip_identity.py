@@ -31,6 +31,7 @@ _ALIASES = {
         ('LA Clippers', 'Los Angeles Clippers', 'Clippers'),
         ('LA Lakers', 'Los Angeles Lakers', 'Lakers'),
         ('Boston Celtics', 'Celtics'),
+        ('Besiktas', 'Beşiktaş JK', 'BesiktasJK'),
     ),
     'football': (
         ('Besiktas', 'Beşiktaş JK', 'BesiktasJK'),

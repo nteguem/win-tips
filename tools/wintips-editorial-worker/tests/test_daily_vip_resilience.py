@@ -46,6 +46,11 @@ class ResilienceTests(unittest.TestCase):
             sport = 'football' if name == 'Trinité et Tobago' else 'basketball'
             self.assertEqual(parse_recommendation('Victoire de ' + name, teams, sport)['side'], '1')
 
+    def test_besiktas_basketball_name_variant_keeps_the_proven_fixture(self):
+        teams = {'home': {'name': 'BesiktasJK'}, 'away': {'name': 'Real Madrid'}}
+        root = Document('<p>Notre pronostic Besiktas - Real Madrid : victoire de Real Madrid !</p>').root
+        self.assertEqual(d.recommendation(root, teams, 'basketball')['side'], '2')
+
     def test_integer_total_line_never_uses_scientific_notation(self):
         pick = parse_recommendation('Plus de 200 points', {}, 'basketball')
         self.assertEqual(pick['line'], '200')
