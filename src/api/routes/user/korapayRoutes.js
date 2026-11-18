@@ -7,11 +7,11 @@ const router = express.Router();
 
 /**
  * Route publique : page de retour utilisateur après paiement.
- * Ce projet n'utilise PAS le webhook KoraPay : la création de la souscription
- * est déclenchée soit par ce callback, soit par le cron de vérification, soit
- * par l'extension de /me.
+ * Le webhook signé et le retour navigateur utilisent la même vérification
+ * serveur. Le cron, /status et /me rattrapent une notification manquante.
  */
 router.get('/callback', korapayController.callback);
+router.post('/webhook', korapayController.webhook);
 
 /**
  * Routes protégées

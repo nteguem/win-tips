@@ -1,6 +1,7 @@
 const subscriptionService = require('../../services/user/subscriptionService');
 const notificationService = require('../../services/common/notificationService');
 const Device = require('../../models/common/Device');
+const mobileMoneySettlement = require('../../services/common/mobileMoneySettlement');
 
 /**
  * Bibliothèque de messages pour notifications de paiement réussi (10 variétés)
@@ -334,6 +335,13 @@ async function sendPaymentFailedNotification(transaction) {
  */
 async function handleSuccessfulTransaction(transaction) {
   try {
+    if (mobileMoneySettlement.isSupportedTransaction(transaction)) {
+      const subscription = await mobileMoneySettlement.settleVerifiedPayment(transaction);
+      if (subscription.$locals.mobileMoneySettlementCreated) {
+        await sendPaymentSuccessNotification(transaction);
+      }
+      return subscription;
+    }
     if (transaction.isSuccessful() && !transaction.processed) {
       console.log(`Processing successful transaction: ${transaction._id}`);
       

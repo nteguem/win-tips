@@ -1,20 +1,15 @@
 /**
  * Service de vérification des paiements KoraPay.
  *
- * Le webhook KoraPay n'est pas utilisé dans ce projet. La création de
- * souscription est déclenchée par 3 voies :
- *  1. Le callback (redirection après paiement) — voie principale
- *  2. Ce service via /me — quand l'utilisateur rouvre l'app
- *  3. Ce service via le cron — filet de sécurité (toutes les 2 min)
- *
- * Idempotent grâce au flag `processed` sur KorapayTransaction.
+ * Filet de sécurité après webhook/retour navigateur manquant. Une transaction
+ * payée mais dont l'activation a échoué doit aussi être reprise, sans repayer.
  */
 
 const KorapayTransaction = require('../../models/user/KorapayTransaction');
 const korapayService = require('./KorapayService');
 const paymentMiddleware = require('../../middlewares/payment/paymentMiddleware');
 
-const MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const RECENT_AGE_MS = 5 * 60 * 1000;
 const MID_AGE_MS = 30 * 60 * 1000;
 const MID_INTERVAL_MS = 5 * 60 * 1000;
@@ -31,7 +26,7 @@ async function verifyOne(transaction) {
     transaction.lastCheckedAt = new Date();
     await transaction.save();
 
-    const reference = transaction.korapayReference || transaction.reference || transaction.transactionId;
+    const reference = transaction.reference || transaction.korapayReference || transaction.transactionId;
     const updated = await korapayService.checkTransactionStatus(reference);
     const subscription = await paymentMiddleware.processTransactionUpdate(updated);
     return { transaction: updated, subscription };
@@ -46,7 +41,7 @@ async function verifyOne(transaction) {
 
 function shouldCheckNow(transaction, now = Date.now()) {
   const age = now - new Date(transaction.createdAt).getTime();
-  if (age >= MAX_AGE_MS) return false;
+  if (transaction.status !== 'SUCCESS' && age >= MAX_AGE_MS) return false;
 
   const lastCheck = transaction.lastCheckedAt
     ? new Date(transaction.lastCheckedAt).getTime()
@@ -76,43 +71,31 @@ async function runWithConcurrency(items, worker, concurrency = CONCURRENCY) {
 }
 
 async function expireOldPending() {
-  const cutoff = new Date(Date.now() - MAX_AGE_MS);
-  const result = await KorapayTransaction.updateMany(
-    {
-      status: { $in: ['PENDING', 'PROCESSING'] },
-      processed: false,
-      createdAt: { $lt: cutoff }
-    },
-    { $set: { status: 'EXPIRED' } }
-  );
-  if (result.modifiedCount > 0) {
-    console.log(`[KorapayVerification] ${result.modifiedCount} transactions expirées`);
-  }
-  return result.modifiedCount;
+  // An elapsed local timer is not evidence of failure at the payment provider.
+  // Old pending payments remain recoverable by status/callback/webhook.
+  return 0;
+}
+
+function recoveryQuery(userId) {
+  return {
+    ...(userId ? { user: userId } : {}),
+    processed: false,
+    $or: [
+      { status: 'SUCCESS' },
+      { status: { $in: ['PENDING', 'PROCESSING', 'EXPIRED'] }, createdAt: { $gte: new Date(Date.now() - MAX_AGE_MS) } },
+    ],
+  };
 }
 
 async function verifyUserPendingTransactions(userId) {
-  const cutoff = new Date(Date.now() - MAX_AGE_MS);
-  const pending = await KorapayTransaction.find({
-    user: userId,
-    status: { $in: ['PENDING', 'PROCESSING'] },
-    processed: false,
-    createdAt: { $gte: cutoff }
-  });
+  const pending = await KorapayTransaction.find(recoveryQuery(userId));
 
   if (pending.length === 0) return [];
   return runWithConcurrency(pending, verifyOne);
 }
 
 async function verifyAllPendingTransactions() {
-  await expireOldPending();
-
-  const cutoff = new Date(Date.now() - MAX_AGE_MS);
-  const candidates = await KorapayTransaction.find({
-    status: { $in: ['PENDING', 'PROCESSING'] },
-    processed: false,
-    createdAt: { $gte: cutoff }
-  });
+  const candidates = await KorapayTransaction.find(recoveryQuery());
 
   const now = Date.now();
   const toCheck = candidates.filter(tx => shouldCheckNow(tx, now));
@@ -133,5 +116,6 @@ module.exports = {
   verifyUserPendingTransactions,
   verifyAllPendingTransactions,
   shouldCheckNow,
-  expireOldPending
+  expireOldPending,
+  recoveryQuery,
 };

@@ -1,7 +1,7 @@
 /**
  * Cron de vérification des paiements KoraPay.
  *
- * Le webhook KoraPay n'est pas utilisé. Ce cron est le filet de sécurité
+ * Le webhook KoraPay est complété par ce filet de sécurité
  * qui rattrape les paiements pour lesquels l'utilisateur n'a pas suivi
  * la redirection callback (navigateur fermé, perte de connexion, etc.).
  */

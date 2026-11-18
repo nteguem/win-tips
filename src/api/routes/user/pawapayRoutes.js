@@ -13,6 +13,7 @@ const router = express.Router();
 // ---------------------------------------------
 // Webhook pawaPay (callback serveur-a-serveur)
 router.post('/webhook', pawapayController.webhook);
+router.get('/return', pawapayController.paymentReturn);
 
 // Liste des pays + operateurs (pour le selecteur mobile)
 router.get('/providers', pawapayController.getProviders);

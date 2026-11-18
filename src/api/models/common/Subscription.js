@@ -1,8 +1,8 @@
 const mongoose = require('mongoose');
 
-// Existing payment rails keep their historical currency restrictions. Google
-// Play uses the Store account's ISO currency, which can differ from app config.
-// Checkout/activation separately require an explicit price on the bound SKU.
+// Existing payment rails keep their historical currency restrictions. Native
+// Store and server-verified mobile-money settlements use the provider's ISO
+// currency. Their checkout/verification still requires an explicit agreed price.
 const legacyCurrencies = new Set(['XAF','XOF','GMD','CDF','GNF','USD','EUR','NGN','GHS','KES','ZAR','EGP','TZS','UGX','ZMW','MWK','RWF','SLE','MZN','LSL']);
 const storeCurrencies = new Set(Intl.supportedValuesOf('currency'));
 
@@ -42,7 +42,10 @@ const subscriptionSchema = new mongoose.Schema({
       required: true,
       validate: {
         validator: function(currency) {
-          return (this.paymentProvider === 'GOOGLE_PLAY' ? storeCurrencies : legacyCurrencies).has(currency);
+          const verifiedMobileMoney = this.paymentProvider === 'MOBILE_MONEY'
+            && Boolean(this.mobileMoneySettlementKey);
+          return (this.paymentProvider === 'GOOGLE_PLAY' || verifiedMobileMoney
+            ? storeCurrencies : legacyCurrencies).has(currency);
         },
         message: 'Devise non prise en charge par ce mode de paiement',
       },
@@ -55,6 +58,8 @@ const subscriptionSchema = new mongoose.Schema({
     default: 'active'
   },
   paymentReference: String,
+  // One grant per server-verified PSP transaction, including after expiry.
+  mobileMoneySettlementKey: { type: String, immutable: true, default: undefined },
   paymentProvider: {
     type: String,
     // 'ADS' : abonnement débloqué en regardant N pubs récompensées
@@ -94,6 +99,9 @@ subscriptionSchema.pre('validate', async function() {
 subscriptionSchema.index({ user: 1, status: 1 });
 subscriptionSchema.index({ endDate: 1 });
 subscriptionSchema.index({ status: 1 });
+subscriptionSchema.index({ mobileMoneySettlementKey: 1 }, {
+  unique: true, sparse: true, name: 'mobile_money_settlement_unique'
+});
 
 // Vérifier si l'abonnement est actif
 subscriptionSchema.methods.isActive = function() {
@@ -127,6 +135,7 @@ subscriptionSchema.pre('findOne', function() {
 subscriptionSchema.methods.toJSON = function() {
   const subscription = this.toObject();
   delete subscription.__v;
+  delete subscription.mobileMoneySettlementKey;
   // toObject() flattens populated documents without calling Package.toJSON().
   // Keep retired product recovery snapshots private in purchase/status replies.
   if (subscription.package && typeof subscription.package === 'object') {

@@ -102,6 +102,12 @@ const korapayTransactionSchema = new mongoose.Schema({
 
   merchantBearsCost: { type: Boolean, default: false },
 
+  // Immutable purchase terms and server-authenticated settlement evidence.
+  purchaseSnapshot: { type: mongoose.Schema.Types.Mixed, immutable: true },
+  verifiedPaymentAt: Date,
+  verifiedAmount: Number,
+  verifiedCurrency: String,
+
   // Suivi des vérifications par le cron (backoff)
   lastCheckedAt: Date,
   checkAttempts: { type: Number, default: 0 }
@@ -130,7 +136,7 @@ korapayTransactionSchema.methods.isFailed = function() {
 };
 
 /**
- * Enregistre les infos d'un webhook KoraPay et met à jour le statut.
+ * Enregistre uniquement la réception d'un webhook KoraPay.
  */
 korapayTransactionSchema.methods.recordWebhook = function(webhookData) {
   this.webhookReceived = true;
@@ -139,21 +145,8 @@ korapayTransactionSchema.methods.recordWebhook = function(webhookData) {
     receivedAt: new Date()
   };
 
-  if (webhookData.event === 'charge.success') {
-    this.status = 'SUCCESS';
-    this.paymentDate = new Date();
-  } else if (webhookData.event === 'charge.failed') {
-    this.status = 'FAILED';
-  }
-
-  if (webhookData.data) {
-    const data = webhookData.data;
-    if (data.reference) this.korapayReference = data.reference;
-    if (data.payment_method) this.paymentMethod = data.payment_method;
-    if (data.fee !== undefined) this.fee = data.fee;
-    if (data.amount_charged !== undefined) this.amountCharged = data.amount_charged;
-    if (data.status) this.responseMessage = data.status;
-  }
+  // Receipt bookkeeping only. A signed webhook triggers a server-side charge
+  // GET; it must not directly activate, downgrade or alter payment ownership.
 
   return this.save();
 };
@@ -161,8 +154,10 @@ korapayTransactionSchema.methods.recordWebhook = function(webhookData) {
 /**
  * Retrouve une transaction par n'importe laquelle de ses références.
  */
-korapayTransactionSchema.statics.findByReference = function(reference) {
+korapayTransactionSchema.statics.findByReference = function(reference, userId) {
+  if (typeof reference !== 'string' || !reference || reference.length > 200) return Promise.resolve(null);
   return this.findOne({
+    ...(userId ? { user: userId } : {}),
     $or: [
       { transactionId: reference },
       { reference: reference },

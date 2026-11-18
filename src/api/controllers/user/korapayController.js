@@ -19,7 +19,7 @@ const catchAsync = require('../../../utils/catchAsync');
  * POST /api/payments/korapay/initiate
  */
 exports.initiatePayment = catchAsync(async (req, res, next) => {
-  const { packageId, currency, phoneNumber, merchantBearsCost } = req.body;
+  const { packageId, currency, phoneNumber, phone, merchantBearsCost } = req.body;
 
   if (!packageId || !currency) {
     return next(new AppError('packageId et currency sont requis', 400, ErrorCodes.VALIDATION_ERROR));
@@ -40,7 +40,7 @@ exports.initiatePayment = catchAsync(async (req, res, next) => {
 
   const customerName = req.user.pseudo || req.user.firstName || req.user.lastName || 'Utilisateur';
   const customerEmail = req.user.email || `user_${req.user._id}@wintips.com`;
-  const customerPhone = phoneNumber || req.user.phoneNumber || null;
+  const customerPhone = phoneNumber || phone || req.user.phoneNumber || null;
 
   try {
     const result = await korapayService.initiatePayment(
@@ -82,18 +82,9 @@ exports.initiatePayment = catchAsync(async (req, res, next) => {
 exports.checkStatus = catchAsync(async (req, res, next) => {
   const { reference } = req.params;
 
-  const transaction = await korapayService.checkTransactionStatus(reference);
-
-  if (transaction.user._id.toString() !== req.user._id.toString()) {
-    return next(new AppError('Transaction non autorisée', 403, ErrorCodes.UNAUTHORIZED));
-  }
-
-  let subscription = null;
-  try {
-    subscription = await paymentMiddleware.processTransactionUpdate(transaction);
-  } catch (error) {
-    console.error('[KoraPay] Erreur processTransactionUpdate:', error.message);
-  }
+  // Ownership is applied to the database lookup before contacting Kora.
+  const transaction = await korapayService.checkTransactionStatus(reference, { userId: req.user._id });
+  const subscription = await paymentMiddleware.processTransactionUpdate(transaction);
 
   return res.status(200).json({
     success: true,
@@ -106,6 +97,7 @@ exports.checkStatus = catchAsync(async (req, res, next) => {
         currency: transaction.currency,
         paymentMethod: transaction.paymentMethod,
         processed: transaction.processed,
+        subscriptionActivated: transaction.status === 'SUCCESS' && transaction.processed === true,
         package: transaction.package
       },
       subscription: subscription ? {
@@ -121,7 +113,7 @@ exports.checkStatus = catchAsync(async (req, res, next) => {
 /**
  * GET /api/payments/korapay/callback
  * Public — page de retour HTML après paiement.
- * C'est ici que la souscription est déclenchée (le webhook n'est pas utilisé).
+ * Le retour navigateur ne constitue pas une preuve de paiement.
  * Filets de sécurité si l'utilisateur ne suit pas la redirection :
  *  - cron de vérification (toutes les 2 min)
  *  - extension de /me (déclenche une vérif live à chaque ouverture d'app)
@@ -139,14 +131,54 @@ exports.callback = async (req, res) => {
     }
 
     const updated = await korapayService.checkTransactionStatus(reference);
-    if (updated.isSuccessful() && !updated.processed) {
+    if (updated.isSuccessful()) {
       await paymentMiddleware.processTransactionUpdate(updated);
     }
 
-    return res.send(renderHTML(updated.status, updated));
+    const displayStatus = updated.status === 'SUCCESS' && !updated.processed ? 'PROCESSING' : updated.status;
+    return res.send(renderHTML(displayStatus, updated));
   } catch (error) {
     console.error('[KoraPay-Callback] Erreur:', error.message);
     return res.status(500).send(renderHTML('ERROR', 'Server error'));
+  }
+};
+
+/** Public signed provider notification; provider errors remain retryable. */
+exports.webhook = async (req, res) => {
+  const signature = req.headers['x-korapay-signature'];
+  const payload = req.body;
+  if (!korapayService.verifyWebhookSignature(signature, payload?.data)) {
+    return res.status(401).json({ success: false, message: 'Invalid webhook signature' });
+  }
+  if (!['charge.success', 'charge.failed'].includes(payload.event)) {
+    return res.status(200).json({ success: true, ignored: true });
+  }
+  try {
+    const references = [payload.data.reference, payload.data.payment_reference]
+      .filter(value => typeof value === 'string' && value.length <= 200);
+    let transaction = null;
+    for (const reference of references) {
+      transaction = await KorapayTransaction.findByReference(reference);
+      if (transaction) break;
+    }
+    if (!transaction) return res.status(200).json({ success: true, ignored: true });
+    await KorapayTransaction.updateOne({ _id: transaction._id }, { $set: {
+      webhookReceived: true,
+      webhookData: { event: payload.event, receivedAt: new Date() },
+    } });
+    const updated = await korapayService.checkTransactionStatus(transaction.reference || transaction.transactionId);
+    // Both charge events are final notifications; a still-pending charge GET
+    // may reflect eventual consistency. Ask Kora to retry rather than lose it.
+    if (!['SUCCESS', 'FAILED', 'CANCELLED'].includes(updated.status)) {
+      return res.status(503).json({ success: false, message: 'Payment verification pending' });
+    }
+    await paymentMiddleware.processTransactionUpdate(updated);
+    return res.status(200).json({ success: true });
+  } catch (error) {
+    // Do not acknowledge a failed GET/activation: Kora retries non-200 responses.
+    // No raw provider response or headers are written to application logs.
+    console.error('[KoraPay-Webhook] Verification or activation pending');
+    return res.status(503).json({ success: false, message: 'Payment verification pending' });
   }
 };
 

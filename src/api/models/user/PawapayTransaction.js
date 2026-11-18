@@ -106,6 +106,11 @@ const pawapayTransactionSchema = new mongoose.Schema({
   // Reponse brute pawaPay pour audit (init + check_status + webhook).
   // Permet de rejouer / debugger sans re-taper l'API si pawaPay change.
   providerData: mongoose.Schema.Types.Mixed,
+  purchaseSnapshot: { type: mongoose.Schema.Types.Mixed, immutable: true },
+  verifiedPaymentAt: Date,
+  verifiedAmount: Number,
+  verifiedCurrency: String,
+  authorizationUrl: String,
 
   // Idempotency (set a true une fois la subscription creee)
   processed: {
