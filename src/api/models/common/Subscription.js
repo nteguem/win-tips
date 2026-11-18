@@ -116,6 +116,11 @@ subscriptionSchema.pre('findOne', function() {
 subscriptionSchema.methods.toJSON = function() {
   const subscription = this.toObject();
   delete subscription.__v;
+  // toObject() flattens populated documents without calling Package.toJSON().
+  // Keep retired product recovery snapshots private in purchase/status replies.
+  if (subscription.package && typeof subscription.package === 'object') {
+    delete subscription.package.googleProductMigrations;
+  }
   return subscription;
 };
 

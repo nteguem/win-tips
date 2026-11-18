@@ -157,3 +157,19 @@ test('historical mappings are private in localized catalogue and populated packa
   assert.equal(pkg.toJSON().googleProductMigrations, undefined);
   assert.equal(pkg.formatForLanguage('fr').googleProductId, newSku);
 });
+
+test('a real populated subscription and nested validation response never expose historical product snapshots', () => {
+  const Package = require('../src/api/models/common/Package');
+  const Subscription = require('../src/api/models/common/Subscription');
+  const pkg = new Package({ ...offer(), _id: 'c97d577e0912523aab9f1bfb', name: { fr: 'Black Friday', en: 'Black Friday' } });
+  const subscription = new Subscription({ package: pkg, user: '691b1dd577e0912523aab903',
+    endDate: new Date(cutoff + 86400000), pricing: { amount: 10.99, currency: 'EUR' } });
+  assert.equal(subscription.package.googleProductMigrations.length, 1, 'package is genuinely populated');
+  assert.equal(subscription.toObject().package.googleProductMigrations.length, 1, 'raw mongoose flattening reproduces the leakage path');
+  assert.equal(subscription.toJSON().package.googleProductMigrations, undefined);
+  const response = JSON.parse(JSON.stringify({ status: 'success', data: { subscription } }));
+  assert.equal(JSON.stringify(response).includes('googleProductMigrations'), false);
+  assert.equal(response.data.subscription.package.googleProductId, newSku);
+  assert.equal(response.data.subscription.pricing.amount, 10.99);
+  assert.equal(subscription.package.googleProductMigrations.length, 1, 'serialization never mutates stored migration evidence');
+});
