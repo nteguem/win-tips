@@ -9,8 +9,8 @@ function fixture() {
   return {
     _id: YEAR_END_PACKAGE_ID, isActive: true, paymentMode: 'money', duration: 1,
     categories: [{ _id: '691b1dd577e0912523aab901', isVip: true, isActive: true }],
-    pricing: { XAF: 1000, USD: 10, EUR: 10.99, GHS: 20, CDF: 3902 },
-    availableOnGooglePlay: true, googleProductId: 'com.wintips.essentiel_7days_v1',
+    pricing: { XAF: 1000, USD: 2.5, EUR: 2.49, GHS: 20, CDF: 3902 },
+    availableOnGooglePlay: true, googleProductId: 'com.wintips.black_friday_1day_v1', googleProductType: 'ONE_TIME_PRODUCT',
     user: { email: 'must-not-leak@example.invalid' }, protectedPicks: ['must not leak'],
   };
 }
@@ -20,10 +20,13 @@ test('quotes only the active target VIP package with its exact regional amount a
   for (const currency of Object.keys(pkg.pricing)) {
     assert.deepEqual(publicVipOffer(pkg, currency), {
       packageId: YEAR_END_PACKAGE_ID, currency, price: pkg.pricing[currency], durationDays: 1,
+      availableOnGooglePlay: true, googleProductId: pkg.googleProductId, googleProductType: 'ONE_TIME_PRODUCT',
     });
   }
   assert.equal(publicVipOffer(pkg, 'KES'), null);
   assert.equal(publicVipOffer(pkg), null);
+  assert.equal(publicVipOffer(null, 'XAF'), null);
+  assert.equal(publicVipOffer(undefined, 'XAF'), null);
 });
 
 test('never advertises inactive, non-VIP, ads, unrelated or invalid offers', () => {
@@ -65,6 +68,56 @@ test('a reference price requires an explicit valid same-currency saving', () => 
   assert.equal(publicVipOffer(pkg, 'XAF').previousPrice, 5000);
 });
 
+test('public Google metadata follows only the selected current package binding', () => {
+  const pkg = fixture();
+  pkg.googleProductMigrations = [{ productId: 'com.wintips.essentiel_7days_v1', pricing: { USD: 10 } }];
+  assert.equal(publicVipOffer(pkg, 'USD').googleProductId, 'com.wintips.black_friday_1day_v1');
+  pkg.googleProductId = 'configured.subscription';
+  pkg.googleProductType = 'SUBSCRIPTION';
+  assert.equal(publicVipOffer(pkg, 'USD').googleProductId, 'configured.subscription');
+  assert.equal(publicVipOffer(pkg, 'USD').googleProductType, 'SUBSCRIPTION');
+  for (const type of [undefined, null, 'INVALID']) {
+    pkg.googleProductType = type;
+    assert.equal(publicVipOffer(pkg, 'XAF').googleProductType, null);
+  }
+});
+
+test('disabled or missing Google bindings keep Mobile Money prices and do not expose a checkout SKU', () => {
+  for (const mutation of [
+    pkg => pkg.availableOnGooglePlay = false,
+    pkg => pkg.availableOnGooglePlay = undefined,
+    pkg => pkg.googleProductId = null,
+    pkg => pkg.googleProductId = undefined,
+    pkg => pkg.googleProductId = '',
+    pkg => pkg.googleProductId = '   ',
+  ]) {
+    const pkg = fixture();
+    pkg.googleProductMigrations = [{ productId: 'retired-sku' }];
+    mutation(pkg);
+    for (const currency of ['XAF', 'GHS', 'CDF']) {
+      assert.deepEqual(publicVipOffer(pkg, currency), {
+        packageId: YEAR_END_PACKAGE_ID, currency, price: pkg.pricing[currency], durationDays: 1,
+        availableOnGooglePlay: false, googleProductId: null, googleProductType: null,
+      });
+    }
+    assert.equal(publicVipOffer(pkg, 'USD'), null);
+    assert.equal(publicVipOffer(pkg, 'EUR'), null);
+  }
+});
+
+test('a retired legacy Google binding cannot replace the active Black Friday offer', () => {
+  const pkg = fixture();
+  pkg.availableOnGooglePlay = false;
+  pkg.googleProductId = 'com.wintips.essentiel_7days_v1';
+  pkg.pricing = { XAF: 1000, USD: 10, EUR: 10.99 };
+  assert.equal(publicVipOffer(pkg, 'USD'), null);
+  assert.equal(publicVipOffer(pkg, 'EUR'), null);
+  assert.deepEqual(publicVipOffer(pkg, 'XAF'), {
+    packageId: YEAR_END_PACKAGE_ID, currency: 'XAF', price: 1000, durationDays: 1,
+    availableOnGooglePlay: false, googleProductId: null, googleProductType: null,
+  });
+});
+
 test('the public route works without login and does not leak picks, users or other prices', async () => {
   const original = Package.findOne;
   let actualFilter;
@@ -87,9 +140,11 @@ test('the public route works without login and does not leak picks, users or oth
     assert.equal(result.status, 200);
     assert.ok(selectedFields.includes('pricing'));
     assert.ok(selectedFields.includes('categories'));
+    assert.ok(selectedFields.includes('googleProductType'));
     assert.deepEqual(actualFilter, { _id: YEAR_END_PACKAGE_ID, isActive: true, paymentMode: { $in: ['money', null] } });
     assert.deepEqual(result.body, { success: true, data: { offer: {
       packageId: YEAR_END_PACKAGE_ID, currency: 'XAF', price: 1000, durationDays: 1,
+      availableOnGooglePlay: true, googleProductId: 'com.wintips.black_friday_1day_v1', googleProductType: 'ONE_TIME_PRODUCT',
     } } });
     assert.equal(result.headers['cache-control'], 'no-store');
     for (const suffix of ['', '?currency=XYZ', '?currency=bad-code']) {

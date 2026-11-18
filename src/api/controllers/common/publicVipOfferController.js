@@ -12,7 +12,7 @@ exports.getVipOffer = catchAsync(async (req, res, next) => {
     isActive: true,
     paymentMode: { $in: ['money', null] },
   })
-    .select('_id isActive paymentMode pricing economy duration categories availableOnGooglePlay googleProductId')
+    .select('_id isActive paymentMode pricing economy duration categories availableOnGooglePlay googleProductId googleProductType')
     .populate('categories', 'isVip isActive')
     .lean();
   res.set('Cache-Control', 'no-store');

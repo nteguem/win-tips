@@ -15,7 +15,17 @@ function publicVipOffer(pkg, requestedCurrency) {
       !canPurchaseInCurrency(pkg, currency)) return null;
 
   const price = priceFor(pkg, currency);
-  const offer = { packageId: YEAR_END_PACKAGE_ID, currency, price, durationDays: pkg.duration };
+  // Only the selected package's current public binding may be queried by guests.
+  // Retired receipt bindings never become checkout products or price fallbacks.
+  const googleProductId = typeof pkg.googleProductId === 'string' ? pkg.googleProductId.trim() : '';
+  const availableOnGooglePlay = pkg.availableOnGooglePlay === true && googleProductId.length > 0;
+  const offer = {
+    packageId: YEAR_END_PACKAGE_ID, currency, price, durationDays: pkg.duration,
+    availableOnGooglePlay,
+    googleProductId: availableOnGooglePlay ? googleProductId : null,
+    googleProductType: availableOnGooglePlay && ['ONE_TIME_PRODUCT', 'SUBSCRIPTION'].includes(pkg.googleProductType)
+      ? pkg.googleProductType : null,
+  };
   // The catalogue's explicit saving belongs to this very package and duration.
   // Missing/invalid savings never turn into a manufactured "80%" comparison.
   const saving = mapValue(pkg.economy, currency);
