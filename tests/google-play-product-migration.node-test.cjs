@@ -13,7 +13,7 @@ function offer() {
   return { _id: 'package', catalogueKey: 'wintips-rdj-catalogue-v1:package:essentiel_7d',
     availableOnGooglePlay: true, googleProductType: 'ONE_TIME_PRODUCT', googleProductId: newSku,
     duration: 1, categories: [newCategory], pricing: { USD: 2.5, EUR: 2.49 },
-    googleProductMigrations: [{ productId: oldSku, purchasedBefore: new Date(cutoff),
+    googleProductMigrations: [{ productId: oldSku, retiredAt: new Date(cutoff),
       duration: 1, categories: [oldCategory], pricing: { USD: 2.5, EUR: 10.99 } }] };
 }
 const paid = overrides => ({ purchaseState: 0, purchaseTimeMillis: String(cutoff - 1),
@@ -69,8 +69,8 @@ test('new checkout remains strictly bound to the active SKU and its current pric
   assert.deepEqual(h.state.subscriptions[0].categorySnapshot, [newCategory]);
 });
 
-test('a paid old-SKU receipt before or exactly at cutover activates the historical snapshot', async () => {
-  for (const time of [cutoff - 1, cutoff]) {
+test('a paid retired-SKU receipt preserves its snapshot, including a deferred payment completed after retirement', async () => {
+  for (const time of [cutoff - 1, cutoff, cutoff + 7 * 86400000]) {
     const h = harness({ data: paid({ purchaseTimeMillis: String(time) }) });
     await validate(h);
     assert.equal(h.calls.reads[0].productId, oldSku);
@@ -84,9 +84,9 @@ test('a paid old-SKU receipt before or exactly at cutover activates the historic
   }
 });
 
-test('retired purchases after cutover, pending, cancelled or without provider timestamp never grant access', async () => {
+test('retired pending, cancelled or unverified receipts never grant access', async () => {
   const invalid = [
-    { purchaseTimeMillis: String(cutoff + 1) }, { purchaseState: 2 }, { purchaseState: 1 },
+    { purchaseState: 2 }, { purchaseState: 1 },
     { purchaseTimeMillis: undefined }, { purchaseTimeMillis: 'invalid' },
     { purchaseTimeMillis: '' }, { purchaseTimeMillis: null }, { purchaseTimeMillis: '0' },
     { productId: 'a-different-product' },
@@ -104,7 +104,7 @@ test('unknown, ambiguous or incomplete historical configuration fails before a p
   for (const change of [
     pkg => { delete pkg.googleProductMigrations; },
     pkg => { pkg.googleProductMigrations.push({ ...pkg.googleProductMigrations[0] }); },
-    pkg => { pkg.googleProductMigrations[0].purchasedBefore = 'invalid'; },
+    pkg => { pkg.googleProductMigrations[0].retiredAt = 'invalid'; },
     pkg => { pkg.googleProductMigrations[0].duration = 0; },
     pkg => { pkg.googleProductMigrations[0].categories = []; },
     pkg => { pkg.googleProductMigrations[0].pricing = {}; },

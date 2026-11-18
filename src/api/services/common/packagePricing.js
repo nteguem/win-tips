@@ -44,6 +44,7 @@ function managedGooglePrice(pkg, productId, requestedCurrency) {
 
 // Historical bindings are private receipt-recovery snapshots. They are never
 // returned as available products and never make an old SKU a checkout target.
+// Disable the old Play purchase option before adding its retired binding.
 function managedGooglePurchase(pkg, productId, requestedCurrency) {
   if (pkg.googleProductId === productId) {
     return { pkg, price: managedGooglePrice(pkg, productId, requestedCurrency), migration: null };
@@ -52,8 +53,8 @@ function managedGooglePurchase(pkg, productId, requestedCurrency) {
     ? pkg.googleProductMigrations.filter(row => row.productId === productId) : [];
   if (matches.length !== 1) throw new Error('Produit Google Play incompatible avec ce forfait');
   const migration = matches[0];
-  const cutoff = new Date(migration.purchasedBefore).getTime();
-  if (!Number.isFinite(cutoff) || cutoff <= 0 || !Number.isFinite(migration.duration) || migration.duration <= 0 ||
+  const retiredAt = new Date(migration.retiredAt).getTime();
+  if (!Number.isFinite(retiredAt) || retiredAt <= 0 || !Number.isFinite(migration.duration) || migration.duration <= 0 ||
       !Array.isArray(migration.categories) || migration.categories.length === 0) {
     throw new Error('Migration Google Play historique incomplete');
   }
@@ -61,18 +62,19 @@ function managedGooglePurchase(pkg, productId, requestedCurrency) {
     googleProductId: productId, pricing: migration.pricing, duration: migration.duration,
     categories: migration.categories };
   return { pkg: snapshot, price: managedGooglePrice(snapshot, productId, requestedCurrency),
-    migration: { productId, purchasedBefore: cutoff } };
+    migration: { productId, retiredAt } };
 }
 
 function verifyGoogleMigrationReceipt(binding, data) {
   if (!binding.migration) return;
-  // Only Google's timestamp is evidence. Missing, malformed or post-cutover
-  // receipts cannot be repaired by trusting a client timestamp or an old cache.
+  // Retired products cannot start new checkouts. A legitimate deferred payment
+  // can complete after retirement; retiredAt is audit metadata, not a payment
+  // deadline. Only Google's paid receipt and timestamp are evidence.
   const raw = data.purchaseTimeMillis;
   const time = typeof raw === 'number' || (typeof raw === 'string' && /^\d+$/.test(raw)) ? Number(raw) : NaN;
   if (data.purchaseState !== 0 || (data.productId && data.productId !== binding.migration.productId) ||
-      !Number.isSafeInteger(time) || time <= 0 || time > binding.migration.purchasedBefore) {
-    throw new Error('Achat Google Play historique non confirme avant la migration');
+      !Number.isSafeInteger(time) || time <= 0) {
+    throw new Error('Achat Google Play historique non confirme');
   }
 }
 module.exports = { currencyCode, priceFor, canPurchaseInCurrency, validateExplicitPricing, validPrecision, isManagedCatalogue, managedGooglePrice,

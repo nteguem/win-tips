@@ -158,11 +158,11 @@ const packageSchema = new mongoose.Schema({
     sparse: true  // Permet d'avoir plusieurs null mais empêche les doublons si valeur
   },
 
-  // Private snapshots for receipts paid before a Google product replacement.
+  // Private snapshots for retired Google products, including deferred payments.
   // Checkout still exposes only googleProductId, never these retired bindings.
   googleProductMigrations: { type: [new mongoose.Schema({
     productId: { type: String, required: true, trim: true },
-    purchasedBefore: { type: Date, required: true },
+    retiredAt: { type: Date, required: true },
     duration: { type: Number, required: true, min: 0.000001 },
     categories: [{ type: mongoose.Schema.ObjectId, ref: 'Category' }],
     pricing: { type: Map, of: Number, required: true },
