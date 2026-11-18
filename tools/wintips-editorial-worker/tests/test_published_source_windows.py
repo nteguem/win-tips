@@ -228,7 +228,8 @@ class PublishedSourceWindowTests(unittest.TestCase):
             self.assertEqual(report['publishedSources'], [PETIT, TURF])
             self.assertEqual(report['failedSources'], [])
             self.assertFalse(report['published'])
-            self.assertEqual([r['status'] for r in report['sources'][:2]], ['outside_publication_window'] * 2)
+            self.assertEqual([r['status'] for r in report['sources'][:2]],
+                ['outside_publication_window', 'published_snapshot_preserved'])
             self.assertEqual(collect.call_count, 1)
             self.assertEqual(collect.call_args.args[0], 'rdj_multisport_analysis')
             self.assertEqual(collect.call_args.kwargs['exclude_ids'], {'5795487', '5803298'})

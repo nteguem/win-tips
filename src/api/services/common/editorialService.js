@@ -43,7 +43,7 @@ async function publishedSourceWindows(repository, categories, editionDate, insta
         const item = normalizeItem(row.payload, source, editionDate);
         // Inventory proves source identities and clocks. Existing publication
         // remains valid even when an English translation is unavailable.
-        if (source === 'rdj_petit_journal' && item.kind === 'article')
+        if (WINDOW_SOURCES.includes(source) && item.kind === 'article')
           return { sourceId: item.sourceId, sourceUrl: item.sourceUrl, kind: 'article', startsAtUtc: null };
         if (!item.startsAtUtc || new Date(row.startsAtUtc).toISOString() !== item.startsAtUtc || item.status !== 'upcoming') throw new Error('clock');
         return { sourceId: item.sourceId, sourceUrl: item.sourceUrl, kind: item.kind, startsAtUtc: item.startsAtUtc,

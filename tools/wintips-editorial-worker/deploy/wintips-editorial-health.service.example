@@ -1,0 +1,18 @@
+[Unit]
+Description=WinTips Free and VIP editorial publication health
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/var/www/wintips/api/tools/wintips-editorial-worker
+ExecStart=/usr/bin/python3 -B -m editorial_worker.health --output /var/lib/wintips-editorial-worker --scope all
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+RestrictSUIDSGID=true
+MemoryMax=128M
+CPUQuota=25%
+TimeoutStartSec=30

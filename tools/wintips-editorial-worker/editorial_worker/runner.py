@@ -36,7 +36,7 @@ def run_summary(report):
     Ordinary publisher absence is a completed check, not a fabricated failure.
     """
     published, failed = [], []
-    failed_states = {'source_incomplete', 'source_blocked', 'translation_blocked',
+    failed_states = {'source_empty', 'source_incomplete', 'source_blocked', 'translation_blocked',
                      'import_blocked', 'deferred_shared_window'}
     for row in report.get('sources', []):
         source = row.get('source')
@@ -369,6 +369,60 @@ def published_source_window(source, configured, edition, fetcher, now, lead=30):
         return None
 
 
+def published_quinte_snapshot(configured, edition, now):
+    """Preserve the first Quinté using the API's hash-validated inventory.
+
+    BigWin freezes an existing packet; WinTips' authoritative equivalent is
+    its authenticated published inventory. No race clock or public-page fetch
+    is needed to preserve either an old structured race or a new text article.
+    """
+    if configured is None:
+        return None
+    reason = 'quinte_authoritative_publication_state_unavailable'
+    if configured.get('date') != edition or edition_day(now).isoformat() != edition:
+        raise ValueError(reason)
+    mappings = [row for row in configured.get('sources', []) if row.get('key') == 'rdj_turf_quinte']
+    state = configured.get('publishedSourceWindows')
+    if not isinstance(state, dict):
+        return None
+    if (len(mappings) != 1 or mappings[0].get('access') != 'free'
+            or state.get('version') != 'published-source-windows-v1'
+            or state.get('editionDate') != edition
+            or abs((iso(state.get('checkedAtUtc')) - now).total_seconds()) > 300):
+        raise ValueError(reason)
+    windows = [row for row in state.get('sources', []) if row.get('source') == 'rdj_turf_quinte']
+    if len(windows) != 1 or windows[0].get('ready') is not True:
+        if mappings[0].get('editorialCopyState', {}).get('state') == 'frozen':
+            raise ValueError(reason)
+        return None
+    window = windows[0]
+    category = window.get('categoryId')
+    items = window.get('items')
+    if (not isinstance(category, str) or not re.fullmatch(r'[a-fA-F0-9]{24}', category)
+            or mappings[0].get('categoryIds') != [category]
+            or type(window.get('count')) is not int or window['count'] != 1
+            or not isinstance(items, list) or len(items) != 1):
+        raise ValueError(reason)
+    item = items[0]
+    identity = RACE_PATH.fullmatch(urlsplit(source_url(item.get('sourceUrl'))).path)
+    if (identity is None or datetime.strptime(identity[1], '%d-%m-%Y').date().isoformat() != edition
+            or item.get('sourceId') != f'{edition}-R{int(identity[2])}C{int(identity[3])}'
+            or item.get('kind') not in {'article', 'horse_racing'}):
+        raise ValueError(reason)
+    if item['kind'] == 'article':
+        if item.get('startsAtUtc') is not None or window.get('latestStartsAtUtc') is not None:
+            raise ValueError(reason)
+    elif (item.get('race') != {'meetingNumber': int(identity[2]), 'raceNumber': int(identity[3])}
+            or iso(item.get('startsAtUtc')) != iso(window.get('latestStartsAtUtc'))):
+        raise ValueError(reason)
+    return {'version': state['version'], 'editionDate': edition, 'categoryId': category,
+        'sourceIds': [item['sourceId']], 'publishedCount': 1, 'verified': True,
+        'checkedAtUtc': state['checkedAtUtc'],
+        'apiInventorySha256': hashlib.sha256(json.dumps(window, sort_keys=True,
+            ensure_ascii=False, separators=(',', ':')).encode('utf-8')).hexdigest(),
+        'reason': 'published_quinte_snapshot_preserved'}
+
+
 @contextmanager
 def single_run(directory):
     path = Path(directory)
@@ -479,7 +533,14 @@ def validate_item(item, source, edition, now, lead):
                 "rdj_football_duo": COMBI_PATH, "rdj_football_goals": COMBI_PATH}
     if re.fullmatch(patterns[source], path) is None:
         raise ValueError("source_url_does_not_match_adapter")
-    article = source == 'rdj_petit_journal' and item.get('kind') == 'article'
+    article = source in {'rdj_petit_journal', 'rdj_turf_quinte'} and item.get('kind') == 'article'
+    if article and source == 'rdj_turf_quinte' and edition_day(now).isoformat() != edition:
+        raise ValueError('item_outside_edition_day')
+    if source == 'rdj_turf_quinte':
+        identity = RACE_PATH.fullmatch(path)
+        if (datetime.strptime(identity[1], '%d-%m-%Y').date().isoformat() != edition
+                or item['sourceId'] != f'{edition}-R{int(identity[2])}C{int(identity[3])}'):
+            raise ValueError('item_race_identity_conflict')
     if not article and (not eligible(item, edition, now, lead) or item.get("status") != "upcoming"):
         raise ValueError("item_outside_publication_window")
     if not item.get("title", {}).get("fr") or not item.get("analysis", {}).get("fr"):
@@ -580,6 +641,7 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
     # The new native coupon has its own bounded timer. Existing RDJ jobs must
     # neither collect it twice nor spend their source/translation budget on it.
     selected = [key for key in SOURCES if key != 'wintips_daily_vip'] if not args.source else list(dict.fromkeys(args.source))
+    report_scope = 'vip' if args.source and set(args.source) == {'wintips_daily_vip'} else 'free'
     if any(source not in SOURCES for source in selected):
         raise ValueError("unknown_source")
     # Free IDs must be known before VIP collection; the basic Duo owns its
@@ -606,6 +668,7 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
     report = {"editionDate": edition, "editionTimezone": EDITION_TIMEZONE, "mode": "publish" if args.publish else "dry_run", "notificationsSent": False,
               'bilingualRequired': bilingual, 'notificationsAccepted': 0,
               "startedAtUtc": instant.isoformat(), "sources": [], "published": False}
+    report.update(reportScope=report_scope, selectedSources=list(selected))
     seen_free = set()
     prior = output / "editions" / edition / "rdj_petit_journal.json"
     if prior.is_file():
@@ -642,13 +705,16 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
                         report['sources'].append({'source': source, 'status': 'published_snapshot_preserved', 'itemCount': 0,
                             'issues': [], 'imported': False, 'publishedSnapshot': {'verified': True, 'sourceId': state['sourceId']}})
                         continue
-                snapshot = published_petit_snapshot(configured, edition, instant) if source == 'rdj_petit_journal' else None
+                snapshot = (published_petit_snapshot(configured, edition, instant) if source == 'rdj_petit_journal'
+                    else published_quinte_snapshot(configured, edition, instant) if source == 'rdj_turf_quinte' else None)
                 if snapshot is not None:
-                    seen_free.update(snapshot['sourceIds'])
+                    if source == 'rdj_petit_journal':
+                        seen_free.update(snapshot['sourceIds'])
                     report['sources'].append({'source': source, 'status': 'published_snapshot_preserved', 'itemCount': 0,
                         'issues': [], 'imported': False, 'publishedSnapshot': snapshot})
                     continue
-                closed = published_source_window(source, configured, edition, fetched, instant, args.minimum_lead_minutes)
+                closed = (None if source == 'rdj_turf_quinte' else
+                    published_source_window(source, configured, edition, fetched, instant, args.minimum_lead_minutes))
                 if closed is not None:
                     if source == 'rdj_petit_journal':
                         seen_free.update(closed['sourceIds'])
@@ -707,7 +773,12 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
         # source run (including its notification drain). Native-only runs have
         # no shared model or translation dependency.
         legacy_delivery_window = not (args.source and set(args.source) == {'wintips_daily_vip'})
-        if (bilingual and legacy_delivery_window and os.environ.get('WINTIPS_EDITORIAL_MANAGE_MODEL') == 'true' and
+        # Native text already used BigWin's bounded translator during collection;
+        # it must not wait for the retired shared-model admission window.
+        needs_legacy_translation = not collected or any(source != 'wintips_daily_vip'
+            and any(item.get('kind') != 'article' for item in payload['items'])
+            for source, payload, _ in collected)
+        if (bilingual and legacy_delivery_window and needs_legacy_translation and os.environ.get('WINTIPS_EDITORIAL_MANAGE_MODEL') == 'true' and
                 os.environ.get('WINTIPS_EDITORIAL_TRANSLATOR', 'ollama') not in {'azure', 'gemini'}):
             from .model_runtime import RuntimeDeferred, require_admission
             try:
@@ -731,7 +802,12 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
                     final_file = output / 'editions' / edition / (source + '.json')
                     write_json(final_file, payload)
                     row.update(payloadFile=str(final_file), bilingual=True, translationPolicy='native-labels-no-prose-v1')
-                elif bilingual and not all(item.get('kind') == 'article' for item in payload['items']):
+                elif all(item.get('kind') == 'article' for item in payload['items']):
+                    final_file = output / 'editions' / edition / (source + '.json')
+                    write_json(final_file, payload)
+                    row.update(payloadFile=str(final_file), bilingual=True,
+                        translationPolicy='shared-bigwin-editorial-text-v1')
+                elif bilingual:
                     from .translation import translate_batch, require_bilingual, SourceFallbackTranslator
                     if translator is None:
                         try:
@@ -909,7 +985,10 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
         report["sourceEvidence"] = getattr(fetched, "records", [])
         report["completedAtUtc"] = datetime.now(timezone.utc).isoformat()
         report.update(run_summary(report))
-        write_json(output / "last-run.json", report)
+        write_json(output / ('last-run-' + report_scope + '.json'), report)
+        if report_scope == 'free':
+            # VIP's separate five-minute timer must never hide a Free failure.
+            write_json(output / "last-run.json", report)
     return report
 
 

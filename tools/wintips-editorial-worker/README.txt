@@ -1,3 +1,25 @@
+QUINTE TEXT PARITY - 2026-11-19
+The active WinTips Quinté adapter imports the exact versioned BigWin
+journal_worker.editorial_horse_source and text_translation modules through
+WINTIPS_JOURNAL_TEXT_CODE_ROOT (the existing shared journal code root).
+It does not copy the parser or call the old structured-race collector. The
+publisher's dated course and its own linked editorial article identify the
+edition. Race time, live status, runners and a numeric selection are optional
+display data, never prerequisites for publishing editorial text.
+The API accepts this source as an article with sport=horse_racing throughout
+the current Europe/Paris edition day. Canonical URL/date/R-C/sourceId, plain
+text/schema and full analysis checks remain enforced. Legacy horse_racing
+payloads and VIP validation remain unchanged. Existing published Quinté rows
+are preserved using the authenticated hash-validated API inventory, without
+re-importing or resending them for verification.
+Free and native VIP timers now write last-run-free.json and last-run-vip.json
+separately. Only Free updates the compatibility last-run.json. Health checks
+must not report a failed Free collection as healthy because VIP ran later.
+The versioned editorial-health service/timer templates run that read-only
+check every five minutes. health-worker.conf.example is a drop-in for both
+existing workers, triggering health after success OR failure. It neither
+restarts collection nor imports content or sends test notifications.
+
 PETIT JOURNAL RECOVERY - 2026-11-10
 The reviewed shared hub can explicitly enable
 RDJ_PETIT_PUBLICATION_POLICY=upcoming-verified-cards-v1 for both workers through

@@ -1,0 +1,5 @@
+# Install as a drop-in for BOTH existing Free and VIP worker services.
+# OnFailure also covers an unsuccessful collection; ExecStartPost would not.
+[Unit]
+OnSuccess=wintips-editorial-health.service
+OnFailure=wintips-editorial-health.service

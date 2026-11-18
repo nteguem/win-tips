@@ -179,6 +179,14 @@ function verifyIdentity(item, leg) {
   const url = new URL(item.sourceUrl);
   if (item.source === 'basketusa_nba') {
     if (leg || item.kind !== 'match' || !/^basketusa_[a-f0-9]{32}$/.test(item.sourceId)) throw failure('Identite NBA Basket USA invalide');
+  } else if (item.source === 'rdj_turf_quinte' && item.kind === 'article') {
+    // The native text collector binds the complete article to its dated course,
+    // without parsing live runners, race results or the time of departure.
+    const route = url.pathname.match(/\/course\/(\d{2})-(\d{2})-(\d{4})\/R(\d+)\/C(\d+)\//);
+    if (leg || !route || `${route[3]}-${route[2]}-${route[1]}` !== item.editionDate ||
+        Number(route[4]) < 1 || Number(route[4]) > 99 || Number(route[5]) < 1 || Number(route[5]) > 99 ||
+        item.sourceId !== `${item.editionDate}-R${Number(route[4])}C${Number(route[5])}`)
+      throw failure('Identite ou date de course incoherente avec la fiche RDJ');
   } else if (item.kind === 'horse_racing') {
     const route = url.pathname.match(/\/course\/(\d{2})-(\d{2})-(\d{4})\/R(\d+)\/C(\d+)\//);
     if (!route || `${route[3]}-${route[2]}-${route[1]}` !== item.editionDate || Number(route[4]) !== item.race.meetingNumber || Number(route[5]) !== item.race.raceNumber || item.sourceId !== `${item.editionDate}-R${Number(route[4])}C${Number(route[5])}`) throw failure('Identite ou date de course incoherente avec la fiche RDJ');
@@ -255,9 +263,12 @@ function normalizeItem(input, source, editionDate, leg = false) {
     if (input.competition.logo) normalized.competition.logo = image(input.competition.logo, 'competition.logo');
   }
   if (input.kind === 'article') {
-    if (source !== 'rdj_petit_journal' || leg || input.startsAtUtc != null || input.legs || input.race
+    if (!['rdj_petit_journal', 'rdj_turf_quinte'].includes(source) || leg || input.startsAtUtc != null || input.legs || input.race
       || input.scheduleProof || input.clockReconciliation || input.editionConvention || input.curation)
-      throw failure('Un article du Petit Journal est du texte editorial, sans resultat ni horaire requis');
+      throw failure(source === 'rdj_turf_quinte'
+        ? 'Un article du Quinte est du texte editorial, sans resultat ni horaire requis'
+        : 'Un article du Petit Journal est du texte editorial, sans resultat ni horaire requis');
+    if (source === 'rdj_turf_quinte' && normalized.sport.key !== 'horse_racing') throw failure('Sport hippique requis');
     normalized.status = 'unknown';
     if (input.teams) normalized.teams = { home: team(input.teams.home, 'home'), away: team(input.teams.away, 'away') };
     if (/<\s*\/?[a-z!]/i.test(JSON.stringify(normalized.analysis))) throw failure('Le journal doit contenir du texte sans HTML');
@@ -352,7 +363,7 @@ function validateBatch(body, now = new Date()) {
     throw failure('Lot NBA futur ou trop volumineux');
   const earliest = now.getTime() + 30 * 60 * 1000;
   for (const item of items) {
-    if (item.kind === 'article' && source.key === 'rdj_petit_journal') continue;
+    if (item.kind === 'article' && ['rdj_petit_journal', 'rdj_turf_quinte'].includes(source.key)) continue;
     const events = item.kind === 'combine' ? item.legs : [item];
     for (const event of events) {
       if (!event.startsAtUtc || new Date(event.startsAtUtc).getTime() < earliest || event.status !== 'upcoming') throw failure('Publication requise au moins 30 minutes avant chaque depart verifie');

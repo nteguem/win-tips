@@ -9,6 +9,12 @@ from editorial_worker import runner
 
 
 class RunSummaryTests(unittest.TestCase):
+    def test_dated_source_without_editorial_text_is_a_visible_failure(self):
+        result = runner.run_summary({'mode': 'publish', 'sources': [
+            {'source': 'rdj_turf_quinte', 'status': 'source_empty', 'itemCount': 0, 'imported': False}]})
+        self.assertTrue(result['blocked'])
+        self.assertEqual(result['failedSources'], ['rdj_turf_quinte'])
+
     def test_source_absence_and_closed_unpublished_window_are_completed_checks(self):
         report = {'mode': 'publish', 'published': False, 'sources': [
             {'source': 'rdj_petit_journal', 'status': 'source_absent', 'itemCount': 0},

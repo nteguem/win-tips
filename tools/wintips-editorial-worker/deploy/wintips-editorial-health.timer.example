@@ -1,0 +1,10 @@
+[Unit]
+Description=Check WinTips Free and VIP editorial reports every five minutes
+
+[Timer]
+OnCalendar=*-*-* *:00/5:30
+Persistent=true
+Unit=wintips-editorial-health.service
+
+[Install]
+WantedBy=timers.target

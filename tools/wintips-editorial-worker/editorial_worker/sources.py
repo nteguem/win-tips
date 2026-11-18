@@ -1334,7 +1334,11 @@ def collect(source, edition, fetcher, *, now, lead=30, exclude_ids=None, exclude
     kwargs = {"now": now, "resolver": resolver, "lead": lead}
     if source in {"rdj_football_analysis", "rdj_multisport_analysis", "rdj_football_duo", "rdj_football_goals", "rdj_football_combine"}:
         kwargs["exclude_ids"] = exclude_ids
-    adapters = {"rdj_petit_journal": collect_petit, "rdj_turf_quinte": collect_turf,
+    # The active BigWin job reads the publisher's dated editorial prose. Keep
+    # collect_turf/_collect_turf_uncached intact for their legacy hub callers;
+    # this transport must use the same native collector as BigWin instead.
+    from .plain_quinte import collect_turf_text
+    adapters = {"rdj_petit_journal": collect_petit, "rdj_turf_quinte": collect_turf_text,
                 "rdj_football_analysis": collect_football, "rdj_football_combine": collect_combine,
                 "rdj_football_duo": collect_combine, "rdj_football_goals": collect_combine,
                 "rdj_multisport_analysis": collect_multisport}
