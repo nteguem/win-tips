@@ -41,4 +41,39 @@ function managedGooglePrice(pkg, productId, requestedCurrency) {
   // Keep the configured reference explicit; do not claim Google proved it.
   return { amount, currency, source: 'configured_catalogue_reference' };
 }
-module.exports = { currencyCode, priceFor, canPurchaseInCurrency, validateExplicitPricing, validPrecision, isManagedCatalogue, managedGooglePrice };
+
+// Historical bindings are private receipt-recovery snapshots. They are never
+// returned as available products and never make an old SKU a checkout target.
+function managedGooglePurchase(pkg, productId, requestedCurrency) {
+  if (pkg.googleProductId === productId) {
+    return { pkg, price: managedGooglePrice(pkg, productId, requestedCurrency), migration: null };
+  }
+  const matches = isManagedCatalogue(pkg) && Array.isArray(pkg.googleProductMigrations)
+    ? pkg.googleProductMigrations.filter(row => row.productId === productId) : [];
+  if (matches.length !== 1) throw new Error('Produit Google Play incompatible avec ce forfait');
+  const migration = matches[0];
+  const cutoff = new Date(migration.purchasedBefore).getTime();
+  if (!Number.isFinite(cutoff) || cutoff <= 0 || !Number.isFinite(migration.duration) || migration.duration <= 0 ||
+      !Array.isArray(migration.categories) || migration.categories.length === 0) {
+    throw new Error('Migration Google Play historique incomplete');
+  }
+  const snapshot = { ...(typeof pkg.toObject === 'function' ? pkg.toObject() : pkg),
+    googleProductId: productId, pricing: migration.pricing, duration: migration.duration,
+    categories: migration.categories };
+  return { pkg: snapshot, price: managedGooglePrice(snapshot, productId, requestedCurrency),
+    migration: { productId, purchasedBefore: cutoff } };
+}
+
+function verifyGoogleMigrationReceipt(binding, data) {
+  if (!binding.migration) return;
+  // Only Google's timestamp is evidence. Missing, malformed or post-cutover
+  // receipts cannot be repaired by trusting a client timestamp or an old cache.
+  const raw = data.purchaseTimeMillis;
+  const time = typeof raw === 'number' || (typeof raw === 'string' && /^\d+$/.test(raw)) ? Number(raw) : NaN;
+  if (data.purchaseState !== 0 || (data.productId && data.productId !== binding.migration.productId) ||
+      !Number.isSafeInteger(time) || time <= 0 || time > binding.migration.purchasedBefore) {
+    throw new Error('Achat Google Play historique non confirme avant la migration');
+  }
+}
+module.exports = { currencyCode, priceFor, canPurchaseInCurrency, validateExplicitPricing, validPrecision, isManagedCatalogue, managedGooglePrice,
+  managedGooglePurchase, verifyGoogleMigrationReceipt };

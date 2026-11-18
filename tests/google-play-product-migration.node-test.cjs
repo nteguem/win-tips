@@ -1,0 +1,159 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+const pricing = require('../src/api/services/common/packagePricing');
+const activation = require('../src/api/services/common/managedGoogleActivation');
+
+const oldSku = 'com.wintips.essentiel_7days_v1', newSku = 'com.wintips.black_friday_1day_v1';
+const cutoff = Date.parse('2026-11-18T03:00:00Z');
+const oldCategory = '691b1dd577e0912523aab901', newCategory = '691b1dd577e0912523aab902';
+function offer() {
+  return { _id: 'package', catalogueKey: 'wintips-rdj-catalogue-v1:package:essentiel_7d',
+    availableOnGooglePlay: true, googleProductType: 'ONE_TIME_PRODUCT', googleProductId: newSku,
+    duration: 1, categories: [newCategory], pricing: { USD: 2.5, EUR: 2.49 },
+    googleProductMigrations: [{ productId: oldSku, purchasedBefore: new Date(cutoff),
+      duration: 1, categories: [oldCategory], pricing: { USD: 2.5, EUR: 10.99 } }] };
+}
+const paid = overrides => ({ purchaseState: 0, purchaseTimeMillis: String(cutoff - 1),
+  acknowledgementState: 1, consumptionState: 0, orderId: 'TEST_ORDER', ...overrides });
+
+// Exercise the real service and transactional activation with a small in-memory
+// persistence adapter; Google is mocked, so no real purchase or API is called.
+function harness({ pkg = offer(), data = paid() } = {}) {
+  const state = { transactions: [], subscriptions: [] };
+  const calls = { reads: [], consume: 0, acknowledge: 0, sessions: 0 };
+  function query(read) {
+    return { session: async () => read(), populate: async () => read(),
+      then: (resolve, reject) => Promise.resolve(read()).then(resolve, reject) };
+  }
+  const transactions = {
+    db: { startSession: async () => ({ withTransaction: async fn => { calls.sessions++; await fn(); }, endSession: async () => {} }) },
+    findOne: criteria => query(() => state.transactions.find(row => row.purchaseToken === criteria.purchaseToken)),
+    create: async rows => { state.transactions.push(...rows); return rows; },
+    updateOne: async (criteria, update) => Object.assign(state.transactions.find(row => row._id === criteria._id), update.$set),
+    findOneAndUpdate: async (criteria, update) => Object.assign(state.transactions.find(row => row.purchaseToken === criteria.purchaseToken), update),
+  };
+  const subscriptions = {
+    findById: id => query(() => state.subscriptions.find(row => row._id === id)),
+    create: async rows => rows.map(row => { const result = { ...row, _id: 'subscription-' + (state.subscriptions.length + 1) }; state.subscriptions.push(result); return result; }),
+  };
+  const dependencies = {
+    googleapis: { google: { auth: { GoogleAuth: class {} }, androidpublisher: () => ({ purchases: { products: {
+      get: async payload => { calls.reads.push(payload); return { data }; },
+      consume: async () => { calls.consume++; }, acknowledge: async () => { calls.acknowledge++; },
+    } } }) } },
+    '../../models/common/Package': { findById: async () => pkg },
+    '../../models/common/Subscription': subscriptions,
+    '../../models/user/GooglePlayTransaction': transactions,
+    '../common/packagePricing': pricing, '../common/managedGoogleActivation': activation,
+  };
+  const module = { exports: {} };
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../src/api/services/user/GooglePlayService.js'), 'utf8'), {
+    module, process: { env: { GOOGLE_PLAY_PACKAGE_NAME: 'test.only.wintips' } },
+    console: { log() {}, error() {}, warn() {} }, require: key => dependencies[key],
+  });
+  return { service: module.exports, state, calls, pkg, data };
+}
+const validate = (h, sku = oldSku, currency = 'EUR', user = 'owner') =>
+  h.service.validateOneTimePurchase('TEST_PRIVATE_TOKEN', sku, user, 'package', currency);
+
+test('new checkout remains strictly bound to the active SKU and its current price', async () => {
+  const h = harness();
+  assert.throws(() => pricing.managedGooglePrice(h.pkg, oldSku, 'EUR'), /non configure/);
+  assert.equal(h.pkg.googleProductId, newSku);
+  await validate(h, newSku, 'USD');
+  assert.equal(h.calls.reads[0].productId, newSku);
+  assert.equal(h.state.subscriptions[0].pricing.amount, 2.5);
+  assert.deepEqual(h.state.subscriptions[0].categorySnapshot, [newCategory]);
+});
+
+test('a paid old-SKU receipt before or exactly at cutover activates the historical snapshot', async () => {
+  for (const time of [cutoff - 1, cutoff]) {
+    const h = harness({ data: paid({ purchaseTimeMillis: String(time) }) });
+    await validate(h);
+    assert.equal(h.calls.reads[0].productId, oldSku);
+    assert.equal(h.state.transactions.length, 1); assert.equal(h.state.subscriptions.length, 1);
+    const sub = h.state.subscriptions[0], tx = h.state.transactions[0];
+    assert.equal(sub.pricing.amount, 10.99); assert.equal(sub.pricing.currency, 'EUR');
+    assert.equal(tx.priceAmountMicros, 10990000);
+    assert.equal(+sub.endDate - +sub.startDate, 86400000);
+    assert.deepEqual(sub.categorySnapshot, [oldCategory]);
+    assert.equal(h.pkg.pricing.EUR, 2.49); assert.deepEqual(h.pkg.categories, [newCategory]);
+  }
+});
+
+test('retired purchases after cutover, pending, cancelled or without provider timestamp never grant access', async () => {
+  const invalid = [
+    { purchaseTimeMillis: String(cutoff + 1) }, { purchaseState: 2 }, { purchaseState: 1 },
+    { purchaseTimeMillis: undefined }, { purchaseTimeMillis: 'invalid' },
+    { purchaseTimeMillis: '' }, { purchaseTimeMillis: null }, { purchaseTimeMillis: '0' },
+    { productId: 'a-different-product' },
+  ];
+  for (const change of invalid) {
+    const h = harness({ data: paid(change) });
+    await assert.rejects(validate(h), /historique non confirme/);
+    assert.equal(h.calls.reads.length, 1); assert.equal(h.calls.sessions, 0);
+    assert.equal(h.state.transactions.length, 0); assert.equal(h.state.subscriptions.length, 0);
+    assert.equal(h.calls.consume, 0);
+  }
+});
+
+test('unknown, ambiguous or incomplete historical configuration fails before a provider call', async () => {
+  for (const change of [
+    pkg => { delete pkg.googleProductMigrations; },
+    pkg => { pkg.googleProductMigrations.push({ ...pkg.googleProductMigrations[0] }); },
+    pkg => { pkg.googleProductMigrations[0].purchasedBefore = 'invalid'; },
+    pkg => { pkg.googleProductMigrations[0].duration = 0; },
+    pkg => { pkg.googleProductMigrations[0].categories = []; },
+    pkg => { pkg.googleProductMigrations[0].pricing = {}; },
+  ]) {
+    const pkg = offer(); change(pkg); const h = harness({ pkg });
+    await assert.rejects(validate(h));
+    assert.equal(h.calls.reads.length, 0); assert.equal(h.calls.sessions, 0);
+  }
+});
+
+test('receipt recovery and repeated validation preserve original price, dates, expiry and entitlement', async () => {
+  const h = harness(); await validate(h);
+  h.state.subscriptions[0].status = 'expired'; h.state.transactions[0].status = 'EXPIRED';
+  const original = JSON.stringify(h.state);
+  h.data.consumptionState = 1;
+  const beforeConsume = h.calls.consume;
+  const restored = await validate(h);
+  await validate(h);
+  assert.equal(JSON.stringify(h.state), original);
+  assert.equal(restored.data.subscription.status, 'expired');
+  assert.equal(h.state.subscriptions.length, 1); assert.equal(h.state.transactions.length, 1);
+  assert.equal(h.calls.consume, beforeConsume, 'already consumed purchases are not consumed twice');
+});
+
+test('historical tokens cannot be replayed by another user, package or product', async () => {
+  for (const field of ['user', 'package', 'productId']) {
+    const h = harness(); await validate(h);
+    h.state.transactions[0][field] = 'foreign';
+    const original = JSON.stringify(h.state);
+    await assert.rejects(validate(h), /autre activation/);
+    assert.equal(JSON.stringify(h.state), original);
+    assert.equal(h.state.subscriptions.length, 1);
+  }
+});
+
+test('other packages keep their original strict product binding and unmanaged pricing behavior', () => {
+  const managed = offer(); delete managed.googleProductMigrations;
+  assert.throws(() => pricing.managedGooglePurchase(managed, oldSku, 'EUR'), /incompatible/);
+  const legacy = { googleProductId: 'legacy' };
+  assert.deepEqual(pricing.managedGooglePurchase(legacy, 'legacy', 'USD'), { pkg: legacy, price: null, migration: null });
+  assert.throws(() => pricing.managedGooglePurchase(legacy, 'other', 'USD'), /incompatible/);
+});
+
+test('historical mappings are private in localized catalogue and populated package JSON', () => {
+  const Package = require('../src/api/models/common/Package');
+  const pkg = new Package({ ...offer(), _id: 'c97d577e0912523aab9f1bfb', name: { fr: 'Black Friday', en: 'Black Friday' } });
+  assert.equal(pkg.googleProductMigrations.length, 1);
+  assert.equal(pkg.formatForLanguage('fr').googleProductMigrations, undefined);
+  assert.equal(pkg.formatForLanguage('en').googleProductMigrations, undefined);
+  assert.equal(pkg.toJSON().googleProductMigrations, undefined);
+  assert.equal(pkg.formatForLanguage('fr').googleProductId, newSku);
+});

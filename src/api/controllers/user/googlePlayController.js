@@ -66,7 +66,7 @@ exports.validateOneTimePurchase = catchAsync(async (req, res, next) => {
   if (!packageItem.isGooglePlayOneTimeProduct()) {
     return next(new AppError('Ce package n\'est pas un produit ponctuel Google Play', 400));
   }
-  try { require('../../services/common/packagePricing').managedGooglePrice(packageItem, productId, currency); }
+  try { require('../../services/common/packagePricing').managedGooglePurchase(packageItem, productId, currency); }
   catch (error) { return next(new AppError(error.message, 400)); }
 
   // Valider l'achat

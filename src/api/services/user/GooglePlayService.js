@@ -2,7 +2,7 @@ const { google } = require('googleapis');
 const GooglePlayTransaction = require('../../models/user/GooglePlayTransaction');
 const Subscription = require('../../models/common/Subscription');
 const Package = require('../../models/common/Package');
-const { managedGooglePrice } = require('../common/packagePricing');
+const { managedGooglePurchase, verifyGoogleMigrationReceipt } = require('../common/packagePricing');
 const { createManagedGoogleActivation, assertBinding } = require('../common/managedGoogleActivation');
 
 // Provider errors may carry the purchase token in their URL/body. Log only
@@ -39,8 +39,8 @@ class GooglePlayService {
     try {
       const packageItem = await Package.findById(packageId);
       if (!packageItem) throw new Error('Package non trouvé');
-      if (packageItem.googleProductId !== productId) throw new Error('Produit Google Play incompatible avec ce forfait');
-      const configuredPrice = managedGooglePrice(packageItem, productId, requestedCurrency);
+      const binding = managedGooglePurchase(packageItem, productId, requestedCurrency);
+      const configuredPrice = binding.price;
       console.log('[GooglePlay ONE-TIME] Début validation:', { productId, packageId });
       
       // 1. Vérifier avec l'API Google (API products v1, pas v2)
@@ -53,17 +53,20 @@ class GooglePlayService {
       if (!data) {
         throw new Error('Réponse invalide de Google Play');
       }
+      verifyGoogleMigrationReceipt(binding, data);
       if (configuredPrice && (data.purchaseState !== 0 || (data.productId && data.productId !== productId))) throw new Error('Achat Google non confirme pour ce produit');
 
       if (configuredPrice) {
         const subscription = await createManagedGoogleActivation({ GooglePlayTransaction, Subscription })({
-          purchaseToken, productId, userId, packageId, pkg: packageItem, price: configuredPrice, data,
+          purchaseToken, productId, userId, packageId, pkg: binding.pkg, price: configuredPrice, data,
           appPackageName: process.env.GOOGLE_PLAY_PACKAGE_NAME,
         });
         // Failure here cannot orphan the entitlement; the exact token can be
         // retried without a second subscription or a second entitlement grant.
-        if (data.acknowledgementState !== 1) await this.acknowledgeAndConsumeOneTimePurchase(purchaseToken, productId);
-        else await this.consumeOneTimePurchase(purchaseToken, productId);
+        if (data.consumptionState !== 1) {
+          if (data.acknowledgementState !== 1) await this.acknowledgeAndConsumeOneTimePurchase(purchaseToken, productId);
+          else await this.consumeOneTimePurchase(purchaseToken, productId);
+        }
         return { success: true, data: { subscription, message: 'Produit active avec succes' } };
       }
 

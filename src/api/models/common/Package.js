@@ -158,6 +158,16 @@ const packageSchema = new mongoose.Schema({
     sparse: true  // Permet d'avoir plusieurs null mais empêche les doublons si valeur
   },
 
+  // Private snapshots for receipts paid before a Google product replacement.
+  // Checkout still exposes only googleProductId, never these retired bindings.
+  googleProductMigrations: { type: [new mongoose.Schema({
+    productId: { type: String, required: true, trim: true },
+    purchasedBefore: { type: Date, required: true },
+    duration: { type: Number, required: true, min: 0.000001 },
+    categories: [{ type: mongoose.Schema.ObjectId, ref: 'Category' }],
+    pricing: { type: Map, of: Number, required: true },
+  }, { _id: false })], default: undefined },
+
   googlePlanId: {
     monthly: {
       type: String,
@@ -368,6 +378,7 @@ packageSchema.methods.formatForLanguage = function(lang = 'fr') {
 packageSchema.methods.toJSON = function() {
   const packageObj = this.toObject();
   delete packageObj.__v;
+  delete packageObj.googleProductMigrations;
   
   // Convertir les Maps en objets normaux pour le JSON
   if (packageObj.pricing instanceof Map) {
