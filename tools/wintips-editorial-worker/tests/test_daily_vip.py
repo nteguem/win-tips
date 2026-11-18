@@ -103,13 +103,14 @@ class DailyVipTests(unittest.TestCase):
             detail = d.prediction(source, DENMARK, DAY, NOW)
             self.assertEqual(detail['competition'], {'name': 'Ligue des Nations'})
 
-    def test_explicit_competition_country_conflict_between_prediction_and_odds_is_rejected(self):
+    def test_competition_display_difference_does_not_remove_verified_event_prices(self):
         detail = candidate()
         source = entry('denmark-odds', detail['oddsUrl'])
         source['body'] = source['body'].replace('/football/europe/ligue-des-nations-81218/',
             '/football/france/ligue-des-nations-81218/')
-        with self.assertRaisesRegex(d.DailyVipError, 'odds_event_identity_conflict'):
-            d.prices(source, detail, NOW)
+        available, _ = d.prices(source, detail, NOW)
+        self.assertEqual(available['Unibet'], Decimal('1.38'))
+        self.assertEqual(detail['competition']['scope'], 'international')
 
     def test_country_flag_is_retained_when_the_source_has_no_team_crest(self):
         node = Document('<div><span class="font-semibold">Allemagne</span>'
@@ -143,7 +144,7 @@ class DailyVipTests(unittest.TestCase):
 
     def test_unsupported_conclusion_is_skipped_not_rewritten(self):
         source = entry('denmark-prediction', DENMARK)
-        source['body'] = source['body'].replace('plus de 2,5 buts dans le match', 'Norvège ou nul et plus de 1,5 buts')
+        source['body'] = source['body'].replace('plus de 2,5 buts dans le match', 'un pari impossible à identifier')
         with self.assertRaisesRegex(d.DailyVipError, 'recommended_market_unsupported'):
             d.prediction(source, DENMARK, DAY, NOW)
 

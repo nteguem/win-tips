@@ -20,6 +20,8 @@ from urllib.parse import urljoin, urlsplit, urlunsplit
 from .calendar import paris_timezone
 from .http import FetchError
 from .vendor import rdj_collector as html
+from .daily_vip_identity import recommendation_fixture_matches, same_participants, participant_aliases
+from .daily_vip_markets import parse_recommendation, extract_exact_market_prices, DailyVipMarketError
 
 SOURCE = 'wintips_daily_vip'
 HOST = 'https://www.sportytrader.com'
@@ -179,17 +181,21 @@ def breadcrumb(root, source_url):
             if isinstance(value, dict) and value.get('@type') == 'BreadcrumbList':
                 paths.append(value.get('itemListElement'))
     trail = one(paths, 'daily_vip_breadcrumb_missing_or_ambiguous')
-    require(isinstance(trail, list) and len(trail) >= 5, 'daily_vip_breadcrumb_invalid')
+    require(isinstance(trail, list) and len(trail) >= 4, 'daily_vip_breadcrumb_invalid')
     require(canonical_url(trail[-1]['item']) == source_url, 'daily_vip_breadcrumb_identity_conflict')
     sports_path = urlsplit(canonical_url(trail[2]['item'])).path
     match = re.fullmatch(r'/(?:pronostics|cotes)/([a-z-]+)/', sports_path)
     require(match and match[1] in SPORTS, 'daily_vip_sport_unsupported')
     sport, name = SPORTS[match[1]]
+    # Some international fixtures have no competition level. The event hero,
+    # sport and canonical fixture URL establish identity; a missing display
+    # label must not remove an otherwise verified selection.
+    if len(trail) == 4:
+        return {'key': sport, 'name': name}, {}
     competition = html.text(trail[3].get('name', ''))
     if urlsplit(source_url).path.startswith('/cotes/'):
         competition = re.sub(r'^Pari\s+', '', competition)
-    require(competition and len(competition) < 180, 'daily_vip_competition_invalid')
-    metadata = {'name': competition}
+    metadata = {'name': competition} if competition and len(competition) < 180 else {}
     try:
         competition_path = urlsplit(canonical_url(trail[3].get('item'))).path
         location = re.fullmatch(r'/(?:pronostics|cotes)/' + re.escape(match[1])
@@ -274,28 +280,13 @@ def recommendation(root, teams, sport):
         match = re.search(r'Notre pronostic\s+(.+?)\s*:\s*(.+?)\s*[!.]?\s*$', n.plain(), re.I)
         if not match:
             continue
-        expected = f"{teams['home']['name']} - {teams['away']['name']}"
-        require(key(match[1]) == key(expected), 'daily_vip_recommendation_identity_conflict')
+        require(recommendation_fixture_matches(match[1], teams, sport),
+                'daily_vip_recommendation_identity_conflict')
         picks.append(html.text(match[2]).rstrip(' !.'))
     raw = one(list(dict.fromkeys(picks)), 'daily_vip_editorial_recommendation_missing_or_ambiguous')
-    value = key(raw)
-    for side in ('home', 'away'):
-        name = teams[side]['name']
-        if value in {f'victoire de {key(name)}', f'{key(name)} gagne', f'victoire {key(name)}'}:
-            return {'betType': 'match_winner', 'label': {'fr': f'Victoire de {name}', 'en': f'{name} to win'},
-                    'side': '1' if side == 'home' else '2', 'raw': raw}
-    if sport == 'football':
-        found = re.fullmatch(r'(plus|moins) de (\d+[,.]\d+) buts(?: dans le match)?', value)
-        if found:
-            line = Decimal(found[2].replace(',', '.'))
-            require(line in {Decimal('1.5'), Decimal('2.5'), Decimal('3.5')}, 'daily_vip_goal_line_unsupported')
-            direction = 'Over' if found[1] == 'plus' else 'Under'
-            return {'betType': 'over_under_goals', 'label': {'fr': f'{found[1].capitalize()} de {line} buts',
-                    'en': f'{direction} {line} goals'}, 'line': str(line),
-                    'side': '+' + str(line) if direction == 'Over' else '-' + str(line), 'raw': raw}
-        if value in {'les deux equipes marquent', 'les 2 equipes marquent'}:
-            return {'betType': 'btts', 'label': {'fr': 'Les deux équipes marquent',
-                    'en': 'Both teams to score: Yes'}, 'side': 'Oui', 'raw': raw}
+    parsed = parse_recommendation(raw, teams, sport)
+    if parsed is not None:
+        return parsed
     raise DailyVipError('daily_vip_recommended_market_unsupported')
 
 
@@ -334,15 +325,19 @@ def prices(entry, detail, now):
     root, observed = document(entry, detail['oddsUrl'], now)
     teams, start = hero(root)
     sport, competition = breadcrumb(root, detail['oddsUrl'])
-    require([key(teams[s]['name']) for s in ('home', 'away')] ==
-            [key(detail['teams'][s]['name']) for s in ('home', 'away')]
-            and utc_text(start) == detail['startsAtUtc'] and sport == detail['sport']
-            and key(competition['name']) == key(detail['competition']['name'])
-            and all(competition[field] == detail['competition'][field]
-                    for field in ('country', 'countryCode', 'scope')
-                    if field in competition and field in detail['competition']),
+    require(same_participants(teams, detail['teams'], sport['key'])
+            and utc_text(start) == detail['startsAtUtc'] and sport['key'] == detail['sport']['key'],
             'daily_vip_odds_event_identity_conflict')
+    if not detail.get('competition', {}).get('name') and competition.get('name'):
+        detail['competition'] = deepcopy(competition)
+    # Competition labels and geography are optional source display metadata.
+    # They are not a second identity gate after the linked odds page proves
+    # the two ordered participants, sport and exact event clock.
     pick = detail['pick']
+    extra_prices = extract_exact_market_prices(root, pick, detail['teams'], sport['key'])
+    if extra_prices is not None:
+        require(extra_prices, 'daily_vip_supported_bookmaker_missing')
+        return extra_prices, utc_text(observed)
     if pick['betType'] == 'over_under_goals':
         section = one(html.find(root, lambda n: n.attrs.get('id') == 'UNDER_OVER'), 'daily_vip_odds_market_missing')
         panel = one(html.find(section, lambda n: n.tag == 'div' and n.attrs.get('data-panel-select-target') == 'panel'
@@ -353,11 +348,13 @@ def prices(entry, detail, now):
         expected = {'Vainqueur', '1N2 - Vainqueur'}
         heading = one(html.find(section, lambda n: n.tag == 'span' and n.plain() in expected), 'daily_vip_odds_market_ambiguous')
         panel = heading.parent
-    else:
-        section = one(html.find(root, lambda n: n.attrs.get('id') == 'GOALS'), 'daily_vip_odds_market_missing')
+    elif pick['betType'] == 'btts':
+        section = one(html.find(root, lambda n: n.attrs.get('id') in {'GOAL', 'GOALS'}), 'daily_vip_odds_market_missing')
         heading = one(html.find(section, lambda n: n.tag == 'span' and n.plain() in {'Les 2 équipes marquent', 'Les deux équipes marquent'}),
                       'daily_vip_odds_market_ambiguous')
         panel = heading.parent
+    else:
+        raise DailyVipError('daily_vip_exact_market_price_unavailable')
     # Every row shares this exact heading. Hidden alternative goal lines cannot
     # supply another column, nor can a generic best-odds summary supply a book.
     rows = html.find(panel, lambda n: n.tag == 'a' and re.fullmatch(r'/book/[a-z0-9-]+/odds', n.attrs.get('href') or ''))
@@ -377,15 +374,17 @@ def prices(entry, detail, now):
         expected = ['Bookmaker', 'Oui', 'Non', 'Bonus']
     require(labels == expected and labels.count(pick['side']) == 1, 'daily_vip_market_column_conflict')
     position = labels.index(pick['side']) - 1
-    result = {}
+    result, conflicting_books = {}, set()
     for row in rows:
         slug = row.attrs['href'].split('/')[2]
         if slug not in BOOKMAKERS:
             continue
         cells = children(row, 'div')
-        require(len(cells) == len(labels) - 1, 'daily_vip_price_row_column_conflict')
+        if len(cells) != len(labels) - 1:
+            continue
         prices_in_row = [cell.plain() for cell in cells[:-1]]
-        require(len(prices_in_row) == len(labels) - 2, 'daily_vip_price_row_column_conflict')
+        if len(prices_in_row) != len(labels) - 2:
+            continue
         try:
             amount = decimal_price(prices_in_row[position])
         except DailyVipError:
@@ -393,8 +392,13 @@ def prices(entry, detail, now):
             # explicitly observed price for the exact same market.
             continue
         book = BOOKMAKERS[slug]
-        require(book not in result, 'daily_vip_duplicate_bookmaker')
-        result[book] = amount
+        if book in conflicting_books:
+            continue
+        if book in result and result[book] != amount:
+            result.pop(book)
+            conflicting_books.add(book)
+        else:
+            result[book] = amount
     require(result, 'daily_vip_supported_bookmaker_missing')
     return result, utc_text(observed)
 
@@ -407,8 +411,11 @@ def choose(candidates, *, maximum=Decimal('3.5')):
             # Two pages for the same fixture or participants playing twice are
             # not independent legs. Never create correlated same-match bets.
             ids = [n['sourceId'] for n in group]
-            names = [key(n['teams'][s]['name']) for n in group for s in ('home', 'away')]
-            if len(set(ids)) != count or len(set(names)) != 2 * count:
+            identities = [{n['sport']['key'] + '|' + alias
+                           for alias in participant_aliases(n['teams'][s]['name'], n['sport']['key'])}
+                          for n in group for s in ('home', 'away')]
+            if (len(set(ids)) != count or any(left & right for index, left in enumerate(identities)
+                                            for right in identities[index + 1:])):
                 continue
             common = set.intersection(*(set(n['prices']) for n in group))
             for bookmaker in sorted(common):
@@ -482,7 +489,10 @@ def validate(item, edition, now, lead=30):
         canonical_url(provenance.get('oddsUrl'), kind='odds')
         observed = parse_utc(provenance.get('observedAtUtc'))
         require(-60 <= (now - observed).total_seconds() <= MAX_AGE_SECONDS, 'daily_vip_source_stale')
-        require(leg.get('selection', {}).get('betType') in {'match_winner', 'over_under_goals', 'btts'}, 'daily_vip_market_unsupported')
+        require(leg.get('selection', {}).get('betType') in {
+            'match_winner', 'over_under_goals', 'btts', 'double_chance', 'draw_no_bet',
+            'handicap', 'over_under_points', 'over_under_games', 'player_points', 'combined_market'},
+            'daily_vip_market_unsupported')
         product *= decimal_price(str(leg['selection']['odds']))
     require(Decimal('3') <= product <= Decimal('3.5') and float(product.quantize(Decimal('.01'), rounding=ROUND_HALF_UP)) == item.get('selection', {}).get('totalOdds'), 'daily_vip_total_odds_invalid')
     require(item.get('startsAtUtc') == min(leg['startsAtUtc'] for leg in legs)
@@ -505,13 +515,14 @@ def collect(edition, fetcher, *, now, lead=30):
             table, observed = prices(odds, detail, current())
             detail.update(prices=table, observedAtUtc=observed)
             candidates.append(detail)
-        except (DailyVipError, FetchError, OSError, KeyError, TypeError) as exc:
+        except (DailyVipError, DailyVipMarketError, FetchError, OSError, KeyError, TypeError) as exc:
             issues.append({'url': url, 'code': getattr(exc, 'code', 'daily_vip_candidate_unavailable')})
     chosen = choose(candidates)
     item = compose(chosen, edition) if chosen else None
     if item:
         validate(item, edition, current(), lead)
-    return {'status': 'ready' if item else 'source_absent', 'items': [item] if item else [],
+    status = 'ready' if item else ('no_eligible_combination' if candidates else 'candidates_unusable' if links else 'source_absent')
+    return {'status': status, 'items': [item] if item else [],
             'issues': issues,
             'dailyVipAudit': {'version': 1, 'discoveredCount': len(links), 'verifiedCandidateCount': len(candidates),
                 'policy': 'explicit-publisher-picks-common-bookmaker-3-to-3.5-v1',

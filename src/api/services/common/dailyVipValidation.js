@@ -5,6 +5,8 @@ const SOURCE = 'wintips_daily_vip';
 const INDEX_URL = 'https://www.sportytrader.com/pronostics/';
 const POLICY = Object.freeze({ minTotalOdds: 3, targetMaxTotalOdds: 3.5, maxTotalOdds: 3.5 });
 const SPORTS = ['football', 'tennis', 'basketball', 'volleyball', 'handball', 'rugby', 'ice_hockey', 'baseball', 'american_football'];
+const MARKETS = ['match_winner', 'over_under_goals', 'btts', 'double_chance', 'draw_no_bet',
+  'handicap', 'over_under_points', 'over_under_games', 'player_points', 'combined_market'];
 function keys(value, names, field) {
   if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key => !names.includes(key)))
     throw failure(`Champ invalide dans ${field}`);
@@ -37,18 +39,45 @@ function sourceLogo(value) {
   if (url.protocol !== 'https:' || !['www.sportytrader.com', 'static.sportytrader.com', 'cdn.sportytrader.com', 'flagcdn.com'].includes(url.hostname) || url.username || url.password || url.port || url.hash) throw failure('Logo source invalide');
   return url.href;
 }
+function optionalText(value, field, max) {
+  try { return text(value, field, max); } catch (_) { return undefined; }
+}
+function optionalCountryCode(value) {
+  return typeof value === 'string' && /^[A-Z]{2}$/.test(value) ? value : undefined;
+}
+function optionalLogo(value) {
+  try { return sourceLogo(value); } catch (_) { return undefined; }
+}
+function competition(input) {
+  // Presentation is optional: a missing breadcrumb, flag or asset must not
+  // discard an otherwise verified event. Persist only the known safe fields.
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return {};
+  const out = {};
+  const name = optionalText(input.name, 'competition.name', 180);
+  const country = optionalText(input.country, 'competition.country', 100);
+  const countryCode = optionalCountryCode(input.countryCode);
+  const logo = optionalLogo(input.logo);
+  if (name !== undefined) out.name = name;
+  if (logo !== undefined) out.logo = logo;
+  if (input.scope === 'international') {
+    out.scope = 'international';
+    // An international competition cannot also claim a domestic flag. Keep
+    // the unambiguous scope and omit contradictory country presentation.
+    if (country && /^international$/i.test(country)) out.country = country;
+  } else {
+    if (country !== undefined) out.country = country;
+    if (countryCode !== undefined) out.countryCode = countryCode;
+    if (input.scope === 'national') out.scope = 'national';
+  }
+  return out;
+}
 function team(input, name) {
   keys(input, ['name', 'logo', 'countryCode'], name);
   const out = { name: text(input.name, `${name}.name`, 180) };
-  if (input.countryCode !== undefined) {
-    if (!/^[A-Z]{2}$/.test(input.countryCode)) throw failure('Code pays invalide');
-    out.countryCode = input.countryCode;
-  }
-  if (input.logo !== undefined) {
-    // Logos are optional display assets. A source host allowlist prevents a
-    // worker response from introducing a tracking URL or a private resource.
-    out.logo = sourceLogo(input.logo);
-  }
+  const countryCode = optionalCountryCode(input.countryCode);
+  const logo = optionalLogo(input.logo);
+  if (countryCode !== undefined) out.countryCode = countryCode;
+  if (logo !== undefined) out.logo = logo;
   return out;
 }
 function normalizeDailyVip(input, editionDate) {
@@ -64,18 +93,7 @@ function normalizeDailyVip(input, editionDate) {
     keys(value.sport, ['key', 'name', 'icon'], 'sport');
     if (!(leg ? SPORTS : ['multisport', ...SPORTS]).includes(value.sport.key)) throw failure('Sport du combine inconnu');
     out.sport = { key: value.sport.key, name: text(value.sport.name, 'sport.name', 80) };
-    keys(value.competition, ['name', 'country', 'countryCode', 'logo', 'scope'], 'competition');
-    out.competition = { name: text(value.competition.name, 'competition.name', 180) };
-    if (value.competition.country !== undefined) out.competition.country = text(value.competition.country, 'competition.country', 100);
-    if (value.competition.countryCode !== undefined) {
-      if (!/^[A-Z]{2}$/.test(value.competition.countryCode)) throw failure('Code pays competition invalide');
-      out.competition.countryCode = value.competition.countryCode;
-    }
-    if (value.competition.logo !== undefined) out.competition.logo = sourceLogo(value.competition.logo);
-    if (value.competition.scope !== undefined) {
-      if (!['national', 'international'].includes(value.competition.scope) || value.competition.scope === 'international' && value.competition.countryCode !== undefined) throw failure('Portee competition invalide');
-      out.competition.scope = value.competition.scope;
-    }
+    out.competition = competition(value.competition);
     if (value.analysis !== undefined && (JSON.stringify(value.analysis) !== '{"fr":[],"en":[]}' && JSON.stringify(value.analysis) !== '{"en":[],"fr":[]}')) throw failure('Le combine contient des selections, pas un article');
     out.analysis = { fr: [], en: [] };
     keys(value.selection, ['betType', 'label', ...(leg ? ['odds'] : ['totalOdds'])], 'selection');
@@ -84,7 +102,7 @@ function normalizeDailyVip(input, editionDate) {
     if (typeof odd !== 'number' || !Number.isFinite(odd) || odd <= 1 || odd > 100 || Math.abs(odd * 100 - Math.round(odd * 100)) > 0.000001) throw failure('Cote source decimale invalide');
     out.selection[oddsKey] = odd;
     if (leg) {
-      if (!['match_winner', 'over_under_goals', 'btts'].includes(out.selection.betType)) throw failure('Marche non pris en charge par ce collecteur');
+      if (!MARKETS.includes(out.selection.betType)) throw failure('Marche non pris en charge par ce collecteur');
       keys(value.teams, ['home', 'away'], 'teams');
       out.teams = { home: team(value.teams.home, 'home'), away: team(value.teams.away, 'away') };
       if (out.teams.home.name.toLowerCase() === out.teams.away.name.toLowerCase()) throw failure('Deux participants distincts requis');

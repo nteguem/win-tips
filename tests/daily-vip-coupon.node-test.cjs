@@ -75,15 +75,73 @@ test('optional competition geography is retained in previews and paid content wi
   assert.deepEqual(validateBatch(international, clock()).items[0].legs[0].competition,
     international.items[0].legs[0].competition);
 });
-test('competition display metadata rejects invalid scope, unsafe logos, markup and unsupported fields before writes', async () => {
+test('absent or unusable competition presentation does not block a verified coupon or any of its legs', async () => {
+  for (const presentation of [undefined, null, {}, [], 'Unknown breadcrumb']) {
+    const batch = fixture();
+    for (const item of [batch.items[0], ...batch.items[0].legs]) {
+      if (presentation === undefined) delete item.competition;
+      else item.competition = structuredClone(presentation);
+    }
+    const normalized = validateBatch(batch, clock()).items[0];
+    for (const item of [normalized, ...normalized.legs]) assert.deepEqual(item.competition, {});
+    const { service, state } = setup();
+    await service.importBatch(batch);
+    assert.equal(state.writes, 1);
+    assert.equal((await service.library({ isVip: true })).categories[0].itemCount, 1);
+    state.access = true;
+    assert.equal((await service.content(a, date, { user })).items[0].selection.totalOdds, 3.2);
+  }
+});
+
+test('invalid optional competition metadata is omitted without persisting unsafe or invented fields', async () => {
   for (const extra of [{ scope: 'world' }, { country: '<script>bad</script>' }, { country: { name: 'France' } },
     { countryCode: 'fr' }, { countryCode: 'FRA' }, { logo: 'http://static.sportytrader.com/logo.png' },
     { logo: 'https://evil.invalid/logo.png' }, { logo: 'https://static.sportytrader.com@evil.invalid/logo.png' },
-    { logo: 'https://127.0.0.1/logo.png' }, { scope: 'international', countryCode: 'FR' }, { venue: 'Guess' }]) {
+    { logo: 'https://127.0.0.1/logo.png' }, { venue: 'Guess' }, { $set: { country: 'Invented' } }]) {
     const batch = fixture(); Object.assign(batch.items[0].legs[0].competition, extra);
+    const { service, state } = setup();
+    await service.importBatch(batch);
+    assert.equal(state.writes, 1);
+    assert.deepEqual(state.rows[0].payload.legs[0].competition, { name: 'Competition' });
+  }
+  const ambiguous = fixture();
+  ambiguous.items[0].legs[0].competition = { name: 'Ligue des Nations',
+    scope: 'international', countryCode: 'FR', country: 'France' };
+  assert.deepEqual(validateBatch(ambiguous, clock()).items[0].legs[0].competition,
+    { name: 'Ligue des Nations', scope: 'international' });
+  const malformedName = fixture();
+  malformedName.items[0].competition = { name: '<script>bad</script>' };
+  assert.deepEqual(validateBatch(malformedName, clock()).items[0].competition, {});
+});
+
+test('optional team flags and logos may be omitted while participant names remain mandatory', async () => {
+  for (const extra of [{ countryCode: 'FRA' }, { countryCode: { code: 'FR' } },
+    { logo: 'https://evil.invalid/logo.png' }, { logo: 'http://static.sportytrader.com/logo.png' },
+    { logo: 'https://127.0.0.1/logo.png' }]) {
+    const batch = fixture(); Object.assign(batch.items[0].legs[0].teams.home, extra);
+    const normalized = validateBatch(batch, clock()).items[0].legs[0];
+    assert.deepEqual(normalized.teams.home, { name: 'Club A' });
+    assert.equal(normalized.selection.odds, 1.6);
+    assert.deepEqual(normalized.provenance, batch.items[0].legs[0].provenance);
+  }
+  for (const name of [undefined, '', '<script>bad</script>', { name: 'Club A' }]) {
+    const batch = fixture(); batch.items[0].legs[0].teams.home.name = name;
     const { service, state } = setup();
     await assert.rejects(service.importBatch(batch), { statusCode: 400 });
     assert.equal(state.writes, 0);
+  }
+});
+
+test('explicit supported market families retain their sourced labels, exact odds and provenance', () => {
+  for (const betType of ['match_winner', 'over_under_goals', 'btts', 'double_chance', 'draw_no_bet',
+    'handicap', 'over_under_points', 'over_under_games', 'player_points', 'combined_market']) {
+    const batch = fixture(), input = batch.items[0].legs[0];
+    input.selection.betType = betType;
+    input.selection.label = { fr: `Selection source ${betType}`, en: `Source pick ${betType}` };
+    input.provenance.market = input.selection.label.fr;
+    const normalized = validateBatch(batch, clock()).items[0].legs[0];
+    assert.deepEqual(normalized.selection, input.selection);
+    assert.deepEqual(normalized.provenance, input.provenance);
   }
 });
 test('wrong source/day/identity, forged URLs, duplicate legs, inconsistent product and forced odds fail before writes', async () => {
@@ -95,6 +153,9 @@ test('wrong source/day/identity, forged URLs, duplicate legs, inconsistent produ
     b => { b.items[0].legs[0].provenance.oddsUrl = 'https://www.sportytrader.com@evil.invalid/cotes/a-10001/'; },
     b => { b.items[0].legs[0].provenance.oddsUrl += '?redirect=http://127.0.0.1/'; },
     b => { b.items[0].legs[0].provenance.predictionUrl = b.items[0].legs[1].sourceUrl; },
+    b => { b.items[0].legs[0].provenance.market = '<script>invented</script>'; },
+    b => { b.items[0].legs[0].selection.betType = 'arbitrary_market_not_verified_by_collector'; },
+    b => { b.items[0].legs[0].selection.odds = '1.60'; },
     b => { b.items[0].legs[1] = structuredClone(b.items[0].legs[0]); },
     b => { b.items[0].selection.totalOdds = 3.49; },
     b => { b.items[0].legs[0].selection.odds = 1.9; b.items[0].selection.totalOdds = 3.8; },
