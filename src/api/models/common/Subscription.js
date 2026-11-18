@@ -1,5 +1,11 @@
 const mongoose = require('mongoose');
 
+// Existing payment rails keep their historical currency restrictions. Google
+// Play uses the Store account's ISO currency, which can differ from app config.
+// Checkout/activation separately require an explicit price on the bound SKU.
+const legacyCurrencies = new Set(['XAF','XOF','GMD','CDF','GNF','USD','EUR','NGN','GHS','KES','ZAR','EGP','TZS','UGX','ZMW','MWK','RWF','SLE','MZN','LSL']);
+const storeCurrencies = new Set(Intl.supportedValuesOf('currency'));
+
 const subscriptionSchema = new mongoose.Schema({
   user: {
     type: mongoose.Schema.ObjectId,
@@ -34,7 +40,12 @@ const subscriptionSchema = new mongoose.Schema({
     currency: {
       type: String,
       required: true,
-      enum: ['XAF','XOF','GMD','CDF','GNF','USD','EUR','NGN','GHS','KES','ZAR','EGP','TZS','UGX','ZMW','MWK','RWF','SLE','MZN','LSL'],
+      validate: {
+        validator: function(currency) {
+          return (this.paymentProvider === 'GOOGLE_PLAY' ? storeCurrencies : legacyCurrencies).has(currency);
+        },
+        message: 'Devise non prise en charge par ce mode de paiement',
+      },
       default: 'XAF'
     }
   },

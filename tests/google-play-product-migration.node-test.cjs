@@ -37,7 +37,7 @@ function harness({ pkg = offer(), data = paid() } = {}) {
   };
   const subscriptions = {
     findById: id => query(() => state.subscriptions.find(row => row._id === id)),
-    create: async rows => rows.map(row => { const result = { ...row, _id: 'subscription-' + (state.subscriptions.length + 1) }; state.subscriptions.push(result); return result; }),
+    create: async rows => rows.map(row => { const result = { ...row, _id: new (require('mongoose').Types.ObjectId)().toString() }; state.subscriptions.push(result); return result; }),
   };
   const dependencies = {
     googleapis: { google: { auth: { GoogleAuth: class {} }, androidpublisher: () => ({ purchases: { products: {
@@ -57,7 +57,7 @@ function harness({ pkg = offer(), data = paid() } = {}) {
   return { service: module.exports, state, calls, pkg, data };
 }
 const validate = (h, sku = oldSku, currency = 'EUR', user = 'owner') =>
-  h.service.validateOneTimePurchase('TEST_PRIVATE_TOKEN', sku, user, 'package', currency);
+  h.service.validateOneTimePurchase('TEST_PRIVATE_TOKEN', sku, user, h.pkg._id, currency);
 
 test('new checkout remains strictly bound to the active SKU and its current price', async () => {
   const h = harness();
@@ -172,4 +172,51 @@ test('a real populated subscription and nested validation response never expose 
   assert.equal(response.data.subscription.package.googleProductId, newSku);
   assert.equal(response.data.subscription.pricing.amount, 10.99);
   assert.equal(subscription.package.googleProductMigrations.length, 1, 'serialization never mutates stored migration evidence');
+});
+
+// All currency codes observed in the official 174-region Black Friday product.
+// Amounts here are synthetic positive configured prices, not pricing fixtures.
+const officialStoreCurrencies = 'AED ARS AUD AZN BDT BOB BRL CAD CHF CLP COP CRC CZK DKK DZD EGP ETB EUR GBP GEL GHS HKD HUF IDR ILS INR IQD JOD JPY KES KRW KZT LKR MAD MMK MNT MOP MXN MYR NGN NOK NZD PEN PHP PKR PLN PYG QAR RON RSD RUB SAR SEK SGD THB TRY TWD TZS UAH USD UZS VND XAF XOF ZAR'.split(' ');
+
+test('all 65 actual Store currencies pass catalogue preflight and managed receipt activation with valid Mongoose records', async () => {
+  const Subscription = require('../src/api/models/common/Subscription');
+  const GooglePlayTransaction = require('../src/api/models/user/GooglePlayTransaction');
+  const Package = require('../src/api/models/common/Package');
+  const pkg = new Package({ ...offer(), _id: 'c97d577e0912523aab9f1bfb', name: { fr: 'Black Friday', en: 'Black Friday' },
+    pricing: Object.fromEntries(officialStoreCurrencies.map(currency => [currency, currency === 'GBP' ? 2.29 : 10])) });
+  for (const currency of officialStoreCurrencies) {
+    assert.equal(pricing.canPurchaseInCurrency(pkg.formatForLanguage('en'), currency), true, currency);
+    assert.equal(pricing.managedGooglePrice(pkg, newSku, currency).currency, currency);
+    const h = harness({ pkg });
+    await validate(h, newSku, currency, '691b1dd577e0912523aab903');
+    const subscription = new Subscription(h.state.subscriptions[0]);
+    const transaction = new GooglePlayTransaction(h.state.transactions[0]);
+    assert.equal(subscription.validateSync(), undefined, currency + ' subscription');
+    assert.equal(transaction.validateSync(), undefined, currency + ' receipt');
+    assert.equal(subscription.pricing.currency, currency);
+    assert.equal(transaction.priceCurrencyCode, currency);
+    if (currency === 'GBP') assert.equal(subscription.pricing.amount, 2.29);
+  }
+});
+
+test('extra Store currencies stay unavailable without an explicit SKU quote and remain rejected by other payment rails', () => {
+  const Subscription = require('../src/api/models/common/Subscription');
+  const fields = { user: '691b1dd577e0912523aab903', package: 'c97d577e0912523aab9f1bfb',
+    categorySnapshot: [oldCategory], endDate: new Date(cutoff + 86400000) };
+  for (const currency of ['GBP', 'BRL', 'INR', 'JPY', 'KRW', 'CHF', 'CAD', 'AUD']) {
+    assert.equal(pricing.canPurchaseInCurrency(offer(), currency), false);
+    assert.throws(() => pricing.managedGooglePrice(offer(), newSku, currency), /non configure/);
+    for (const paymentProvider of ['MOBILE_MONEY', 'ADS']) {
+      const row = new Subscription({ ...fields, paymentProvider, pricing: { amount: 1, currency } });
+      assert.ok(row.validateSync()?.errors['pricing.currency'], `${paymentProvider}/${currency}`);
+    }
+  }
+  for (const currency of ['ABC', 'gbp', 'USD ', '']) {
+    const row = new Subscription({ ...fields, paymentProvider: 'GOOGLE_PLAY', pricing: { amount: 1, currency } });
+    assert.ok(row.validateSync()?.errors['pricing.currency'], currency);
+  }
+  for (const paymentProvider of ['MOBILE_MONEY', 'ADS', 'GOOGLE_PLAY']) {
+    const row = new Subscription({ ...fields, paymentProvider, pricing: { amount: 1, currency: 'XAF' } });
+    assert.equal(row.validateSync(), undefined, paymentProvider + ' retains XAF');
+  }
 });
