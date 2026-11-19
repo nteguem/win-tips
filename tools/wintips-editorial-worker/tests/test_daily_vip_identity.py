@@ -11,6 +11,49 @@ def teams(home, away):
 
 
 class DailyVipIdentityTests(unittest.TestCase):
+    def test_observed_nba_nicknames_are_exact_and_sport_scoped(self):
+        for full, short in [('Toronto Raptors', 'Raptors'), ('Dallas Mavericks', 'Mavericks'),
+                            ('Detroit Pistons', 'Pistons')]:
+            expected = teams(full, 'Boston Celtics')
+            with self.subTest(full=full):
+                self.assertTrue(same_participants(teams(short, 'Celtics'), expected, 'basketball'))
+                self.assertEqual(resolve_participant(short, expected, 'basketball'), 'home')
+                self.assertFalse(same_participants(teams(short, 'Celtics'), expected, 'football'))
+                for other in [short + ' U21', short + ' B', full.split()[0]]:
+                    self.assertIsNone(resolve_participant(other, expected, 'basketball'))
+
+    def test_observed_botafogo_and_grenoble_names_keep_the_proven_fixture(self):
+        self.assertTrue(recommendation_fixture_matches('Corinthians - Botafogo RJ',
+                        teams('Corinthians', 'Botafogo'), 'football'))
+        self.assertFalse(recommendation_fixture_matches('Corinthians - Botafogo SP',
+                         teams('Corinthians', 'Botafogo'), 'football'))
+        self.assertTrue(recommendation_fixture_matches('Grenoble - Provence Rugby',
+                        teams('Grenoble Rugby', 'Provence Rugby'), 'rugby'))
+        self.assertFalse(recommendation_fixture_matches('Grenoble - Provence Rugby',
+                         teams('Grenoble Rugby', 'Provence Rugby'), 'football'))
+
+    def test_observed_womens_editorial_names_resolve_only_in_the_proven_fixture(self):
+        paris = teams('Paris FC F', 'HB Koege F')
+        barca = teams('Barcelone F', 'Servette FC Chênois F')
+        self.assertTrue(recommendation_fixture_matches('Paris FC - Koge', paris, 'football'))
+        self.assertTrue(recommendation_fixture_matches('FC Barcelone - Servette FC', barca, 'football'))
+        self.assertEqual(resolve_participant('Koge', paris, 'football'), 'away')
+        self.assertEqual(resolve_participant('Servette FC', barca, 'football'), 'away')
+        self.assertTrue(same_participants(teams('Paris FC Women', 'Koge F'), paris, 'football'))
+        self.assertTrue(same_participants(teams('FC Barcelone F', 'Servette FC F'), barca, 'football'))
+        self.assertFalse(same_participants(teams('Paris FC', 'Koge'), paris, 'football'))
+        self.assertFalse(same_participants(teams('FC Barcelone', 'Servette FC'), barca, 'football'))
+        self.assertFalse(same_participants(teams('Paris FC F', 'Koge F'), paris, 'basketball'))
+
+    def test_womens_only_aliases_do_not_merge_unmarked_clubs_youth_or_reserves(self):
+        for full, short in [('HB Koege', 'Koge'), ('Servette FC Chênois', 'Servette FC')]:
+            with self.subTest(full=full):
+                self.assertFalse(same_participants(teams(full, 'Chelsea'), teams(short, 'Chelsea'), 'football'))
+                for suffix in [' U21 F', ' II F', ' B F', ' Réserves F']:
+                    expected = teams(full + suffix, 'Paris FC F')
+                    self.assertIsNone(resolve_participant(short, expected, 'football'))
+                    self.assertFalse(recommendation_fixture_matches(short + ' - Paris FC', expected, 'football'))
+
     def test_explicit_nba_aliases_preserve_event_order(self):
         expected = teams('Los Angeles Clippers', 'Boston Celtics')
         self.assertTrue(same_participants(teams('LA Clippers', 'Celtics'), expected, 'basketball'))

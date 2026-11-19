@@ -35,6 +35,13 @@ def parse_recommendation(raw, teams, sport):
     value = _key(raw)
     if re.search(r'\b(?:mi[- ]temps|quart[- ]temps|premier set|premier quart|1er set|set [12])\b', value):
         return None
+    straight_sets = re.fullmatch(r'(?:victoire (?:de |du |des |d[’\'])?(.+?)|(.+?) gagne) en 2 sets?', raw, re.I)
+    if straight_sets and sport == 'tennis':
+        side = _participant(straight_sets[1] or straight_sets[2], teams, sport)
+        if side:
+            name = teams[side]['name']
+            score = '2-0' if side == 'home' else '0-2'
+            return _pick('correct_score', f'{name} gagne en 2 sets', f'{name} to win in straight sets', score, raw)
     # Resolve a whole winner before splitting conjunctions: a participant can
     # itself contain "et". Extra betting conditions never resolve as a name.
     winner = re.fullmatch(r'(?:victoire (?:de |du |des |d[’\'])?(.+)|(.+?) gagne)', raw, re.I)
@@ -117,6 +124,9 @@ def extract_exact_market_prices(root, pick, teams, sport):
     Combined markets and player props have no verified table in these pages.
     """
     kind = pick['betType']
+    if kind == 'correct_score':
+        from .daily_vip_score import extract_tennis_score_prices
+        return extract_tennis_score_prices(root, pick, sport)
     if kind in {'match_winner', 'btts', 'over_under_goals'}:
         return None
     clean_sheet_side = None

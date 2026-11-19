@@ -1,3 +1,20 @@
+VIP COLLECTION RECOVERY - 2026-11-19
+Observed source aliases and author conclusions are resolved within the current
+fixture; an unrelated card conclusion no longer rejects its valid recommendation.
+Women, youth, reserves, home/away order and genuinely conflicting picks remain
+distinct. Tennis straight-set recommendations use the exact SCORE 2-0/0-2
+bookmaker table, never a winner price or total-set market. Missing exact prices
+exclude that candidate only. Native API and worker accept up to three decimal
+places for quoted leg odds; the exact product is checked before rounding only
+the displayed total to two decimals. The requested total remains 3 to 3.5.
+Discovery considers up to 24 sport-interleaved events and falls back to the
+same publisher's general index if its daily index is empty or unavailable.
+Per-event edition, future kickoff, source freshness, exact market and common
+bookmaker checks are retained. Already-published daily coupons stay frozen.
+Pre-publication previews must use an isolated --output directory, so a dry run
+cannot replace the operational publication/health reports. Preflight is read
+only; never import or notify an already-published coupon merely to test it.
+
 QUINTE TEXT PARITY - 2026-11-19
 The active WinTips Quinté adapter imports the exact versioned BigWin
 journal_worker.editorial_horse_source and text_translation modules through

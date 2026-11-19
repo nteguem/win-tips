@@ -140,7 +140,7 @@ class DailyVipTests(unittest.TestCase):
         root = Document(group('football', 30) + group('tennis', 3) + group('basket', 3)).root
         links = d.discovery(root)
         self.assertEqual(links[:3], [d.HOST + f'/pronostics/{sport}-0/' for sport in ('football', 'tennis', 'basket')])
-        self.assertEqual(len(links), 16)
+        self.assertEqual(len(links), d.MAX_CANDIDATES)
 
     def test_unsupported_conclusion_is_skipped_not_rewritten(self):
         source = entry('denmark-prediction', DENMARK)

@@ -6,7 +6,7 @@ const INDEX_URL = 'https://www.sportytrader.com/pronostics/';
 const POLICY = Object.freeze({ minTotalOdds: 3, targetMaxTotalOdds: 3.5, maxTotalOdds: 3.5 });
 const SPORTS = ['football', 'tennis', 'basketball', 'volleyball', 'handball', 'rugby', 'ice_hockey', 'baseball', 'american_football'];
 const MARKETS = ['match_winner', 'over_under_goals', 'btts', 'double_chance', 'draw_no_bet',
-  'handicap', 'over_under_points', 'over_under_games', 'player_points', 'combined_market'];
+  'handicap', 'over_under_points', 'over_under_games', 'player_points', 'combined_market', 'correct_score'];
 function keys(value, names, field) {
   if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key => !names.includes(key)))
     throw failure(`Champ invalide dans ${field}`);
@@ -80,6 +80,16 @@ function team(input, name) {
   if (logo !== undefined) out.logo = logo;
   return out;
 }
+function oddsUnits(value, decimalPlaces) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 1 || value > 100)
+    throw failure('Cote source decimale invalide');
+  // Parse the quoted decimal, rather than rounding it through binary floats.
+  // Individual source odds may carry three decimals; the displayed total
+  // retains its existing two-decimal transport contract.
+  const [whole, fraction = ''] = String(value).split('.');
+  if (fraction.length > decimalPlaces) throw failure('Cote source decimale invalide');
+  return Number(whole) * 10 ** decimalPlaces + Number(fraction.padEnd(decimalPlaces, '0'));
+}
 function normalizeDailyVip(input, editionDate) {
   const normalize = (value, leg = false) => {
     keys(value, ['source', 'sourceId', 'sourceUrl', 'editionDate', 'kind', 'title', 'summary', 'startsAtUtc', 'sport', 'competition', 'teams', 'analysis', 'selection', 'legs', 'status', ...(leg ? ['provenance'] : ['dailyVip'])], leg ? 'leg' : 'coupon');
@@ -99,10 +109,12 @@ function normalizeDailyVip(input, editionDate) {
     keys(value.selection, ['betType', 'label', ...(leg ? ['odds'] : ['totalOdds'])], 'selection');
     out.selection = { betType: text(value.selection.betType, 'betType', 80), label: bilingual(value.selection.label, 'selection.label', 300) };
     const oddsKey = leg ? 'odds' : 'totalOdds', odd = value.selection[oddsKey];
-    if (typeof odd !== 'number' || !Number.isFinite(odd) || odd <= 1 || odd > 100 || Math.abs(odd * 100 - Math.round(odd * 100)) > 0.000001) throw failure('Cote source decimale invalide');
+    const scaledOdd = oddsUnits(odd, leg ? 3 : 2);
     out.selection[oddsKey] = odd;
     if (leg) {
       if (!MARKETS.includes(out.selection.betType)) throw failure('Marche non pris en charge par ce collecteur');
+      if (out.selection.betType === 'correct_score' && out.sport.key !== 'tennis')
+        throw failure('Le score exact source est reserve au tennis');
       keys(value.teams, ['home', 'away'], 'teams');
       out.teams = { home: team(value.teams.home, 'home'), away: team(value.teams.away, 'away') };
       if (out.teams.home.name.toLowerCase() === out.teams.away.name.toLowerCase()) throw failure('Deux participants distincts requis');
@@ -122,10 +134,17 @@ function normalizeDailyVip(input, editionDate) {
     const eventIdentity = item => [item.teams.home.name.toLowerCase(), item.teams.away.name.toLowerCase()].sort().join('|') + '|' + item.startsAtUtc;
     if (new Set(out.legs.map(item => item.sourceId)).size !== out.legs.length || new Set(out.legs.map(eventIdentity)).size !== out.legs.length) throw failure('Evenement duplique');
     if (Date.parse(out.startsAtUtc) !== Math.min(...out.legs.map(item => Date.parse(item.startsAtUtc)))) throw failure('Depart du combine incoherent');
-    const numerator = out.legs.reduce((total, item) => total * Math.round(item.selection.odds * 100), 1);
-    const denominator = 100 ** out.legs.length;
-    const product = Math.round(numerator / denominator * 100) / 100;
-    if (product !== odd || numerator < POLICY.minTotalOdds * denominator || numerator > POLICY.maxTotalOdds * denominator) throw failure('La cote combinee doit etre le produit des cotes entre 3 et 3,5');
+    // At most three legs, each <= 100: milli-odds products remain exact safe
+    // integers (100000 ** 3 < Number.MAX_SAFE_INTEGER). Check the real product
+    // before its display rounding so 2.9985/3.50175 cannot masquerade as 3/3.5.
+    const numerator = out.legs.reduce((total, item) => total * oddsUnits(item.selection.odds, 3), 1);
+    const denominator = 1000 ** out.legs.length;
+    if (numerator < POLICY.minTotalOdds * denominator || numerator > POLICY.maxTotalOdds * denominator)
+      throw failure('La cote combinee doit etre le produit des cotes entre 3 et 3,5');
+    // Positive decimal half-up rounding, performed only once on the final
+    // product. The range check above keeps this multiplication safely exact.
+    const productHundredths = Math.floor((numerator * 100 + denominator / 2) / denominator);
+    if (productHundredths !== scaledOdd) throw failure('La cote combinee doit etre le produit des cotes entre 3 et 3,5');
     keys(value.dailyVip, ['version', 'publisher', 'bookmaker', 'observedAtUtc', 'policy', 'result'], 'dailyVip');
     keys(value.dailyVip.policy, Object.keys(POLICY), 'policy');
     if (value.dailyVip.version !== 1 || value.dailyVip.publisher !== 'SportyTrader' || Object.entries(POLICY).some(([key, expected]) => value.dailyVip.policy[key] !== expected)) throw failure('Politique quotidienne invalide');

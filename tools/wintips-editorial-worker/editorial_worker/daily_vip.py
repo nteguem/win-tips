@@ -29,7 +29,7 @@ SOURCE_URL = HOST + '/pronostics/'
 INDEX_URL = SOURCE_URL + 'aujourdhui/'
 PREDICTION_PATH = re.compile(r'/pronostics/[a-z0-9-]+-(\d{1,12})/')
 ODDS_PATH = re.compile(r'/cotes/[a-z0-9-]+-(\d{1,12})/')
-MAX_CANDIDATES = 16
+MAX_CANDIDATES = 24
 MAX_AGE_SECONDS = 900
 SPORTS = {'football': ('football', 'Football'), 'tennis': ('tennis', 'Tennis'),
           'basket': ('basketball', 'Basketball'), 'rugby': ('rugby', 'Rugby'),
@@ -170,6 +170,27 @@ def discovery(root):
     return result
 
 
+def discover_candidates(fetcher, now):
+    """Use the publisher's general index when its daily index is unavailable.
+
+    Both indexes only supply links. Each linked event still proves its own
+    edition, author recommendation and exact market independently.
+    """
+    checked_indexes, issues = 0, []
+    for index_url in (INDEX_URL, SOURCE_URL):
+        try:
+            root, _ = document(fetcher.get(index_url), index_url, now())
+            checked_indexes += 1
+            links = discovery(root)
+            if links:
+                return links, index_url, issues
+        except (DailyVipError, FetchError, OSError, KeyError, TypeError) as exc:
+            issues.append({'url': index_url,
+                'code': getattr(exc, 'code', 'daily_vip_index_unavailable')})
+    require(checked_indexes, 'daily_vip_discovery_unavailable')
+    return [], INDEX_URL, issues
+
+
 def breadcrumb(root, source_url):
     paths = []
     for n in html.find(root, lambda n: n.tag == 'script' and n.attrs.get('type') == 'application/ld+json'):
@@ -275,14 +296,25 @@ def hero(root):
 
 def recommendation(root, teams, sport):
     # Explicit author conclusion only. Ignore the algorithm's different rows.
-    picks = []
+    picks, foreign_fixture = [], False
     for n in html.find(root, lambda n: n.tag == 'p' or n.tag == 'div' and n.has_class('prose') and n.has_class('dark:text-white')):
+        # A prose wrapper can also contain the same conclusion in a paragraph,
+        # followed by related fixtures. Read its paragraph, not their merged
+        # text as one larger (and different) betting recommendation.
+        if n.tag == 'div' and html.find(n, lambda child: child.tag == 'p'
+                and re.search(r'Notre pronostic\s+', child.plain(), re.I)):
+            continue
         match = re.search(r'Notre pronostic\s+(.+?)\s*:\s*(.+?)\s*[!.]?\s*$', n.plain(), re.I)
         if not match:
             continue
-        require(recommendation_fixture_matches(match[1], teams, sport),
-                'daily_vip_recommendation_identity_conflict')
+        if not recommendation_fixture_matches(match[1], teams, sport):
+            foreign_fixture = True
+            continue
         picks.append(html.text(match[2]).rstrip(' !.'))
+    # A related-match conclusion cannot invalidate the current fixture's own
+    # unambiguous recommendation. A page with only foreign conclusions still
+    # fails the same identity check instead of borrowing one of their picks.
+    require(picks or not foreign_fixture, 'daily_vip_recommendation_identity_conflict')
     raw = one(list(dict.fromkeys(picks)), 'daily_vip_editorial_recommendation_missing_or_ambiguous')
     parsed = parse_recommendation(raw, teams, sport)
     if parsed is not None:
@@ -491,8 +523,10 @@ def validate(item, edition, now, lead=30):
         require(-60 <= (now - observed).total_seconds() <= MAX_AGE_SECONDS, 'daily_vip_source_stale')
         require(leg.get('selection', {}).get('betType') in {
             'match_winner', 'over_under_goals', 'btts', 'double_chance', 'draw_no_bet',
-            'handicap', 'over_under_points', 'over_under_games', 'player_points', 'combined_market'},
+            'handicap', 'over_under_points', 'over_under_games', 'player_points', 'combined_market', 'correct_score'},
             'daily_vip_market_unsupported')
+        require(leg['selection']['betType'] != 'correct_score' or leg['sport']['key'] == 'tennis',
+                'daily_vip_market_sport_conflict')
         product *= decimal_price(str(leg['selection']['odds']))
     require(Decimal('3') <= product <= Decimal('3.5') and float(product.quantize(Decimal('.01'), rounding=ROUND_HALF_UP)) == item.get('selection', {}).get('totalOdds'), 'daily_vip_total_odds_invalid')
     require(item.get('startsAtUtc') == min(leg['startsAtUtc'] for leg in legs)
@@ -504,10 +538,16 @@ def collect(edition, fetcher, *, now, lead=30):
     started = time.monotonic()
     current = lambda: now + timedelta(seconds=time.monotonic() - started)
     require(date.fromisoformat(edition).isoformat() == edition, 'daily_vip_edition_invalid')
-    index = fetcher.get(INDEX_URL)
-    root, _ = document(index, INDEX_URL, current())
-    links = discovery(root)
+    links, discovery_url, index_issues = discover_candidates(fetcher, current)
+    issues.extend(index_issues)
     for url in links:
+        # Keep verified candidates usable when the remaining HTTP budget can no
+        # longer cover a prediction plus its odds page. Starting that pair and
+        # refusing the second GET used to discard the entire source's payload.
+        maximum = getattr(fetcher, 'max_requests', None)
+        if isinstance(maximum, int) and maximum - getattr(fetcher, 'requests', 0) < 2:
+            issues.append({'code': 'daily_vip_discovery_budget_reached'})
+            break
         try:
             source = fetcher.get(url)
             detail = prediction(source, url, edition, current(), lead)
@@ -525,6 +565,7 @@ def collect(edition, fetcher, *, now, lead=30):
     return {'status': status, 'items': [item] if item else [],
             'issues': issues,
             'dailyVipAudit': {'version': 1, 'discoveredCount': len(links), 'verifiedCandidateCount': len(candidates),
+                'discoveryUrl': discovery_url,
                 'policy': 'explicit-publisher-picks-common-bookmaker-3-to-3.5-v1',
                 'selectionMethod': 'closest-total-to-3.25-not-a-predicted-win-rate',
                 'resultTracking': 'pending-needs-verified-settlement',

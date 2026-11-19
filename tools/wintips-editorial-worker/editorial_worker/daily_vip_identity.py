@@ -31,6 +31,9 @@ _ALIASES = {
         ('LA Clippers', 'Los Angeles Clippers', 'Clippers'),
         ('LA Lakers', 'Los Angeles Lakers', 'Lakers'),
         ('Boston Celtics', 'Celtics'),
+        ('Toronto Raptors', 'Raptors'),
+        ('Dallas Mavericks', 'Mavericks'),
+        ('Detroit Pistons', 'Pistons'),
         ('Besiktas', 'Beşiktaş JK', 'BesiktasJK'),
     ),
     'football': (
@@ -38,11 +41,22 @@ _ALIASES = {
         ('Real Madrid', 'Real Madrid CF'),
         ('Paris SG', 'Paris Saint-Germain', 'PSG'),
         ('Chelsea', 'Chelsea FC'),
+        ('Botafogo', 'Botafogo RJ'),
+        ('Barcelone', 'FC Barcelone'),
     ),
+    'rugby': (('Grenoble Rugby', 'Grenoble'),),
 }
 _CATALOGUE = {
     sport: tuple(frozenset(_key(name) for name in names) for names in groups)
     for sport, groups in _ALIASES.items()
+}
+# These shorter editorial labels were observed on the proven women's fixtures.
+# They do not create aliases for unmarked men's clubs or historical identities.
+_WOMEN_CATALOGUE = {
+    'football': tuple(frozenset(_key(name) for name in names) for names in (
+        ('HB Koege', 'Koge'),
+        ('Servette FC Chênois', 'Servette FC'),
+    )),
 }
 _WOMEN_SUFFIX = re.compile(r'\s+(?:f|feminin(?:e)?s?|women(?: s)?|dames)$')
 _FIXTURE_SEPARATOR = re.compile(r'[-\u2010-\u2015]|(?<!\w)(?:vs?\.?|contre)(?!\w)', re.I)
@@ -55,11 +69,12 @@ def _sport(value):
     return 'basketball' if normalized in {'basket', 'basketball', 'nba'} else normalized
 
 
-def _base_aliases(name, sport):
+def _base_aliases(name, sport, *, women=False):
     normalized = _key(name)
     if not normalized:
         return set()
-    for group in _CATALOGUE.get(sport, ()):
+    groups = _CATALOGUE.get(sport, ()) + (_WOMEN_CATALOGUE.get(sport, ()) if women else ())
+    for group in groups:
         if normalized in group:
             return set(group)
     return {normalized}
@@ -82,7 +97,7 @@ def participant_aliases(name, sport):
     sport = _sport(sport)
     base = _women_base(name, sport)
     if base:
-        aliases = _base_aliases(base, sport)
+        aliases = _base_aliases(base, sport, women=True)
         # Canonicalize equivalent explicit women's markers without equating the
         # resulting identity to the unmarked men's club.
         return {alias + ' f' for alias in aliases}
@@ -116,7 +131,7 @@ def _context_aliases(name, sport):
     aliases = participant_aliases(name, sport)
     base = _women_base(name, _sport(sport))
     if base:
-        aliases |= _base_aliases(base, _sport(sport))
+        aliases |= _base_aliases(base, _sport(sport), women=True)
     return aliases
 
 
