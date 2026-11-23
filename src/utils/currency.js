@@ -6,7 +6,16 @@
  * tableaux de bord admin — ils ne sont jamais utilisés pour facturer un client.
  */
 
+const reference = require('./currency-reference.json');
+
+// Google Play can report any of its local checkout currencies (e.g. CHF).
+// Keep a checked-in reference so admin reads never depend on a live FX API.
+// These indicative rates only fill missing currencies: existing reporting
+// rates and historical totals in the already supported currencies stay stable.
 const CURRENCY_TO_XAF = {
+  ...Object.fromEntries(Object.entries(reference.rates).map(([currency, rate]) => [
+    currency, reference.rates.XAF / rate,
+  ])),
   XAF: 1,
   XOF: 1,
   EUR: 655.957,
