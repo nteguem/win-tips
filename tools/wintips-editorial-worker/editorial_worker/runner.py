@@ -18,6 +18,7 @@ from urllib.request import Request, HTTPRedirectHandler, ProxyHandler, build_ope
 from .http import PublicFetcher
 from .sources import SOURCES, MATCH_PATH, RACE_PATH, COMBI_PATH, PETIT_UPCOMING_POLICY, collect, eligible, iso, utc_text, source_url, ticket_fingerprint
 from .calendar import edition_day, EDITION_TIMEZONE
+from .health import vip_collection_degradation
 
 
 def write_json(path, value):
@@ -47,7 +48,7 @@ def run_summary(report):
         if row.get('imported') is True or already_published:
             if source not in published:
                 published.append(source)
-        if (row.get('status') in failed_states or
+        if (vip_collection_degradation(row) or row.get('status') in failed_states or
                 (report.get('mode') == 'publish' and row.get('status') == 'ready'
                  and row.get('itemCount', 0) > 0 and row.get('imported') is not True)):
             if source not in failed:
@@ -744,6 +745,9 @@ def run(args, *, fetcher=None, now=None, api_client=None, translator=None, clock
                     'issues': list(result['issues']), 'payloadFile': str(file), 'imported': False}
                 if result.get('dailyVipAudit') is not None:
                     row['dailyVipAudit'] = result['dailyVipAudit']
+                degradation = vip_collection_degradation(row)
+                if degradation:
+                    row['collectionHealth'] = degradation
                 if result.get('sourceSelectionAudit') is not None:
                     from .azure_translation import _write_private
                     selection_file = output / 'selection-audits' / edition / (source + '.json')

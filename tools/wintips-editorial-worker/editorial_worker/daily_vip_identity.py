@@ -1,7 +1,9 @@
 """Exact participant identity for the daily VIP source adapter.
 
-Only typographic normalization and the explicit, sport-scoped catalogue below
-are allowed. Cross-page identities retain women's, youth and reserve markers.
+Typographic normalization and the explicit, sport-scoped catalogue below are
+allowed. Inside a proven football fixture, exact club decorators may also be
+omitted. Cross-page identities retain those decorators and all women's, youth
+and reserve markers.
 An author's conclusion may omit a women's marker only inside a fixture whose
 participants have already been established by the source's event hero.
 
@@ -23,17 +25,49 @@ def _key(value):
     return ' '.join(re.sub(r'[^\w]+', ' ', folded, flags=re.UNICODE).replace('_', ' ').split())
 
 
-# Deliberately bounded aliases, rather than deleting club prefixes/suffixes or
-# searching arbitrary substrings. In particular, an unknown historical club
-# name, a city alone, and a different sport never acquire an inferred identity.
+# Stable current franchises, checked against https://www.nba.com/teams on
+# 2026-11-25. Names and conventional nicknames are complete aliases, never a
+# substring or a city-only match. French city names used by the source are
+# explicit; historical franchises are not inferred from their successor.
+_NBA_ALIASES = (
+    ('Atlanta Hawks', 'Hawks'),
+    ('Boston Celtics', 'Celtics'),
+    ('Brooklyn Nets', 'Nets'),
+    ('Charlotte Hornets', 'Hornets'),
+    ('Chicago Bulls', 'Bulls'),
+    ('Cleveland Cavaliers', 'Cavaliers', 'Cavs'),
+    ('Dallas Mavericks', 'Mavericks', 'Mavs'),
+    ('Denver Nuggets', 'Nuggets'),
+    ('Detroit Pistons', 'Pistons'),
+    ('Golden State Warriors', 'Warriors'),
+    ('Houston Rockets', 'Rockets'),
+    ('Indiana Pacers', 'Pacers'),
+    ('LA Clippers', 'Los Angeles Clippers', 'Clippers'),
+    ('LA Lakers', 'Los Angeles Lakers', 'Lakers'),
+    ('Memphis Grizzlies', 'Grizzlies'),
+    ('Miami Heat', 'Heat'),
+    ('Milwaukee Bucks', 'Bucks'),
+    ('Minnesota Timberwolves', 'Timberwolves', 'Wolves'),
+    ('New Orleans Pelicans', 'Nouvelle-Orléans Pelicans',
+     'La Nouvelle-Orléans Pelicans', 'Pelicans'),
+    ('New York Knicks', 'Knicks'),
+    ('Oklahoma City Thunder', 'Thunder'),
+    ('Orlando Magic', 'Magic'),
+    ('Philadelphia 76ers', 'Philadelphie 76ers', 'Philadelphia Sixers',
+     'Philadelphie Sixers', '76ers', 'Sixers'),
+    ('Phoenix Suns', 'Suns'),
+    ('Portland Trail Blazers', 'Trail Blazers', 'Blazers'),
+    ('Sacramento Kings', 'Kings'),
+    ('San Antonio Spurs', 'Spurs'),
+    ('Toronto Raptors', 'Raptors'),
+    ('Utah Jazz', 'Jazz'),
+    ('Washington Wizards', 'Wizards'),
+)
+
+# Deliberately bounded aliases. An unknown historical club name, a city alone,
+# and a different sport never acquire an inferred identity.
 _ALIASES = {
-    'basketball': (
-        ('LA Clippers', 'Los Angeles Clippers', 'Clippers'),
-        ('LA Lakers', 'Los Angeles Lakers', 'Lakers'),
-        ('Boston Celtics', 'Celtics'),
-        ('Toronto Raptors', 'Raptors'),
-        ('Dallas Mavericks', 'Mavericks'),
-        ('Detroit Pistons', 'Pistons'),
+    'basketball': _NBA_ALIASES + (
         ('Besiktas', 'Beşiktaş JK', 'BesiktasJK'),
     ),
     'football': (
@@ -60,6 +94,7 @@ _WOMEN_CATALOGUE = {
 }
 _WOMEN_SUFFIX = re.compile(r'\s+(?:f|feminin(?:e)?s?|women(?: s)?|dames)$')
 _FIXTURE_SEPARATOR = re.compile(r'[-\u2010-\u2015]|(?<!\w)(?:vs?\.?|contre)(?!\w)', re.I)
+_CLUB_DECORATORS = frozenset({'fc', 'cf', 'fk', 'afc', 'sc', 'ac', 'vfb'})
 
 
 def _sport(value):
@@ -135,6 +170,26 @@ def _context_aliases(name, sport):
     return aliases
 
 
+def _fixture_name_variants(aliases, sport):
+    """Omit only complete edge decorators within an established football pair.
+
+    Class qualifiers and every substantive word remain present. These variants
+    are deliberately not returned by participant_aliases: a separate odds page
+    must still prove its complete ordered participants.
+    """
+    if _sport(sport) != 'football':
+        return aliases
+    variants = set(aliases)
+    for alias in aliases:
+        words = alias.split()
+        while len(words) > 1 and words[0] in _CLUB_DECORATORS:
+            words.pop(0)
+        while len(words) > 1 and words[-1] in _CLUB_DECORATORS:
+            words.pop()
+        variants.add(' '.join(words))
+    return variants
+
+
 def resolve_participant(text, teams, sport):
     """Resolve a whole name inside an already proven fixture, or return None.
 
@@ -147,9 +202,9 @@ def resolve_participant(text, teams, sport):
     if not names or not value:
         return None
     # Canonicalize explicit women's suffixes on the proposed name as well.
-    candidates = participant_aliases(text, sport)
+    candidates = _fixture_name_variants(participant_aliases(text, sport), sport)
     matches = [side for side, name in zip(('home', 'away'), names)
-               if candidates & _context_aliases(name, sport)]
+               if candidates & _fixture_name_variants(_context_aliases(name, sport), sport)]
     return matches[0] if len(matches) == 1 else None
 
 

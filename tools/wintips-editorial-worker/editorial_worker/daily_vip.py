@@ -170,7 +170,7 @@ def discovery(root):
     return result
 
 
-def discover_candidates(fetcher, now):
+def discover_candidates(fetcher, now, *, consulted=None):
     """Use the publisher's general index when its daily index is unavailable.
 
     Both indexes only supply links. Each linked event still proves its own
@@ -178,6 +178,8 @@ def discover_candidates(fetcher, now):
     """
     checked_indexes, issues = 0, []
     for index_url in (INDEX_URL, SOURCE_URL):
+        if consulted is not None:
+            consulted.append(index_url)
         try:
             root, _ = document(fetcher.get(index_url), index_url, now())
             checked_indexes += 1
@@ -294,23 +296,65 @@ def hero(root):
     return teams, instants.pop()
 
 
+def author_conclusion(root, teams, sport):
+    """Prefer the publisher's labelled conclusion over unrelated page widgets.
+
+    The heading must itself identify the two established participants in order.
+    Its following content remains subject to the independent fixture check;
+    an editorial typo naming another opponent is never silently repaired.
+    Older/minimal documents without this landmark retain the exact-name path.
+    """
+    headings = html.find(root, lambda n: n.tag == 'h2'
+        and n.attrs.get('data-trans') == 'tips.conclusion %homeTeam% %awayTeam%')
+    if not headings:
+        return [root]
+    heading = one(headings, 'daily_vip_editorial_conclusion_ambiguous')
+    match = re.fullmatch(r'Notre prono\s+(.+)', heading.plain(), re.I)
+    require(match and recommendation_fixture_matches(match[1], teams, sport),
+            'daily_vip_recommendation_identity_conflict')
+    siblings = children(heading.parent)
+    blocks = []
+    for sibling in siblings[siblings.index(heading) + 1:]:
+        if re.fullmatch(r'h[1-6]', sibling.tag):
+            break
+        if sibling.tag == 'div' and sibling.has_class('prose'):
+            blocks.append(sibling)
+    require(blocks, 'daily_vip_editorial_recommendation_missing_or_ambiguous')
+    return blocks
+
+
+def recommendation_fields(text):
+    for pattern in (
+        r'Notre pronostic\s+(.+?)\s*:\s*(.+?)\s*[!.]?\s*$',
+        r'Le pronostic de la r[ée]daction pour le match\s+(.+?)(?:\s+en NBA)?\s+est\s*:\s*(.+?)\s*[!.]?\s*$',
+    ):
+        match = re.search(pattern, text, re.I)
+        if match:
+            return match[1], html.text(match[2]).rstrip(' !.')
+    return None
+
+
 def recommendation(root, teams, sport):
     # Explicit author conclusion only. Ignore the algorithm's different rows.
     picks, foreign_fixture = [], False
-    for n in html.find(root, lambda n: n.tag == 'p' or n.tag == 'div' and n.has_class('prose') and n.has_class('dark:text-white')):
+    nodes = [node for block in author_conclusion(root, teams, sport)
+             for node in html.find(block, lambda n: n.tag == 'p'
+                or n.tag == 'div' and n.has_class('prose') and n.has_class('dark:text-white'))]
+    for n in nodes:
         # A prose wrapper can also contain the same conclusion in a paragraph,
         # followed by related fixtures. Read its paragraph, not their merged
         # text as one larger (and different) betting recommendation.
         if n.tag == 'div' and html.find(n, lambda child: child.tag == 'p'
-                and re.search(r'Notre pronostic\s+', child.plain(), re.I)):
+                and recommendation_fields(child.plain())):
             continue
-        match = re.search(r'Notre pronostic\s+(.+?)\s*:\s*(.+?)\s*[!.]?\s*$', n.plain(), re.I)
-        if not match:
+        fields = recommendation_fields(n.plain())
+        if not fields:
             continue
-        if not recommendation_fixture_matches(match[1], teams, sport):
+        fixture, raw = fields
+        if not recommendation_fixture_matches(fixture, teams, sport):
             foreign_fixture = True
             continue
-        picks.append(html.text(match[2]).rstrip(' !.'))
+        picks.append(raw)
     # A related-match conclusion cannot invalidate the current fixture's own
     # unambiguous recommendation. A page with only foreign conclusions still
     # fails the same identity check instead of borrowing one of their picks.
@@ -538,34 +582,83 @@ def collect(edition, fetcher, *, now, lead=30):
     started = time.monotonic()
     current = lambda: now + timedelta(seconds=time.monotonic() - started)
     require(date.fromisoformat(edition).isoformat() == edition, 'daily_vip_edition_invalid')
-    links, discovery_url, index_issues = discover_candidates(fetcher, current)
+    discovery_urls = []
+    links, discovery_url, index_issues = discover_candidates(fetcher, current, consulted=discovery_urls)
+    if not discovery_urls:
+        discovery_urls.append(discovery_url)
     issues.extend(index_issues)
-    for url in links:
-        # Keep verified candidates usable when the remaining HTTP budget can no
-        # longer cover a prediction plus its odds page. Starting that pair and
-        # refusing the second GET used to discard the entire source's payload.
+    discovered, attempted = set(links), set()
+    chosen = None
+
+    def room(requests, *, time_margin=False):
         maximum = getattr(fetcher, 'max_requests', None)
-        if isinstance(maximum, int) and maximum - getattr(fetcher, 'requests', 0) < 2:
-            issues.append({'code': 'daily_vip_discovery_budget_reached'})
-            break
+        if isinstance(maximum, int) and maximum - getattr(fetcher, 'requests', 0) < requests:
+            return False
+        seconds = getattr(fetcher, 'max_seconds', None)
+        beginning = getattr(fetcher, 'started', started)
+        if isinstance(seconds, (int, float)) and isinstance(beginning, (int, float)):
+            remaining = seconds - (time.monotonic() - beginning)
+            timeout = getattr(fetcher, 'timeout', 20)
+            margin = requests * min(timeout, 20) if time_margin and isinstance(timeout, (int, float)) else 0
+            if remaining <= margin:
+                return False
+        return True
+
+    def scan(pool, *, reserve_general=False):
+        nonlocal chosen
+        for index, url in enumerate(pool):
+            if url in attempted:
+                continue
+            reserve = (reserve_general and chosen is None and SOURCE_URL not in discovery_urls
+                       and isinstance(getattr(fetcher, 'max_requests', None), int)
+                       and fetcher.max_requests >= 8 and room(3, time_margin=True))
+            if len(attempted) >= MAX_CANDIDATES - (1 if reserve else 0):
+                return pool[index:]
+            # One fallback index plus one prediction/odds pair remain available
+            # when a populated but partial daily index cannot form a coupon.
+            if not room(2 + (3 if reserve else 0), time_margin=not reserve):
+                return pool[index:]
+            attempted.add(url)
+            try:
+                source = fetcher.get(url)
+                detail = prediction(source, url, edition, current(), lead)
+                odds = fetcher.get(detail['oddsUrl'])
+                table, observed = prices(odds, detail, current())
+                detail.update(prices=table, observedAtUtc=observed)
+                candidates.append(detail)
+                chosen = choose(candidates)
+            except (DailyVipError, DailyVipMarketError, FetchError, OSError, KeyError, TypeError) as exc:
+                issues.append({'url': url, 'code': getattr(exc, 'code', 'daily_vip_candidate_unavailable')})
+        return []
+
+    remaining = scan(list(dict.fromkeys(links)), reserve_general=True)
+    if (chosen is None and SOURCE_URL not in discovery_urls and len(attempted) < MAX_CANDIDATES
+            and room(3, time_margin=True)):
+        discovery_urls.append(SOURCE_URL)
+        extra = []
         try:
-            source = fetcher.get(url)
-            detail = prediction(source, url, edition, current(), lead)
-            odds = fetcher.get(detail['oddsUrl'])
-            table, observed = prices(odds, detail, current())
-            detail.update(prices=table, observedAtUtc=observed)
-            candidates.append(detail)
-        except (DailyVipError, DailyVipMarketError, FetchError, OSError, KeyError, TypeError) as exc:
-            issues.append({'url': url, 'code': getattr(exc, 'code', 'daily_vip_candidate_unavailable')})
-    chosen = choose(candidates)
+            root, _ = document(fetcher.get(SOURCE_URL), SOURCE_URL, current())
+            extra = discovery(root)
+            discovered.update(extra)
+        except (DailyVipError, FetchError, OSError, KeyError, TypeError) as exc:
+            issues.append({'url': SOURCE_URL, 'code': getattr(exc, 'code', 'daily_vip_index_unavailable')})
+        # Fallback links receive their own identity, date, author and exact-price
+        # verification. Failed or duplicate indexes do not discard the original
+        # pool: its remaining pages can still fill the reserved request budget.
+        remaining = scan(list(dict.fromkeys(extra + remaining)))
+    elif remaining:
+        remaining = scan(remaining)
+    if remaining and len(attempted) < MAX_CANDIDATES:
+        issues.append({'code': 'daily_vip_discovery_budget_reached'})
     item = compose(chosen, edition) if chosen else None
     if item:
         validate(item, edition, current(), lead)
-    status = 'ready' if item else ('no_eligible_combination' if candidates else 'candidates_unusable' if links else 'source_absent')
+    status = 'ready' if item else ('no_eligible_combination' if candidates else 'candidates_unusable' if discovered else 'source_absent')
     return {'status': status, 'items': [item] if item else [],
             'issues': issues,
-            'dailyVipAudit': {'version': 1, 'discoveredCount': len(links), 'verifiedCandidateCount': len(candidates),
-                'discoveryUrl': discovery_url,
+            'dailyVipAudit': {'version': 1, 'discoveredCount': len(discovered),
+                'attemptedCandidateCount': len(attempted), 'verifiedCandidateCount': len(candidates),
+                'discoveryUrl': discovery_url, 'discoveryUrls': discovery_urls,
                 'policy': 'explicit-publisher-picks-common-bookmaker-3-to-3.5-v1',
                 'selectionMethod': 'closest-total-to-3.25-not-a-predicted-win-rate',
                 'resultTracking': 'pending-needs-verified-settlement',

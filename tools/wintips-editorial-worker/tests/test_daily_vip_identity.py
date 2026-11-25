@@ -2,7 +2,7 @@
 import unittest
 
 from editorial_worker.daily_vip_identity import (
-    participant_aliases, recommendation_fixture_matches, resolve_participant, same_participants,
+    _NBA_ALIASES, participant_aliases, recommendation_fixture_matches, resolve_participant, same_participants,
 )
 
 
@@ -11,6 +11,78 @@ def teams(home, away):
 
 
 class DailyVipIdentityTests(unittest.TestCase):
+    def test_all_thirty_current_nba_franchises_have_distinct_sport_scoped_aliases(self):
+        self.assertEqual(len(_NBA_ALIASES), 30)
+        seen = set()
+        for group in _NBA_ALIASES:
+            full = group[0]
+            expected = teams(full, 'Distinct opponent')
+            full_aliases = participant_aliases(full, 'basketball')
+            self.assertTrue(seen.isdisjoint(full_aliases), full)
+            seen |= full_aliases
+            for alias in group[1:]:
+                with self.subTest(full=full, alias=alias):
+                    self.assertTrue(same_participants(teams(alias, 'Distinct opponent'), expected, 'basketball'))
+                    self.assertEqual(resolve_participant(alias, expected, 'basketball'), 'home')
+                    self.assertIsNone(resolve_participant(alias, expected, 'football'))
+                    for suffix in (' U21', ' B', ' II', ' Women', ' F', ' Réserves'):
+                        self.assertIsNone(resolve_participant(alias + suffix, expected, 'basketball'))
+                        self.assertIsNone(resolve_participant(alias, teams(full + suffix, 'Distinct opponent'), 'basketball'))
+
+    def test_nba_french_names_nicknames_and_ambiguous_aliases(self):
+        expected = teams('Philadelphie 76ers', 'Miami Heat')
+        self.assertTrue(recommendation_fixture_matches('Philadelphie Sixers - Heat', expected, 'basketball'))
+        self.assertTrue(same_participants(teams('Philadelphia 76ers', 'Heat'), expected, 'basketball'))
+        self.assertEqual(resolve_participant('Sixers', expected, 'basketball'), 'home')
+        self.assertIsNone(resolve_participant('Philadelphie', expected, 'basketball'))
+        self.assertIsNone(resolve_participant('Sixers', teams('Philadelphia 76ers', 'Philadelphie Sixers'), 'basketball'))
+        self.assertFalse(same_participants(teams('Sixers', 'Philadelphie 76ers'),
+                                          teams('Philadelphia 76ers', 'Sixers'), 'basketball'))
+        self.assertTrue(same_participants(teams('La Nouvelle-Orléans Pelicans', 'Knicks'),
+                                         teams('New Orleans Pelicans', 'New York Knicks'), 'basketball'))
+        for raw in ('Los Angeles', 'New York', 'Oklahoma City', 'Seattle SuperSonics', 'New Jersey Nets'):
+            self.assertIsNone(resolve_participant(raw, teams('LA Clippers', 'Brooklyn Nets'), 'basketball'))
+
+    def test_football_decorators_are_only_omitted_inside_the_proven_fixture(self):
+        expected = teams('Millwall FC', 'VfB Stuttgart')
+        self.assertEqual(resolve_participant('Millwall', expected, 'football'), 'home')
+        self.assertEqual(resolve_participant('Stuttgart', expected, 'football'), 'away')
+        self.assertTrue(recommendation_fixture_matches('Millwall - Stuttgart', expected, 'football'))
+        self.assertFalse(same_participants(teams('Millwall', 'Stuttgart'), expected, 'football'))
+        for decorator in ('FC', 'CF', 'FK', 'AFC', 'SC', 'AC', 'VfB'):
+            for full in (decorator + ' Example United', 'Example United ' + decorator):
+                with self.subTest(full=full):
+                    self.assertEqual(resolve_participant('Example United', teams(full, 'Other City'), 'football'), 'home')
+                    self.assertEqual(resolve_participant(full, teams('Example United', 'Other City'), 'football'), 'home')
+                    self.assertIsNone(resolve_participant('Example United', teams(full, 'Other City'), 'basketball'))
+                    self.assertFalse(same_participants(teams(full, 'Other City'),
+                                                      teams('Example United', 'Other City'), 'football'))
+
+    def test_football_decorators_never_remove_substantive_words_or_internal_tokens(self):
+        expected = teams('Manchester United FC', 'Manchester City FC')
+        for text in ('Manchester', 'Manchester Albion', 'United', 'City'):
+            self.assertIsNone(resolve_participant(text, expected, 'football'))
+        self.assertFalse(recommendation_fixture_matches('Manchester City - Manchester United', expected, 'football'))
+        self.assertIsNone(resolve_participant('West Bromwich', teams('West Bromwich Albion', 'Other'), 'football'))
+        self.assertIsNone(resolve_participant('Example United', teams('Example FC United', 'Other'), 'football'))
+        self.assertIsNone(resolve_participant('Example', teams('FCExample', 'Other'), 'football'))
+        self.assertIsNone(resolve_participant('Milan', teams('AC Milan', 'Milan FC'), 'football'))
+
+    def test_football_decorator_omission_retains_explicit_class_qualifiers(self):
+        for qualifier in ('U21', 'U19', 'B', 'II', 'Réserves', 'U21 F'):
+            expected = teams('FC Example ' + qualifier, 'Other City')
+            with self.subTest(qualifier=qualifier):
+                self.assertIsNone(resolve_participant('Example', expected, 'football'))
+                self.assertIsNone(resolve_participant('Example ' + qualifier, teams('FC Example', 'Other City'), 'football'))
+                self.assertFalse(recommendation_fixture_matches('Example - Other City', expected, 'football'))
+        self.assertIsNone(resolve_participant('Example F', teams('FC Example', 'Other'), 'football'))
+        self.assertIsNone(resolve_participant('Example Women', teams('Example FC', 'Other'), 'football'))
+        self.assertIsNone(resolve_participant('Example F', teams('Example F', 'FC Example F'), 'football'))
+        self.assertEqual(resolve_participant('Example F', teams('FC Example F', 'Other'), 'football'), 'home')
+        # Existing omission of an author's women's marker remains contextual.
+        self.assertEqual(resolve_participant('Example', teams('FC Example F', 'Other'), 'football'), 'home')
+        self.assertFalse(same_participants(teams('Example F', 'Other'), teams('FC Example F', 'Other'), 'football'))
+
     def test_observed_nba_nicknames_are_exact_and_sport_scoped(self):
         for full, short in [('Toronto Raptors', 'Raptors'), ('Dallas Mavericks', 'Mavericks'),
                             ('Detroit Pistons', 'Pistons')]:

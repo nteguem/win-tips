@@ -165,6 +165,84 @@ class ScopedHealthTests(unittest.TestCase):
         self.write('vip', notificationDrain={'groups': [{'status': 'review_required'}]})
         self.assertEqual(self.inspect()['reason'], 'vip_review_required')
 
+    def vip_waiting_source(self, code='daily_vip_recommendation_identity_conflict', **changes):
+        return {'source': 'wintips_daily_vip', 'status': 'no_eligible_combination',
+                'itemCount': 0, 'imported': False,
+                'dailyVipAudit': {'discoveredCount': 17, 'verifiedCandidateCount': 2},
+                'issues': [{'url': f'https://www.sportytrader.com/pronostics/event-{index}-123456/',
+                            'code': code} for index in range(12)], **changes}
+
+    def test_legacy_success_report_cannot_hide_majority_vip_parser_failures(self):
+        self.write('free')
+        self.write('vip', status='complete', blocked=False, sources=[self.vip_waiting_source()])
+        result = self.inspect()
+        self.assertFalse(result['healthy'])
+        self.assertEqual(result['reason'], 'vip_source_parsing_degraded')
+        self.assertTrue(result['reports']['free']['healthy'])
+
+    def test_unavailable_exact_prices_are_a_normal_wait_even_for_most_candidates(self):
+        self.write('vip', sources=[self.vip_waiting_source('daily_vip_exact_market_price_unavailable')])
+        self.assertTrue(self.inspect(scope='vip')['healthy'])
+
+    def test_frozen_vip_snapshot_is_healthy_despite_old_candidate_diagnostics(self):
+        self.write('vip', sources=[self.vip_waiting_source(status='published_snapshot_preserved',
+                   publishedSnapshot={'verified': True})])
+        self.assertTrue(self.inspect(scope='vip')['healthy'])
+
+    def test_waiting_vip_is_not_degraded_by_untrusted_summary_hint_alone(self):
+        self.write('vip', sources=[self.vip_waiting_source(issues=[], collectionHealth={
+            'healthy': False, 'reason': 'source_parsing_degraded'})])
+        self.assertTrue(self.inspect(scope='vip')['healthy'])
+
+    def test_unattempted_fallback_links_do_not_dilute_a_majority_parser_failure(self):
+        self.write('vip', sources=[self.vip_waiting_source(dailyVipAudit={
+            'discoveredCount': 48, 'attemptedCandidateCount': 17})])
+        self.assertEqual(self.inspect(scope='vip')['reason'], 'vip_source_parsing_degraded')
+
+    def test_ambiguous_editorial_conclusions_are_structural_failures(self):
+        self.write('vip', sources=[self.vip_waiting_source('daily_vip_editorial_conclusion_ambiguous')])
+        self.assertEqual(self.inspect(scope='vip')['reason'], 'vip_source_parsing_degraded')
+
+    def test_majority_http_service_failures_are_not_a_healthy_wait(self):
+        source = self.vip_waiting_source('daily_vip_source_http_503')
+        source['issues'] += [{'url': f'https://www.sportytrader.com/pronostics/event-{index}-123456/',
+                              'code': 'daily_vip_source_http_503'} for index in range(12, 17)]
+        self.write('vip', status='complete', blocked=False, sources=[source])
+        self.assertEqual(self.inspect(scope='vip')['reason'], 'vip_source_fetch_degraded')
+
+    def test_transient_http_network_and_stale_pages_have_a_distinct_fetch_diagnostic(self):
+        for code in ('daily_vip_source_http_429', 'daily_vip_source_http_500',
+                     'daily_vip_source_http_599', 'daily_vip_candidate_unavailable',
+                     'daily_vip_source_stale', 'unsupported_content_type',
+                     'public_response_too_large', 'public_cache_symlink_refused'):
+            with self.subTest(code=code):
+                self.write('vip', sources=[self.vip_waiting_source(code)])
+                self.assertEqual(self.inspect(scope='vip')['reason'], 'vip_source_fetch_degraded')
+
+    def test_combined_fetch_and_structure_failures_use_the_union_of_distinct_pages(self):
+        source = self.vip_waiting_source()
+        source['issues'] = source['issues'][:10]
+        for issue in source['issues'][6:]:
+            issue['code'] = 'daily_vip_source_http_503'
+        self.write('vip', sources=[source])
+        self.assertEqual(self.inspect(scope='vip')['reason'], 'vip_source_collection_degraded')
+
+    def test_duplicate_or_index_fetch_errors_do_not_inflate_the_candidate_failure_ratio(self):
+        source = self.vip_waiting_source(dailyVipAudit={'discoveredCount': 3, 'attemptedCandidateCount': 3})
+        issue = source['issues'][0]
+        source['issues'] = [issue, {**issue, 'code': 'daily_vip_source_http_503'}] * 20
+        source['issues'].append({'url': 'https://www.sportytrader.com/pronostics/',
+                                 'code': 'daily_vip_source_http_503'})
+        self.write('vip', sources=[source])
+        self.assertTrue(self.inspect(scope='vip')['healthy'])
+
+    def test_fetch_problems_cannot_hide_a_ready_or_frozen_coupon(self):
+        for changes in ({'status': 'ready', 'itemCount': 1, 'imported': True},
+                        {'status': 'published_snapshot_preserved', 'publishedSnapshot': {'verified': True}}):
+            with self.subTest(changes=changes):
+                self.write('vip', sources=[self.vip_waiting_source('daily_vip_source_http_503', **changes)])
+                self.assertTrue(self.inspect(scope='vip')['healthy'])
+
     def test_preview_scope_is_only_accepted_when_explicitly_requested(self):
         self.write('free', mode='dry_run')
         self.assertEqual(self.inspect(scope='free')['reason'], 'free_publication_not_armed')
