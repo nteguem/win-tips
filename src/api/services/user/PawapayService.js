@@ -24,10 +24,14 @@ function normalizePhone(phone,country) {
   const cc=String(country || '').toUpperCase(),prefix=PREFIX[cc];
   let digits=String(phone || '').replace(/\D/g,'').replace(/^00/,'');
   if (!digits || !prefix) return '';
-  if (digits.startsWith(prefix) && digits.length>=prefix.length+7) return digits;
+  // Gabon uses eight international subscriber digits; mobile inputs can retain
+  // the national trunk zero after +241. Canonicalize both installed app formats.
+  const canonical = value => cc==='GA' && /^2410\d{8}$/.test(value) ? prefix+value.slice(prefix.length+1) : value;
+  if (digits.startsWith(prefix) && digits.length>=prefix.length+7) return canonical(digits);
   if (/^\+|^00/.test(String(phone || '').trim())) throw invalid('Le numéro ne correspond pas au pays choisi');
-  if (cc!=='CI' && digits.startsWith('0')) digits=digits.slice(1);
-  return prefix+digits;
+  // The leading zero is significant in Ivory Coast and Benin (01 plan).
+  if (!['CI','BJ'].includes(cc) && digits.startsWith('0')) digits=digits.slice(1);
+  return canonical(prefix+digits);
 }
 function buildProviderCode(country,operator) {
   const code=ISO3[String(country || '').toUpperCase()],aliases=ALIASES[String(operator || '').toLowerCase()];
@@ -58,6 +62,12 @@ function mapApiStatus(value) {
 function depositOperation(value) {
   return Array.isArray(value)?value.find(op=>op?.DEPOSIT)?.DEPOSIT || null:value?.DEPOSIT || null;
 }
+function normalizeAmountLimit(value) {
+  if (value==null) return null;
+  const amount=(typeof value==='number' || (typeof value==='string' && value.trim()!==''))?Number(value):NaN;
+  if (!Number.isFinite(amount) || amount<0) throw new PawapayError('Limites de paiement pawaPay invalides');
+  return amount;
+}
 function normalizeActiveConf(raw) {
   const result={};
   for (const c of raw?.countries || []) {
@@ -67,7 +77,8 @@ function normalizeActiveConf(raw) {
     const providers=(c.providers || []).map(p=>{
       const currencies=(p.currencies || []).flatMap(cur=>{
         const dep=depositOperation(cur.operationTypes);
-        return dep?[{currency:cur.currency,...dep}]:[];
+        // Numeric JSON is required by already installed WinTips provider models.
+        return dep?[{currency:cur.currency,...dep,minAmount:normalizeAmountLimit(dep.minAmount),maxAmount:normalizeAmountLimit(dep.maxAmount)}]:[];
       });
       const cur=currencies.find(value=>value.currency===countryCurrency) || currencies[0];
       if (!cur) return null;

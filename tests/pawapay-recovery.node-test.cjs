@@ -32,7 +32,7 @@ function harness(options={}) {
   return {api,rows,calls,pkg,seed,paid,setReceipt(value){receipt=value;},setPostError(value){postError=value;},setStatusCallback(value){statusCallback=value;},setPostCallback(value){postCallback=value;}};
 }
 test('active configuration supports both documented operationTypes formats',()=>{
-  const {api}=harness();for(const array of [false,true]){const c=api.normalizeActiveConf(fixture({array}));assert.equal(c.CM.providers[0].authType,'PROVIDER_AUTH');assert.equal(c.CM.providers[0].pinPrompt,'MANUAL');assert.equal(c.CM.providers[0].minAmount,'1');}
+  const {api}=harness();for(const array of [false,true]){const c=api.normalizeActiveConf(fixture({array}));assert.equal(c.CM.providers[0].authType,'PROVIDER_AUTH');assert.equal(c.CM.providers[0].pinPrompt,'MANUAL');assert.equal(c.CM.providers[0].minAmount,1);}
 });
 test('all historical supported countries keep local currencies and exact country codes',()=>{
   const {api}=harness();for(const [cc,currency] of Object.entries({CM:'XAF',CI:'XOF',SN:'XOF',BJ:'XOF',BF:'XOF',CD:'CDF',GA:'XAF',CG:'XAF',GH:'GHS',KE:'KES',RW:'RWF',UG:'UGX',TZ:'TZS',ZM:'ZMW',NG:'NGN',MW:'MWK',LS:'LSL',MZ:'MZN',SL:'SLE'}))assert.equal(api.currencyForCountry(cc),currency);
@@ -89,4 +89,64 @@ test('PREAUTH requires code and sends it only for the documented provider author
 });
 test('REDIRECT_AUTH sends merchant return URLs and exposes only HTTPS authorization URLs',async()=>{
   const h=harness({conf:fixture({authType:'REDIRECT_AUTH'})});await h.api.initiatePayment({_id:'owner'},h.pkg._id,'699000000','mtn','CM');const post=h.calls.find(c=>c.method==='POST');assert.match(post.payload.successfulUrl,/^https:\/\/example.invalid\/api\/payments\/pawapay\/return/);h.setReceipt({status:'FOUND',data:{status:'PROCESSING',authorizationUrl:'https://wallet.example.invalid/authorize'}});assert.equal((await h.api.checkTransactionStatus(ID)).authorizationUrl,'https://wallet.example.invalid/authorize');
+});
+
+test('catalogue JSON keeps numeric deposit limits compatible with installed mobile decoders',async()=>{
+  for(const sample of [
+    {country:'GAB',provider:'AIRTEL_GAB',currency:'XAF',min:'100',max:'500000',expectedMin:100,expectedMax:500000},
+    {country:'GAB',provider:'MOOV_GAB',currency:'XAF',min:'100',max:'495000',expectedMin:100,expectedMax:495000},
+    {country:'CIV',provider:'ORANGE_CIV',currency:'XOF',min:'1',max:'1500000',expectedMin:1,expectedMax:1500000},
+    {country:'COD',provider:'VODACOM_MPESA_COD',currency:'CDF',min:'500',max:'1000000',expectedMin:500,expectedMax:1000000},
+  ]){
+    const conf=fixture(sample);Object.assign(conf.countries[0].providers[0].currencies[0].operationTypes.DEPOSIT,{minAmount:sample.min,maxAmount:sample.max});
+    const h=harness({conf}),result=JSON.parse(JSON.stringify(await h.api.getProvidersAsync()));
+    const provider=result.countries[0].providers[0];
+    for(const bounds of [provider,provider.currencies[0]]){
+      assert.equal(bounds.minAmount,sample.expectedMin);assert.equal(bounds.maxAmount,sample.expectedMax);
+      assert.equal(typeof bounds.minAmount,'number');assert.equal(typeof bounds.maxAmount,'number');
+    }
+    assert.equal(provider.provider,sample.provider);assert.equal(provider.currency,sample.currency);assert.equal(provider.status,'OPERATIONAL');
+    assert.equal(h.calls.filter(c=>c.method==='POST').length,0);
+  }
+});
+
+test('catalogue limits preserve zero, decimals, numeric values and absent bounds',()=>{
+  for(const [min,max,expectedMin,expectedMax] of [[0,'0',0,0],['0.50',25.75,0.5,25.75],[null,undefined,null,null],[undefined,null,null,null]]){
+    const conf=fixture();Object.assign(conf.countries[0].providers[0].currencies[0].operationTypes.DEPOSIT,{minAmount:min,maxAmount:max});
+    const {api}=harness({conf});const provider=api.normalizeActiveConf(conf).CM.providers[0];
+    assert.equal(provider.minAmount,expectedMin);assert.equal(provider.maxAmount,expectedMax);
+  }
+});
+
+test('malformed deposit limits fail safely instead of becoming unlimited or zero',async()=>{
+  for(const invalid of ['', ' ', 'not-a-number','Infinity',Infinity,NaN,-1,'-1',true,{},[]]){
+    const upper=fixture();upper.countries[0].providers[0].currencies[0].operationTypes.DEPOSIT.maxAmount=invalid;
+    assert.throws(()=>harness().api.normalizeActiveConf(upper));
+    const conf=fixture();conf.countries[0].providers[0].currencies[0].operationTypes.DEPOSIT.minAmount=invalid;
+    const h=harness({conf});assert.throws(()=>h.api.normalizeActiveConf(conf));
+    // JSON transport encodes non-finite JavaScript numbers as null.
+    if (typeof invalid!=='number' || Number.isFinite(invalid)) await assert.rejects(h.api.getProvidersAsync());
+    assert.equal(h.rows.size,0);assert.equal(h.calls.filter(c=>c.method==='POST').length,0);
+  }
+});
+
+test('Gabon national and international mobile input resolve to the same canonical payer',()=>{
+  const {api}=harness();for(const phone of ['077280150','77280150','24177280150','+24177280150','241077280150','+241077280150','00241077280150']){
+    assert.equal(api.normalizePhone(phone,'GA'),'24177280150',phone);
+  }
+});
+
+test('Benin significant national prefix 01 is preserved in local and international input',()=>{
+  const {api}=harness();for(const phone of ['0197000000','2290197000000','+2290197000000','002290197000000']){
+    assert.equal(api.normalizePhone(phone,'BJ'),'2290197000000',phone);
+  }
+});
+
+test('Gabon initiation accepts a valid package while retaining operator amount protections',async()=>{
+  const conf=fixture({country:'GAB',provider:'AIRTEL_GAB'});
+  Object.assign(conf.countries[0].providers[0].currencies[0].operationTypes.DEPOSIT,{minAmount:'100',maxAmount:'500000'});
+  const h=harness({conf});h.pkg.pricing.XAF=941;
+  const initiated=await h.api.initiatePayment({_id:'owner'},h.pkg._id,'+241077280150',null,'GA','AIRTEL_GAB');
+  const post=h.calls.find(c=>c.method==='POST');assert.equal(post.payload.amount,'941');assert.equal(post.payload.currency,'XAF');assert.equal(post.payload.payer.accountDetails.phoneNumber,'24177280150');assert.equal(initiated.transaction.status,'INITIATED');
+  for(const price of [99,500001]){const denied=harness({conf});denied.pkg.pricing.XAF=price;await assert.rejects(denied.api.initiatePayment({_id:'owner'},denied.pkg._id,'077280150',null,'GA','AIRTEL_GAB'));assert.equal(denied.rows.size,0);assert.equal(denied.calls.filter(c=>c.method==='POST').length,0);}
 });
