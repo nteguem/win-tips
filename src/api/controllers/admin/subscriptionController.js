@@ -89,6 +89,7 @@ exports.getSubscriptions = catchAsync(async (req, res) => {
               'user.phoneNumber': 1,
               'user.profilePicture': 1,
               'user.countryCode': 1,
+              'user.createdAt': 1,
               'package._id': 1,
               'package.name': 1,
               'package.duration': 1,
