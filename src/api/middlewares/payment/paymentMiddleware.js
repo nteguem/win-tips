@@ -1,6 +1,7 @@
 const subscriptionService = require('../../services/user/subscriptionService');
 const notificationService = require('../../services/common/notificationService');
 const Device = require('../../models/common/Device');
+const Subscription = require('../../models/common/Subscription');
 
 /**
  * Bibliothèque de messages pour notifications de paiement réussi (10 variétés)
@@ -334,34 +335,53 @@ async function sendPaymentFailedNotification(transaction) {
  */
 async function handleSuccessfulTransaction(transaction) {
   try {
-    if (transaction.isSuccessful() && !transaction.processed) {
-      console.log(`Processing successful transaction: ${transaction._id}`);
-      
-      // Créer la souscription 
+    if (transaction.isSuccessful() && !transaction.reconciliationMismatch) {
+      // The subscription's deterministic _id is the durable claim. Never rely
+      // on a read-then-write processed flag: callback, /status and cron race.
       const subscription = await subscriptionService.createSubscription(
         transaction.user,
         transaction.package,
         transaction.currency,
-        transaction._id
+        transaction._id,
+        { confirmedPayment: true, paymentSnapshot: transaction.paymentSnapshot, amount: transaction.amount,
+          providerKey: transaction.constructor.modelName || 'legacy' }
       );
-      
-      console.log(`Subscription created: ${subscription._id}`);
-      
-      // Marquer comme traité
-      transaction.processed = true;
-      await transaction.save();
-      
-      console.log(`Transaction ${transaction._id} marked as processed`);
-      
-      // 🎯 Envoyer notification de succès
-      await sendPaymentSuccessNotification(transaction);
-      
+
+      // Updating only activation fields avoids overwriting a concurrent PSP
+      // status update with the stale document obtained by another request.
+      const Model = transaction.constructor;
+      const activation = { processed: true, subscriptionId: subscription._id, activatedAt: new Date(), activationError: null };
+      if (typeof Model.updateOne === 'function') {
+        await Model.updateOne({ _id: transaction._id }, { $set: activation });
+      } else {
+        Object.assign(transaction, activation);
+        await transaction.save();
+      }
+      Object.assign(transaction, activation);
+
+      // One notification claim per delivered subscription. An error in the
+      // notification service cannot roll back access or trigger duplicate access.
+      try {
+        const claim = await Subscription.findOneAndUpdate(
+          { _id: subscription._id, paymentNotificationClaimedAt: { $exists: false } },
+          { $set: { paymentNotificationClaimedAt: new Date() } },
+          { new: true }
+        );
+        if (claim) await sendPaymentSuccessNotification(transaction);
+      } catch (error) {
+        console.error('Payment notification unavailable after access activation:', error.code || error.name);
+      }
       return subscription;
     }
     
     return null;
   } catch (error) {
     console.error(`Error processing transaction ${transaction._id}:`, error.message);
+    const Model = transaction.constructor;
+    if (typeof Model.updateOne === 'function') {
+      await Model.updateOne({ _id: transaction._id }, { $set: { activationError: 'ACTIVATION_RETRY_REQUIRED' } })
+        .catch(() => {});
+    }
     throw error;
   }
 }
@@ -371,16 +391,17 @@ async function handleSuccessfulTransaction(transaction) {
  */
 async function handleFailedTransaction(transaction) {
   try {
-    console.log(`Processing failed transaction: ${transaction._id}`);
-    
-    // 🎯 Envoyer notification d'échec
-    await sendPaymentFailedNotification(transaction);
-    
-    // Marquer comme traité même en cas d'échec
-    transaction.processed = true;
-    await transaction.save();
-    
-    console.log(`Failed transaction ${transaction._id} marked as processed`);
+    // processed means that paid access exists. A provisional failure must not
+    // poison a later authenticated SUCCESS or prevent recovery.
+    const Model = transaction.constructor;
+    if (typeof Model.findOneAndUpdate === 'function') {
+      const claim = await Model.findOneAndUpdate(
+        { _id: transaction._id, status: transaction.status, failureNotificationClaimedAt: { $exists: false } },
+        { $set: { failureNotificationClaimedAt: new Date() } },
+        { new: true, strict: false }
+      );
+      if (claim) await sendPaymentFailedNotification(claim);
+    }
   } catch (error) {
     console.error(`Error processing failed transaction ${transaction._id}:`, error.message);
   }
@@ -391,9 +412,22 @@ async function handleFailedTransaction(transaction) {
  */
 async function processTransactionUpdate(transaction) {
   try {
+    // A delayed request can hold a REFUSED/PENDING document while a parallel
+    // callback already confirmed payment. Always process the persisted status.
+    if (!transaction) return null;
+    const original = transaction;
+    if (typeof transaction.constructor.findById === 'function') {
+      transaction = await transaction.constructor.findById(transaction._id);
+      if (!transaction) return null;
+    }
     // Traiter selon le statut
     if (transaction.isSuccessful()) {
-      return await handleSuccessfulTransaction(transaction);
+      const subscription = await handleSuccessfulTransaction(transaction);
+      // Controllers serialize their original document after activation.
+      original.processed = transaction.processed;
+      original.subscriptionId = transaction.subscriptionId;
+      original.status = transaction.status;
+      return subscription;
     } 
     else if (transaction.status === 'FAILED' || transaction.status === 'REFUSED' || transaction.status === 'ERROR' || transaction.status === 'CANCELED' || transaction.status === 'CANCELLED' || transaction.status === 'EXPIRED') {
       await handleFailedTransaction(transaction);

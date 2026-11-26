@@ -41,6 +41,11 @@ const subscriptionSchema = new mongoose.Schema({
     default: 'active'
   },
   paymentReference: String,
+  // New monetary purchases use the existing unique _id as their durable
+  // idempotency key. No unique-index migration is needed for legacy records.
+  paymentKey: String,
+  paymentSnapshot: mongoose.Schema.Types.Mixed,
+  paymentNotificationClaimedAt: Date,
   paymentProvider: {
     type: String,
     // 'ADS' : abonnement débloqué en regardant N pubs récompensées

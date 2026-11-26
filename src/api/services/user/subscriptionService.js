@@ -4,21 +4,68 @@ const User = require('../../models/user/User');
 const Category = require('../../models/common/Category');
 const GooglePlayTransaction = require('../../models/user/GooglePlayTransaction');
 const { AppError, ErrorCodes } = require('../../../utils/AppError');
+const crypto = require('node:crypto');
+
+function referenceId(value) {
+  return value == null ? null : String(value._id || value);
+}
+
+function purchasedPackage(subscription) {
+  const snapshot = subscription.paymentSnapshot;
+  if (!snapshot) return subscription.package;
+  return {
+    _id: snapshot.packageId || subscription.package?._id || subscription.package,
+    name: snapshot.packageName,
+    description: snapshot.packageDescription,
+    type: snapshot.packageType,
+    duration: snapshot.packageDuration,
+    categories: snapshot.packageCouponTypes || [],
+    formationId: snapshot.formationId
+  };
+}
 
 class SubscriptionService {
   /**
    * Créer un abonnement pour un utilisateur (Mobile Money)
    */
-  async createSubscription(userId, packageId, currency, paymentReference = null) {
-    // Vérifier que le package existe et est actif
+  async createSubscription(userId, packageId, currency, paymentReference = null, options = {}) {
+    const reference = referenceId(paymentReference);
+    const userReference = referenceId(userId);
+    const packageReference = referenceId(packageId);
+    const normalizedCurrency = String(currency || '').toUpperCase();
+    const paymentKey = reference ? `mobile-money:${options.providerKey || 'legacy'}:${reference}` : null;
+    // Reuse historical subscriptions as well as new ones. A replay must not
+    // extend the entitlement, even after it has expired or been cancelled.
+    if (reference) {
+      const existing = await Subscription.findOne({ paymentKey }) || await Subscription.findOne({
+        paymentReference: reference, paymentProvider: 'MOBILE_MONEY', paymentKey: { $exists: false }
+      });
+      if (existing) {
+        if (referenceId(existing.user) !== userReference || referenceId(existing.package) !== packageReference) {
+          throw new AppError('Référence de paiement incohérente', 409, ErrorCodes.VALIDATION_ERROR);
+        }
+        return existing;
+      }
+    }
+
+    // Checkout validates availability. A settled payment must still deliver
+    // the package bought before the operator disabled it or edited its price.
     const packageNew = await Package.findById(packageId);
-    if (!packageNew || !packageNew.isActive) {
+    const storedSnapshot = options.confirmedPayment && options.paymentSnapshot;
+    if ((!packageNew && !storedSnapshot) || (!options.confirmedPayment && !packageNew.isActive)) {
       throw new AppError('Package non disponible', 404, ErrorCodes.NOT_FOUND);
     }
 
     // Vérifier que le prix existe pour la devise
-    const price = packageNew.pricing.get(currency.toUpperCase());
-    if (!price) {
+    const price = storedSnapshot ? Number(storedSnapshot.amount)
+      : options.confirmedPayment && options.amount != null ? Number(options.amount)
+        : Number(packageNew.pricing?.get(normalizedCurrency));
+    const duration = Number(storedSnapshot ? storedSnapshot.packageDuration : packageNew.duration);
+    if (!Number.isFinite(price) || price <= 0 || !Number.isFinite(duration) || duration < 1 ||
+        (storedSnapshot && (String(storedSnapshot.currency).toUpperCase() !== normalizedCurrency ||
+          (options.amount != null && Number(options.amount) !== price) ||
+          (storedSnapshot.durationUnit && storedSnapshot.durationUnit !== 'days') ||
+          (storedSnapshot.packageId && referenceId(storedSnapshot.packageId) !== packageReference)))) {
       throw new AppError(`Prix non disponible en ${currency}`, 400, ErrorCodes.VALIDATION_ERROR);
     }
     
@@ -30,21 +77,51 @@ class SubscriptionService {
 
     // Calculer les dates
     const startDate = new Date();
-    const endDate = new Date(startDate.getTime() + packageNew.duration * 24 * 60 * 60 * 1000);
+    const endDate = new Date(startDate.getTime() + duration * 24 * 60 * 60 * 1000);
+    const snapshot = storedSnapshot || (options.confirmedPayment ? {
+      packageId: packageReference,
+      packageName: packageNew.name,
+      packageDescription: packageNew.description,
+      packageType: packageNew.type,
+      packageDuration: duration,
+      durationUnit: 'days',
+      packageCouponTypes: (packageNew.categories || []).map(referenceId),
+      formationId: packageNew.formationId,
+      amount: price,
+      currency: normalizedCurrency
+    } : undefined);
 
     // Créer l'abonnement
-    const subscription = await Subscription.create({
+    const values = {
       user: userId,
       package: packageId,
       startDate,
       endDate,
       pricing: {
         amount: price,
-        currency
+        currency: normalizedCurrency
       },
-      paymentReference,
-      paymentProvider: 'MOBILE_MONEY'
-    });
+      paymentReference: reference,
+      paymentProvider: 'MOBILE_MONEY',
+      ...(snapshot ? { paymentSnapshot: snapshot } : {})
+    };
+    if (!reference) return Subscription.create(values);
+
+    const stableId = crypto.createHash('sha256').update(paymentKey).digest('hex').slice(0, 24);
+    let subscription;
+    try {
+      // MongoDB's built-in unique _id serializes concurrent webhook, polling
+      // and cron upserts. A crash after this write is repaired by the next run.
+      subscription = await Subscription.findOneAndUpdate(
+        { _id: stableId },
+        { $setOnInsert: { ...values, paymentKey } },
+        { upsert: true, new: true, setDefaultsOnInsert: true, runValidators: true }
+      );
+    } catch (error) {
+      if (error.code !== 11000) throw error;
+      subscription = await Subscription.findOne({ _id: stableId });
+      if (!subscription) throw error;
+    }
 
     return subscription;
   }
@@ -96,7 +173,7 @@ class SubscriptionService {
   async getUserSubscriptionInfo(userId) {
     const activeSubscriptions = await this.getActiveSubscriptions(userId);
 
-    const validSubscriptions = activeSubscriptions.filter(sub => sub.package);
+    const validSubscriptions = activeSubscriptions.filter(sub => purchasedPackage(sub));
     if (validSubscriptions.length !== activeSubscriptions.length) {
       console.warn(
         `[SubscriptionService] User ${userId} : ${activeSubscriptions.length - validSubscriptions.length} souscription(s) orpheline(s) ignorée(s) (package supprimé)`
@@ -104,11 +181,11 @@ class SubscriptionService {
     }
 
     const activePackages = validSubscriptions.map(subscription => ({
-      id: subscription.package._id,
-      name: subscription.package.name,
-      description: subscription.package.description,
-      type: subscription.package.type,
-      duration: subscription.package.duration,
+      id: purchasedPackage(subscription)._id,
+      name: purchasedPackage(subscription).name,
+      description: purchasedPackage(subscription).description,
+      type: purchasedPackage(subscription).type,
+      duration: purchasedPackage(subscription).duration,
       startDate: subscription.startDate,
       endDate: subscription.endDate,
       status: subscription.status,
@@ -116,7 +193,7 @@ class SubscriptionService {
         amount: subscription.pricing.amount,
         currency: subscription.pricing.currency
       },
-      categories: subscription.package.categories || [],
+      categories: purchasedPackage(subscription).categories || [],
       subscriptionId: subscription._id,
       paymentProvider: subscription.paymentProvider,
       autoRenewing: subscription.autoRenewing || false
@@ -161,6 +238,10 @@ class SubscriptionService {
     const activeSubscriptions = await this.getActiveSubscriptions(userId);
     
     for (const subscription of activeSubscriptions) {
+      if (subscription.paymentSnapshot) {
+        if ((subscription.paymentSnapshot.packageCouponTypes || []).some(id => referenceId(id) === referenceId(categoryId))) return true;
+        continue;
+      }
       // Récupérer le package ACTUEL avec ses catégories ACTUELLES
       // Protection : sub.package peut être null (package supprimé) ou un
       // ObjectId brut (non populé). On extrait l'id de façon sûre.
@@ -171,7 +252,7 @@ class SubscriptionService {
       
       // Vérifie uniquement que le package existe et contient la catégorie
       // Plus de vérification isActive - l'utilisateur garde l'accès qu'il a payé
-      if (currentPackage && currentPackage.categories.includes(categoryId)) {
+      if (currentPackage && currentPackage.categories.some(id => referenceId(id) === referenceId(categoryId))) {
         return true;
       }
     }
@@ -194,6 +275,10 @@ class SubscriptionService {
     // Récupérer les catégories ACTUELLES de chaque package
     const categoryIds = [];
     for (const subscription of activeSubscriptions) {
+      if (subscription.paymentSnapshot) {
+        categoryIds.push(...(subscription.paymentSnapshot.packageCouponTypes || []));
+        continue;
+      }
       // Récupérer le package ACTUEL (pas celui stocké dans l'abonnement)
       // Protection : sub.package peut être null (package supprimé) ou un
       // ObjectId brut (non populé). On extrait l'id de façon sûre.
@@ -239,6 +324,10 @@ class SubscriptionService {
     // Récupérer les catégories ACTUELLES de chaque package
     const categoryIds = [];
     for (const subscription of activeSubscriptions) {
+      if (subscription.paymentSnapshot) {
+        categoryIds.push(...(subscription.paymentSnapshot.packageCouponTypes || []));
+        continue;
+      }
       // Récupérer le package ACTUEL (pas celui stocké dans l'abonnement)
       // Protection : sub.package peut être null (package supprimé) ou un
       // ObjectId brut (non populé). On extrait l'id de façon sûre.
@@ -387,7 +476,7 @@ class SubscriptionService {
     // correspondant à un des packages requis
     for (const subscription of activeSubscriptions) {
       // Protection : sub.package peut être null (package supprimé).
-      const pkgRef = subscription.package;
+      const pkgRef = subscription.paymentSnapshot?.packageId || subscription.package;
       if (!pkgRef) continue;
       const pkgId = (pkgRef._id || pkgRef).toString();
       const hasRequiredPackage = requiredPackages.some(

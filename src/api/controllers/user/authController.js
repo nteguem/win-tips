@@ -5,6 +5,8 @@ const subscriptionService = require('../../services/user/subscriptionService');
 const smobilpayVerificationService = require('../../services/user/smobilpayVerificationService');
 const korapayVerificationService = require('../../services/user/korapayVerificationService');
 const pawapayVerificationService = require('../../services/user/pawapayVerificationService');
+const cinetpayVerificationService = require('../../services/user/cinetpayVerificationService');
+const { waitForUserRecovery } = require('../../services/user/paymentVerificationRecovery');
 const deviceService = require('../../services/common/deviceService');
 const { AppError, ErrorCodes } = require('../../../utils/AppError');
 const catchAsync = require('../../../utils/catchAsync');
@@ -320,8 +322,9 @@ exports.getMe = catchAsync(async (req, res, next) => {
   // passe du cron (jusqu'à 2 min de délai).
   //   - Smobilpay : webhook Maviance pointe sur l'instance multi-tenant
   //   - KoraPay   : webhook désactivé, on ne s'appuie que sur le pull
-  // Vérifications faites en parallèle, tolérantes aux erreurs.
-  await Promise.all([
+  // One three-second budget covers every PSP. Slow confirmations continue in
+  // the background; they must not block session restoration or cancel access.
+  await waitForUserRecovery([
     smobilpayVerificationService
       .verifyUserPendingTransactions(req.user._id)
       .catch(err => console.error('[getMe] Smobilpay verification failed:', err.message)),
@@ -330,7 +333,10 @@ exports.getMe = catchAsync(async (req, res, next) => {
       .catch(err => console.error('[getMe] KoraPay verification failed:', err.message)),
     pawapayVerificationService
       .verifyUserPendingTransactions(req.user._id)
-      .catch(err => console.error('[getMe] pawaPay verification failed:', err.message))
+      .catch(err => console.error('[getMe] pawaPay verification failed:', err.message)),
+    cinetpayVerificationService
+      .verifyUserPendingTransactions(req.user._id)
+      .catch(() => console.error('[getMe] CinetPay verification temporarily unavailable'))
   ]);
 
   // Vérifier s'il a un abonnement actif

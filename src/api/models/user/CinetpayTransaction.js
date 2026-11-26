@@ -7,6 +7,33 @@
 const mongoose = require('mongoose');
 
 const cinetpayTransactionSchema = new mongoose.Schema({
+  // Immutable purchase and recoverable verification state. No TTL: a settled
+  // payment remains traceable even after a network error or app closure.
+  clientReference: { type: String, trim: true },
+  canStartNewCheckout: { type: Boolean, default: false },
+  replacesTransactionId: String,
+  initiationPhase: { type: String, enum: ['PREPARED', 'SUBMITTING', 'SUBMITTED', 'UNCERTAIN', 'REQUIRES_INPUT', 'REJECTED'] },
+  initiationClaimedAt: Date,
+  initiationAttempts: { type: Number, default: 0 },
+  retryable: { type: Boolean, default: false },
+  requiresInput: { type: Boolean, default: false },
+  requiresPreAuth: { type: Boolean, default: false },
+  paymentSnapshot: mongoose.Schema.Types.Mixed,
+  subscriptionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Subscription' },
+  activationError: String,
+  activatedAt: Date,
+  activationNotificationClaimedAt: Date,
+  failureNotificationClaimedAt: Date,
+  reconciliationMismatch: { type: Boolean, default: false },
+  verificationPending: { type: Boolean, default: false },
+  lastVerificationError: String,
+  webhookPending: { type: Boolean, default: false },
+  webhookReceivedAt: Date,
+  nextCheckAt: Date,
+  apiVersion: { type: String, enum: ['legacy-v2', 'v1'] },
+  lastCheckedAt: Date,
+  checkAttempts: { type: Number, default: 0 },
+
   transactionId: {
     type: String,
     required: true,
@@ -51,6 +78,7 @@ const cinetpayTransactionSchema = new mongoose.Schema({
   // CinetPay → on ne le demande plus au mobile.
   phoneNumber: String,
 
+  customerEmail: String,
   customerName: {
     type: String,
     required: true
@@ -80,6 +108,8 @@ const cinetpayTransactionSchema = new mongoose.Schema({
   timestamps: true
 });
 
+cinetpayTransactionSchema.index({ user: 1, clientReference: 1 });
+cinetpayTransactionSchema.index({ status: 1, nextCheckAt: 1, createdAt: -1 });
 // transactionId : index déjà créé par `unique: true` ci-dessus.
 cinetpayTransactionSchema.index({ cinetpayTransactionId: 1 });
 cinetpayTransactionSchema.index({ user: 1, status: 1 });

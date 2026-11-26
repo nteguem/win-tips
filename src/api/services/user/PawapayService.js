@@ -25,6 +25,7 @@ const Package = require('../../models/common/Package');
 const { AppError, ErrorCodes } = require('../../../utils/AppError');
 
 const SERVICE = 'pawapay';
+const safety = require('./paymentTransactionSafety');
 
 // ---------------------------------------------
 //  Erreur personnalisee
@@ -122,7 +123,9 @@ const OPERATOR_NORMALIZED = {
 // remplacent le code generique calcule depuis OPERATOR_NORMALIZED + ISO3.
 // A enrichir au fur et a mesure des decouvertes via /v2/active-conf.
 const PROVIDER_OVERRIDES = {
-  // 'ORANGE_CMR': 'ORANGE_MONEY_CMR',
+  AIRTEL_OAPI_GAB: 'AIRTEL_GAB',
+  AIRTEL_OAPI_COD: 'AIRTEL_COD',
+  AIRTEL_OAPI_COG: 'AIRTEL_COG',
 };
 
 function buildProviderCode(countryCode, operator) {
@@ -143,8 +146,8 @@ function buildProviderCode(countryCode, operator) {
 //  Lire la config depuis les variables d'environnement.
 //  Resout sandbox OU prod selon PAWAPAY_ENVIRONMENT.
 // ---------------------------------------------
-function getConfig() {
-  const env = (process.env.PAWAPAY_ENVIRONMENT === 'production') ? 'production' : 'sandbox';
+function getConfig(environment) {
+  const env = ((environment || process.env.PAWAPAY_ENVIRONMENT) === 'production') ? 'production' : 'sandbox';
   const apiUrl = env === 'production'
     ? (process.env.PAWAPAY_PROD_API_URL    || 'https://api.pawapay.io')
     : (process.env.PAWAPAY_SANDBOX_API_URL || 'https://api.sandbox.pawapay.io');
@@ -152,10 +155,13 @@ function getConfig() {
     ? process.env.PAWAPAY_PROD_TOKEN
     : process.env.PAWAPAY_SANDBOX_TOKEN;
   if (!token) {
-    throw new PawapayError(`Token pawaPay ${env} manquant (configurez PAWAPAY_${env === 'production' ? 'PROD' : 'SANDBOX'}_TOKEN)`, 500);
+    throw new PawapayError('Le paiement pawaPay est momentanément indisponible', 503);
   }
+  try {
+    if (new URL(apiUrl).protocol !== 'https:') throw new Error('HTTPS required');
+  } catch (_) { throw new PawapayError('Le paiement pawaPay est momentanément indisponible', 503); }
   return {
-    apiUrl,
+    apiUrl: apiUrl.replace(/\/+$/, ''),
     environment: env,
     token,
     webhookPublicKey: process.env.PAWAPAY_WEBHOOK_PUBLIC_KEY || null
@@ -175,26 +181,35 @@ const COUNTRY_TO_PHONE_PREFIX = {
 // ---------------------------------------------
 //  Normaliser le numero (MSISDN brut sans + ni espaces)
 //  pawaPay attend uniquement des digits avec code pays international,
-//  SANS le `+` ni le `0` initial, SANS espaces ni separateurs.
+//  Sans `+`, espaces ou séparateurs ; conserver les zéros nationaux
+//  significatifs des pays concernés (notamment CI et CG).
 // ---------------------------------------------
 function normalizePhone(phone, countryCode) {
   let digits = String(phone || '').replace(/\D/g, '');
-  if (!digits) return '';
+  if (digits.startsWith('00')) digits = digits.slice(2);
+  const country = String(countryCode || '').toUpperCase();
+  const prefix = COUNTRY_TO_PHONE_PREFIX[country];
+  if (!digits || !prefix) return '';
+  let local = digits.startsWith(prefix) ? digits.slice(prefix.length) : digits;
+  // Côte d'Ivoire and Congo keep their significant local zero. Benin's
+  // national 01 prefix is not part of pawaPay's provider wallet identifier.
+  if (country === 'BJ' && local.length === 10 && local.startsWith('01')) local = local.slice(2);
+  if (country === 'GA' && local.length === 9 && local.startsWith('0')) local = local.slice(1);
+  if (!['CI', 'CG', 'BJ', 'GA'].includes(country) && local.startsWith('0')) local = local.slice(1);
+  const lengths = { CM: [9], CI: [10], CG: [9], GA: [8], BJ: [8], SN: [9], CD: [9], BF: [8],
+    GH: [9], KE: [9], RW: [9], UG: [9], TZ: [9], ZM: [9], NG: [10], MW: [9], LS: [8], MZ: [9], SL: [8] };
+  if (!lengths[country]?.includes(local.length)) return '';
+  return prefix + local;
+}
 
-  // Cas 1 : le numero contient deja un prefixe ITU connu → on le garde tel quel.
-  for (const prefix of Object.keys(PHONE_PREFIX_TO_COUNTRY)) {
-    if (digits.startsWith(prefix)) return digits;
-  }
-
-  // Cas 2 : le numero commence par '0' (format local national) → on strip
-  // le 0 et on prefixe avec le code pays.
-  if (digits.startsWith('0')) digits = digits.slice(1);
-
-  const cc = String(countryCode || '').toUpperCase();
-  const prefix = COUNTRY_TO_PHONE_PREFIX[cc];
-  if (prefix) return `${prefix}${digits}`;
-
-  return digits;
+function reconcileReceipt(transaction, receipt) {
+  const account = receipt?.payer?.accountDetails || {};
+  const phone = account.phoneNumber || account.phoneNUmber; // Official v2 example spelling.
+  return receipt?.depositId === transaction.depositId &&
+    Number.isFinite(Number(receipt.amount)) && Number(receipt.amount) === Number(transaction.amount) &&
+    receipt.currency === transaction.currency &&
+    account.provider === transaction.provider && phone === transaction.phoneNumber &&
+    receipt.clientReferenceId === transaction.clientReferenceId;
 }
 
 // ---------------------------------------------
@@ -229,218 +244,138 @@ function generateUrls() {
 // ---------------------------------------------
 //  INITIER UN PAIEMENT (deposit) — POST /v2/deposits (Bearer)
 // ---------------------------------------------
-async function initiatePayment(user, packageId, phoneNumber, operator, requestedCountry, requestedProvider) {
-  let transaction;
-  let payload;
+async function initiatePayment(user, packageId, phoneNumber, operator, requestedCountry, requestedProvider, requestedReference, preAuthorisationCode) {
+  const config = getConfig();
+  const clientReference = safety.validateClientReference(requestedReference);
+  const country = String(requestedCountry || detectCountryFromPhone(phoneNumber) || '').toUpperCase();
+  if (!ISO2_TO_ISO3[country]) throw new AppError('Pays de paiement invalide', 400, ErrorCodes.VALIDATION_ERROR);
+  const provider = requestedProvider ? String(requestedProvider).toUpperCase() : buildProviderCode(country, operator);
+  if (!provider.endsWith('_' + ISO2_TO_ISO3[country])) throw new AppError('Opérateur incompatible avec le pays', 400, ErrorCodes.VALIDATION_ERROR);
+  const recipientPhone = normalizePhone(phoneNumber, country);
+  if (!recipientPhone) throw new AppError('Numéro de téléphone invalide pour ce pays', 400, ErrorCodes.VALIDATION_ERROR);
+  const depositId = clientReference ? safety.referenceId('pawapay', user._id, clientReference) : uuidv4();
+  const existing = await PawapayTransaction.findOne({ depositId });
+  if (existing) {
+    safety.assertSamePurchase(existing, packageId, { phoneNumber: recipientPhone, provider });
+    if (['PREPARED', 'REQUIRES_INPUT'].includes(existing.initiationPhase)) return submitPreparedPayment(existing, getConfig(existing.environment), preAuthorisationCode);
+    return { transaction: existing, pending: existing.verificationPending === true };
+  }
+  const packageDoc = await Package.findById(packageId);
+  if (!packageDoc || packageDoc.isActive === false || packageDoc.paymentMode === 'ads') throw new AppError('Package non disponible', 404, ErrorCodes.NOT_FOUND);
+  const currency = currencyForCountry(country);
+  const amount = Number(packageDoc.pricing?.get ? packageDoc.pricing.get(currency) : packageDoc.pricing?.[currency]);
+  if (!Number.isFinite(amount) || amount <= 0) throw new AppError(`Prix ${currency} non disponible`, 400, ErrorCodes.VALIDATION_ERROR);
+  const catalogue = await getProvidersAsync(country);
+  const availableProvider = catalogue.country?.providers?.find(item => item.provider === provider);
+  if (!availableProvider || availableProvider.currency !== currency || !['OPERATIONAL', 'DELAYED'].includes(availableProvider.status)) {
+    throw new AppError('Cet opérateur est momentanément indisponible', 400, ErrorCodes.VALIDATION_ERROR);
+  }
+  const preauth = String(availableProvider.authType || '').replace(/_/g, '').toUpperCase().includes('PREAUTH');
+  if ((preAuthorisationCode != null && (typeof preAuthorisationCode !== 'string' || !/^[A-Za-z0-9]{1,36}$/.test(preAuthorisationCode))) ||
+      (preauth && !preAuthorisationCode)) {
+    throw new AppError('Saisissez le code de paiement fourni par votre opérateur', 400, ErrorCodes.VALIDATION_ERROR);
+  }
+  if ((availableProvider.minAmount != null && amount < availableProvider.minAmount) ||
+      (availableProvider.maxAmount != null && amount > availableProvider.maxAmount)) {
+    throw new AppError('Montant hors des limites de cet opérateur', 400, ErrorCodes.VALIDATION_ERROR);
+  }
+  const designation = `${packageDoc.name?.fr || packageDoc.name?.en || packageDoc.name || 'Acces'} - ${packageDoc.duration}j`;
+  const customerMessage = String(designation).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 22).padEnd(4, ' ');
+  let transaction = new PawapayTransaction({
+    depositId, clientReference, clientReferenceId: `PF-${depositId.substring(0, 20)}`,
+    user: user._id, package: packageId, countryCode: country, amount, currency,
+    status: 'PENDING', provider, phoneNumber: recipientPhone,
+    customerEmail: user.email || undefined, customerFirstName: user.firstName || user.pseudo || 'Utilisateur',
+    customerLastName: user.lastName || user.pseudo || 'Utilisateur', customerMessage, designation,
+    environment: config.environment, initiationPhase: 'PREPARED', requiresPreAuth: preauth, paymentSnapshot: safety.snapshot(packageDoc, amount, currency)
+  });
+  try { await transaction.save(); } catch (error) {
+    if (error.code !== 11000 || !clientReference) throw error;
+    const winner = await PawapayTransaction.findOne({ depositId });
+    if (!winner) throw error;
+    safety.assertSamePurchase(winner, packageId, { phoneNumber: recipientPhone, provider });
+    if (winner.initiationPhase === 'PREPARED') return submitPreparedPayment(winner, config, preAuthorisationCode);
+    return { transaction: winner, pending: true };
+  }
+  return submitPreparedPayment(transaction, config, preAuthorisationCode);
+}
+
+async function submitPreparedPayment(transaction, config, preAuthorisationCode) {
+  if (transaction.requiresPreAuth && !preAuthorisationCode) {
+    throw new AppError('Saisissez un nouveau code fourni par votre opérateur', 400, ErrorCodes.VALIDATION_ERROR);
+  }
+  if (preAuthorisationCode != null && (typeof preAuthorisationCode !== 'string' || !/^[A-Za-z0-9]{1,36}$/.test(preAuthorisationCode))) {
+    throw new AppError('Code de paiement invalide', 400, ErrorCodes.VALIDATION_ERROR);
+  }
+  const claimed = await PawapayTransaction.findOneAndUpdate({ _id: transaction._id, initiationPhase: { $in: ['PREPARED', 'REQUIRES_INPUT'] } },
+    { $set: { initiationPhase: 'SUBMITTING', initiationClaimedAt: new Date(), retryable: false, requiresInput: false }, $inc: { initiationAttempts: 1 } }, { new: true });
+  if (!claimed) return { transaction: await PawapayTransaction.findById(transaction._id), pending: true };
+  transaction = claimed;
+  const { depositId, phoneNumber: recipientPhone, provider, amount, currency, customerMessage } = transaction;
+  const payload = { depositId, payer: { type: 'MMO', accountDetails: { phoneNumber: recipientPhone, provider } },
+    amount: String(amount), currency, clientReferenceId: transaction.clientReferenceId, customerMessage };
+  // The short-lived operator code is sent only to the PSP, never persisted or
+  // logged. Retrying a saved transaction does not request another debit.
+  if (preAuthorisationCode) payload.preAuthorisationCode = preAuthorisationCode;
   try {
-    // 1. Config (resout sandbox/prod)
-    const config = getConfig();
-
-    // 2. Resolution pays : explicite > deduit du phoneNumber
-    const country = (requestedCountry && String(requestedCountry).toUpperCase())
-      || detectCountryFromPhone(phoneNumber);
-    if (!country) {
-      throw new AppError(
-        'Impossible de detecter le pays depuis le numero. Precisez `country` (ISO-2).',
-        400, ErrorCodes.VALIDATION_ERROR
-      );
-    }
-
-    // 3. Resolution provider : explicite > construit depuis operator+country
-    let provider;
-    if (requestedProvider) {
-      provider = String(requestedProvider).toUpperCase();
-    } else {
-      if (!operator) {
-        throw new AppError('operator ou provider est requis', 400, ErrorCodes.VALIDATION_ERROR);
-      }
-      provider = buildProviderCode(country, operator);
-    }
-
-    // 4. Package + montant + devise
-    const packageDoc = await Package.findById(packageId);
-    if (!packageDoc) throw new AppError('Package non trouve', 404, ErrorCodes.NOT_FOUND);
-
-    const currency = currencyForCountry(country);
-    const amount = packageDoc.pricing?.get
-      ? packageDoc.pricing.get(currency)
-      : packageDoc.pricing?.[currency];
-    if (!amount || amount <= 0) {
-      throw new AppError(`Prix ${currency} non disponible pour ce package`, 400, ErrorCodes.VALIDATION_ERROR);
-    }
-
-    // 5. Numero normalise (MSISDN brut)
-    const recipientPhone = normalizePhone(phoneNumber, country);
-    if (!recipientPhone) {
-      throw new AppError('phoneNumber invalide', 400, ErrorCodes.VALIDATION_ERROR);
-    }
-
-    // 6. Infos client (denormalisees pour reporting)
-    const firstName = user.firstName || user.pseudo || 'Utilisateur';
-    const lastName  = user.lastName || firstName;
-    const email     = user.email || `user_${user._id}@wintips-expert.com`;
-    const designation = `${packageDoc.name?.fr || packageDoc.name} - ${packageDoc.duration}j`;
-    // pawaPay rejette tout caractere non-alphanumerique dans customerMessage.
-    // On strip les diacritiques (NFD → ASCII) puis on ne garde que [A-Za-z0-9 ],
-    // et on cap a 22 chars.
-    const customerMessage = String(designation)
-      .normalize('NFD')
-      .replace(/[̀-ͯ]/g, '')
-      .replace(/[^A-Za-z0-9 ]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .slice(0, 22);
-
-    // 7. depositId = UUID v4 (notre cote ET cote pawaPay — meme valeur)
-    const depositId = uuidv4();
-    const clientReferenceId = `WT-${Date.now()}-${depositId.substring(0, 8)}`;
-
-    // 8. Sauvegarder en base avant l'appel API (idempotency)
-    transaction = new PawapayTransaction({
-      depositId,
-      clientReferenceId,
-      user: user._id,
-      package: packageId,
-      countryCode: country,
-      amount,
-      currency,
-      status: 'PENDING',
-      provider,
-      phoneNumber: recipientPhone,
-      customerEmail: email,
-      customerFirstName: firstName,
-      customerLastName:  lastName,
-      customerMessage,
-      designation,
-      environment: config.environment
-    });
-    await transaction.save();
-    console.log(`[${SERVICE}] initiate: transaction saved (pre-API) depositId=${depositId} provider=${provider} ${amount} ${currency} env=${config.environment}`);
-
-    // 9. Appel API pawaPay — POST /v2/deposits
-    payload = {
-      depositId,
-      payer: {
-        type: 'MMO',
-        accountDetails: {
-          phoneNumber: recipientPhone,
-          provider
-        }
-      },
-      amount: String(amount),       // pawaPay attend une string
-      currency,
-      clientReferenceId,
-      customerMessage
-    };
-
     const response = await axios.post(`${config.apiUrl}/v2/deposits`, payload, {
-      headers: {
-        'Authorization': `Bearer ${config.token}`,
-        'Content-Type':  'application/json',
-        'Accept':        'application/json'
-      },
-      timeout: 30000
+      headers: { Authorization: `Bearer ${config.token}`, 'Content-Type': 'application/json', Accept: 'application/json' }, timeout: 30000
     });
-
     const data = response.data || {};
-    console.log(`[${SERVICE}] initiate: API response depositId=${depositId} status=${data.status}`);
-
-    // 10. Mapper le statut initial
-    transaction.providerData = data;
-    const mapped = mapApiStatus(data.status);
-    transaction.status = mapped || 'INITIATED';
-    if (data.failureReason) {
-      transaction.failureCode    = data.failureReason.failureCode;
-      transaction.failureMessage = data.failureReason.failureMessage;
-    }
-    await transaction.save();
-
-    await transaction.populate(['package', 'user']);
-    console.log(`[${SERVICE}] initiate: OK depositId=${depositId} finalStatus=${transaction.status}`);
-
-    return { transaction };
+    // Initiation acknowledges a request only. Settlement requires an independently
+    // fetched and reconciled receipt; never activate from an initiation response.
+    const rejected = data.status === 'REJECTED' || data.status === 'FAILED';
+    const known = ['ACCEPTED', 'DUPLICATE_IGNORED'].includes(data.status);
+    transaction = await safety.updateStatus(PawapayTransaction, transaction, rejected ? 'FAILED' : known ? 'INITIATED' : 'PENDING', {
+      providerData: data, verificationPending: !rejected && !known, initiationPhase: rejected ? 'REJECTED' : known ? 'SUBMITTED' : 'UNCERTAIN', retryable: false, requiresInput: false,
+      failureCode: data.failureReason?.failureCode, failureMessage: data.failureReason?.failureMessage
+    }, 'SUCCESS');
+    return { transaction, refused: rejected, pending: !rejected && !known };
   } catch (error) {
-    const isAxiosError = !!error.response;
-    console.error(`[${SERVICE}] initiate: failed depositId=${transaction?.depositId || null} message=${error.message} httpStatus=${error.response?.status || null}`, error.response?.data || '');
-    if (transaction?._id) {
-      await PawapayTransaction.findByIdAndDelete(transaction._id).catch(() => {});
-    }
-    if (error instanceof PawapayError || error instanceof AppError) throw error;
-    if (isAxiosError) {
-      throw new PawapayError(
-        error.response.data?.failureReason?.failureMessage
-          || error.response.data?.message
-          || error.message,
-        error.response.status,
-        error.response.data
-      );
-    }
-    throw error;
+    // Network timeouts and HTTP errors do not prove the operator rejected a
+    // charge. Keep the exact deposit ID for webhook/status/cron recovery.
+    transaction = await safety.updateStatus(PawapayTransaction, transaction, 'PENDING', {
+      verificationPending: true, initiationPhase: 'UNCERTAIN', lastVerificationError: 'INITIATION_UNCERTAIN', lastCheckedAt: new Date()
+    }, 'SUCCESS');
+    console.warn('[pawapay] initiation outcome uncertain', { code: error.code || 'PSP_ERROR', httpStatus: error.response?.status });
+    return { transaction, pending: true };
   }
 }
 
-// ---------------------------------------------
-//  VERIFIER LE STATUT D'UNE TRANSACTION
-//  GET /v2/deposits/{depositId} — Bearer auth
-//  Utilise par le controller checkStatus, le webhook (anti-spoofing) ET le cron.
-// ---------------------------------------------
 async function checkTransactionStatus(depositId) {
-  try {
-    // 1. Trouver la transaction
-    const transaction = await PawapayTransaction.findOne({ depositId })
-      .populate(['package', 'user']);
-    if (!transaction) throw new AppError('Transaction non trouvee', 404, ErrorCodes.NOT_FOUND);
-
-    // 2. Config
-    const config = getConfig();
-
-    // 3. GET /v2/deposits/{depositId} — Bearer
-    const response = await axios.get(`${config.apiUrl}/v2/deposits/${depositId}`, {
-      headers: {
-        'Authorization': `Bearer ${config.token}`,
-        'Accept':        'application/json'
-      },
-      timeout: 30000
+  const transaction = await PawapayTransaction.findOne({ depositId }).populate(['package', 'user']);
+  if (!transaction) throw new AppError('Transaction non trouvée', 404, ErrorCodes.NOT_FOUND);
+  const config = getConfig(transaction.environment);
+  const response = await axios.get(`${config.apiUrl}/v2/deposits/${encodeURIComponent(depositId)}`, {
+    headers: { Authorization: `Bearer ${config.token}`, Accept: 'application/json' }, timeout: 15000
+  });
+  const raw = response.data || {};
+  const inner = raw.data || raw;
+  const mapped = mapApiStatus(inner.status);
+  if (raw.status === 'NOT_FOUND' &&
+      ['PREPARED', 'SUBMITTING', 'UNCERTAIN', 'REQUIRES_INPUT'].includes(transaction.initiationPhase) &&
+      Date.now() - new Date(transaction.initiationClaimedAt || transaction.createdAt).getTime() > 2 * 60 * 1000) {
+    // Verification never starts a payment. A deliberate user retry can reuse
+    // this idempotent deposit ID and its immutable purchase details.
+    const prepared = await safety.prepareRetry(PawapayTransaction, transaction, {
+      initiationPhase: transaction.requiresPreAuth ? 'REQUIRES_INPUT' : 'PREPARED',
+      retryable: true, requiresInput: transaction.requiresPreAuth === true, verificationPending: true
     });
-
-    // pawaPay v2 GET /deposits/{id} renvoie un wrapper :
-    //   { data: { depositId, status: COMPLETED|FAILED|..., amount, ..., failureReason? },
-    //     status: FOUND|NOT_FOUND }
-    // → le vrai status metier est dans `data.data.status`, pas `data.status`.
-    const raw = response.data || {};
-    const inner = raw.data || raw;
-    console.log(`[${SERVICE}] checkStatus: depositId=${depositId} apiStatus=${raw.status} innerStatus=${inner.status}`);
-
-    transaction.providerData = raw;
-
-    const mapped = mapApiStatus(inner.status);
-    if (mapped) transaction.status = mapped;
-
-    if (inner.providerTransactionId) {
-      transaction.providerData = { ...raw, _providerTransactionId: inner.providerTransactionId };
-    }
-
-    if (inner.failureReason) {
-      transaction.failureCode    = inner.failureReason.failureCode;
-      transaction.failureMessage = inner.failureReason.failureMessage;
-    }
-
-    await transaction.save();
-    return transaction;
-  } catch (error) {
-    console.error(`[${SERVICE}] checkStatus: failed depositId=${depositId} message=${error.message} httpStatus=${error.response?.status || null}`, error.response?.data || '');
-    if (error instanceof PawapayError || error instanceof AppError) throw error;
-    if (error.response) {
-      throw new PawapayError(
-        error.response.data?.failureReason?.failureMessage
-          || error.response.data?.message
-          || error.message,
-        error.response.status,
-        error.response.data
-      );
-    }
-    throw error;
+    return prepared;
   }
+  const patch = { providerData: raw, ...(raw.status === 'FOUND' ? { initiationPhase: 'SUBMITTED', retryable: false, requiresInput: false } : {}), lastCheckedAt: new Date(), verificationPending: raw.status === 'NOT_FOUND', lastVerificationError: null };
+  if (inner.failureReason) {
+    patch.failureCode = inner.failureReason.failureCode;
+    patch.failureMessage = inner.failureReason.failureMessage;
+  }
+  if (mapped === 'SUCCESS' && !reconcileReceipt(transaction, inner)) {
+    await safety.updateStatus(PawapayTransaction, transaction, null, {
+      ...patch, reconciliationMismatch: true, verificationPending: true, lastVerificationError: 'RECEIPT_MISMATCH'
+    }, 'SUCCESS');
+    throw new PawapayError('Le reçu de paiement doit être vérifié', 502);
+  }
+  patch.reconciliationMismatch = false;
+  return safety.updateStatus(PawapayTransaction, transaction, mapped, patch, 'SUCCESS');
 }
 
 // ---------------------------------------------
@@ -474,8 +409,7 @@ function normalizeActiveConf(raw) {
   for (const c of (raw?.countries || [])) {
     const iso3 = c.country;
     const iso2 = iso3ToIso2(iso3) || iso3;
-    const firstProv = c.providers?.[0];
-    const currency = firstProv?.currencies?.[0]?.currency || currencyForCountry(iso2);
+    const currency = currencyForCountry(iso2);
     out[iso2] = {
       country:     iso2,
       iso3,
@@ -484,8 +418,9 @@ function normalizeActiveConf(raw) {
       flag:        c.flag,
       currency,
       providers: (c.providers || []).map(p => {
-        const cur = p.currencies?.[0];
+        const cur = p.currencies?.find(item => item.currency === currency && item.operationTypes?.DEPOSIT);
         const dep = cur?.operationTypes?.DEPOSIT;
+        if (!dep || dep.authType === 'REDIRECT_AUTH') return null;
         // pinPrompt = AUTOMATIC (push USSD) OU MANUAL (le client doit composer
         // un code USSD pour recuperer sa transaction en attente).
         let pinInstructions = null;
@@ -504,15 +439,15 @@ function normalizeActiveConf(raw) {
           displayName:     p.displayName || p.nameDisplayedToCustomer || p.provider,
           logo:            p.logo,
           currency:        cur?.currency || currency,
-          minAmount:       dep?.minAmount || null,
-          maxAmount:       dep?.maxAmount || null,
+          minAmount:       dep?.minAmount != null && Number.isFinite(Number(dep.minAmount)) ? Number(dep.minAmount) : null,
+          maxAmount:       dep?.maxAmount != null && Number.isFinite(Number(dep.maxAmount)) ? Number(dep.maxAmount) : null,
           status:          dep?.status || null,                 // OPERATIONAL / DELAYED / CLOSED
           authType:        dep?.authType || null,
           pinPrompt:       dep?.pinPrompt || null,              // AUTOMATIC / MANUAL
           pinPromptRevivable: dep?.pinPromptRevivable ?? null,
           pinInstructions
         };
-      })
+      }).filter(Boolean)
     };
   }
   return out;
@@ -570,5 +505,7 @@ module.exports = {
   currencyForCountry,
   normalizePhone,
   verifyContentDigest,
+  reconcileReceipt,
+  normalizeActiveConf,
   PawapayError
 };

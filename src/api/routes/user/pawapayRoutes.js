@@ -22,6 +22,7 @@ router.get('/providers', pawapayController.getProviders);
 // ---------------------------------------------
 router.use(userAuth.protect);
 
+router.get('/pending', pawapayController.pending);
 router.post('/initiate', pawapayController.initiatePayment);
 router.get('/status/:depositId', pawapayController.checkStatus);
 

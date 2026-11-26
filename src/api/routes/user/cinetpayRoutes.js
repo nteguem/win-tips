@@ -11,11 +11,13 @@ const router = express.Router();
 
 // Routes publiques (callbacks CinetPay)
 router.post('/notify', cinetpayController.notify);
+router.get('/notify', cinetpayController.notify);
 router.get('/return', cinetpayController.paymentReturn);
 router.post('/return', cinetpayController.paymentReturn);
 
 // Routes protégées (auth utilisateur)
 router.use(userAuth.protect);
+router.get('/pending', cinetpayController.pending);
 router.post('/initiate', cinetpayController.initiatePayment);
 router.get('/status/:transactionId', cinetpayController.checkStatus);
 

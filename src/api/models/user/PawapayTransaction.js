@@ -11,6 +11,28 @@
 const mongoose = require('mongoose');
 
 const pawapayTransactionSchema = new mongoose.Schema({
+  // Immutable purchase and recoverable verification state. No TTL: a settled
+  // payment remains traceable even after a network error or app closure.
+  clientReference: { type: String, trim: true },
+  initiationPhase: { type: String, enum: ['PREPARED', 'SUBMITTING', 'SUBMITTED', 'UNCERTAIN', 'REQUIRES_INPUT', 'REJECTED'] },
+  initiationClaimedAt: Date,
+  initiationAttempts: { type: Number, default: 0 },
+  retryable: { type: Boolean, default: false },
+  requiresInput: { type: Boolean, default: false },
+  requiresPreAuth: { type: Boolean, default: false },
+  paymentSnapshot: mongoose.Schema.Types.Mixed,
+  subscriptionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Subscription' },
+  activationError: String,
+  activatedAt: Date,
+  activationNotificationClaimedAt: Date,
+  failureNotificationClaimedAt: Date,
+  reconciliationMismatch: { type: Boolean, default: false },
+  verificationPending: { type: Boolean, default: false },
+  lastVerificationError: String,
+  webhookPending: { type: Boolean, default: false },
+  webhookReceivedAt: Date,
+  nextCheckAt: Date,
+
   // ID principal — UUID v4. Sert AUSSI bien cote nous que cote pawaPay.
   depositId: {
     type: String,
@@ -123,6 +145,7 @@ const pawapayTransactionSchema = new mongoose.Schema({
   timestamps: true
 });
 
+pawapayTransactionSchema.index({ user: 1, clientReference: 1 });
 // Indexes
 pawapayTransactionSchema.index({ user: 1, status: 1 });
 pawapayTransactionSchema.index({ processed: 1 });
